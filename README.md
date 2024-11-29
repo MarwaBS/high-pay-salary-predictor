@@ -1,113 +1,107 @@
-# **High-Paying Jobs Analysis: U.S. Job Market Insights**
+# High-Paying Jobs Analysis: BLS and Census Data  
 
-This project explores high-paying jobs in the U.S. using data from the Bureau of Labor Statistics (BLS) and census data. Through data analysis and visualization, we uncover insights into salaries, demographics, education levels, and state-by-state distributions.
-
----
-
-## **Table of Contents**
-1. [Introduction](#introduction)
-2. [Data Collection and Cleanup](#data-collection-and-cleanup)
-3. [Analysis and Visualizations](#analysis-and-visualizations)
-   - [Key Findings](#key-findings)
-   - [Questions Answered](#questions-answered)
-4. [Challenges Encountered](#challenges-encountered)
-5. [Future Directions](#future-directions)
-6. [Acknowledgments](#acknowledgments)
+## Introduction  
+This project investigates high-paying jobs (annual salaries of $100K+) in the U.S. by integrating data from the Bureau of Labor Statistics (BLS) and the U.S. Census Bureau. The goal is to uncover trends, geographic patterns, and demographic insights into these occupations.  
 
 ---
 
-## **Introduction**
-This project aims to analyze the distribution and determinants of high-paying jobs in the U.S. Using a combination of BLS occupational wage data and demographic information from census datasets, the analysis provides insights into:
-- State-level and national trends.
-- The relationship between salary, education, gender, and occupation.
-- Geographic patterns and demographic distributions.
+## Data Sources  
+
+### 1. Bureau of Labor Statistics (BLS)  
+- **Dataset**: Occupational Employment and Wage Statistics (OEWS)  
+- **Content**:  
+  - Employment and wage estimates for various occupations.  
+  - Geographic and industry-specific data.  
+- **Source**: [BLS OEWS Tables](https://www.bls.gov/oes/tables.htm)  
+
+### 2. U.S. Census Bureau  
+- **Dataset**: Educational Attainment and Demographics  
+- **Content**:  
+  - Individual-level demographic, education, and occupation data.  
+- **Source**: [Census Bureau](https://www.census.gov/)  
 
 ---
 
-## **Data Collection and Cleanup**
-### **Steps Taken**
-- Collected and merged **BLS data** (state-specific and national) with **census demographic data**.
-- Cleaned datasets by handling missing values, ensuring proper merges, and aligning key fields such as `OCC_CODE` (BLS) and `OCCSOC` (census).
-- Filtered data to focus on individuals earning $100K or more.
-- Transformed geographic data to include state-level shapefiles for mapping.
-- Added derived variables (e.g., education levels and gender categories).
+## Data Cleaning  
+
+### Bureau of Labor Statistics (BLS)  
+- Filtered columns relevant to the analysis (e.g., `OCC_CODE`, `AREA_TITLE`, `A_MEAN`).  
+- Standardized `OCC_CODE` for consistency (removed hyphens and invalid entries).  
+- Retained only occupations with annual mean salaries ≥ $100K.  
+- Excluded data from non-mainland U.S. regions.  
+
+### Census Data  
+- Reformatted `OCCSOC` to match BLS's `OCC_CODE` structure.  
+- Decoded categorical columns like `SEX` and `EDUCD` into descriptive labels.  
+- Standardized state and region codes for compatibility with BLS data.  
+- Removed rows with missing or incomplete entries.  
 
 ---
 
-## **Analysis and Visualizations**
-### **Key Findings**
-- **Geographic Trends**:
-  - States like **Delaware, New York, California**, and **Colorado** have the highest concentrations of high-paid individuals.
-  - Coastal states outperform inland states in high-paying job distributions.
+## Data Merging  
 
-- **Occupational Insights**:
-  - Dominant occupations include **software developers**, **financial managers**, and **information systems managers**.
+### Process  
+- **Objective**: Combine datasets to include all relevant columns for matched rows where both `PRIM_STATE` (state abbreviation) and `OCC_CODE` (occupation code) align.  
+- **Steps**:  
+  1. Merged using an inner join on `PRIM_STATE` and `OCC_CODE`.  
+  2. Checked for missing values and verified data integrity.  
+  3. Renamed columns for clarity using a mapping dictionary.  
+  4. Dropped redundant columns.  
 
-- **Gender Disparities**:
-  - Males dominate in terms of the count of high-paid individuals, while females show higher average annual mean wages in some occupations.
-
-- **Educational Influence**:
-  - Higher-paying roles often correlate with mid-level educational attainment (e.g., associate degrees).
-
-### **Questions Answered**
-#### **1. Distribution of High-Paid Individuals Across States**
-- **Visualization**: Map of high-paid individuals by state (Figure 1).
-- **Key Insight**: Coastal states lead, with Delaware topping the list.
-
-#### **2. Most Common Occupations Among High-Paid Individuals**
-- **Visualization**: Bar chart of top occupations (Figure 2).
-- **Key Insight**: Technology and finance-related jobs dominate.
-
-#### **3. Gender Influence**
-- **Visualization**: Side-by-side comparison of gender-based distributions (Figure 3).
-- **Key Insight**: Males dominate numerically, but females often earn slightly higher average wages.
-
-#### **4. Education Level Impact**
-- **Visualization**: Scatterplot of education levels vs. high-paying job counts (Figure 4).
-- **Key Insight**: Intermediate education levels (grades 5–8 and associate degrees) show the highest high-paid counts.
-
-#### **5. Age Distribution of High-Paid Individuals**
-- **Visualization**: Histogram of age distributions (Figure 5).
-- **Key Insight**: Individuals in their 30s–40s are most represented in high-paying roles.
+### Output  
+- **File**: `cleaned_high_pay_data.csv`  
+- **Content**: A unified dataset containing:  
+  - **Geographic Details**: State and area names.  
+  - **Occupation Details**: Codes, titles, and employment numbers.  
+  - **Wage Data**: Hourly and annual wages (mean and median).  
+  - **Demographics**: Gender, age, education levels, and degree fields.  
 
 ---
 
-## **Challenges Encountered**
-- Differentiating national vs. state-level data in the BLS dataset.
-- Mapping education levels onto geographic data required significant data processing and validation.
-- Handling inconsistent or missing demographic data during merging.
-- Correlation analysis revealed weak relationships between salary and numerical features, requiring deeper exploration.
+## Key Features of Cleaned Data  
+
+1. **Geographic Analysis**:  
+   - Data categorized by state and region.  
+
+2. **Wage Analysis**:  
+   - Both hourly and annual salaries for each occupation.  
+
+3. **Demographics**:  
+   - Variables like age, gender, and education level included.  
+
+4. **Consistency**:  
+   - Standardized codes for seamless integration and analysis.  
 
 ---
 
-## **Future Directions**
-- Integrate machine learning models for predicting high-paying jobs based on demographic and regional factors.
-- Explore time series trends in high-paying job growth across industries and regions.
-- Enhance the analysis by incorporating more granular data, such as industry-specific growth rates.
+## Objectives  
+
+1. **National Trends**:  
+   - Identify which occupations dominate the $100K+ category.  
+
+2. **Geographic Insights**:  
+   - Discover regions with the highest concentrations of high-paying jobs.  
+
+3. **Demographic Analysis**:  
+   - Examine the role of gender, age, and education in earning potential.  
+
+4. **Educational Impact**:  
+   - Assess how educational attainment correlates with high-paying occupations.  
 
 ---
 
-## **Acknowledgments**
-This project utilized publicly available data from:
-- **U.S. Bureau of Labor Statistics (BLS)**
-- **Census Bureau Demographic Files**
+## Next Steps  
 
-Special thanks to team members and instructors for guidance and feedback.
+1. **Analysis**:  
+   - Explore trends and correlations using the merged dataset.  
+
+2. **Visualization**:  
+   - Create graphs to illustrate key findings.  
+
+3. **Insights**:  
+   - Summarize observations to inform policies or career planning.  
 
 ---
 
-## **Visualizations**
-### **1. Distribution of High-Paid Individuals Across States**
-![Map of High-Paid Individuals](Images/us_map.png)
-
-### **2. Most Common Occupations Among High-Paid Individuals**
-![Bar Chart of Occupations](Images/top_10_high_paid_individuals.png)
-
-### **3. Gender-Based Distribution**
-![Gender Distribution](Images/gender_distribution.png)
-
-### **4. Education Levels and High-Paying Jobs**
-![Education and High-Paying Jobs](Images/high_paid_by_Education_level.png)
-
-### **5. Age Distribution of High-Paid Individuals**
-![Age Distribution](Images/count_high_paid_by_age.png)
+## Conclusion  
+This project successfully integrates and prepares two comprehensive datasets for a detailed exploration of high-paying jobs in the U.S. The cleaned and merged data provide a strong foundation for analyzing trends, demographics, and geographic distributions of $100K+ occupations.  
