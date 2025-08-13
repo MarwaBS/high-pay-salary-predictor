@@ -7,6 +7,16 @@ This study analyzes high-paying jobs ($100K+) across the United States, combinin
 
 All figures are saved automatically to Images/ at 300 DPI. Filenames are unique across notebooks.
 
+### Quickstart (Windows PowerShell)
+
+```powershell
+python -m venv .venv; .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+# Optional: full GIS stack for maps
+pip install geopandas shapely fiona pyproj rtree
+```
+
 ## Portfolio highlights
 
 - End-to-end pipeline: raw BLS/Census ➜ cleaned, integrated dataset ➜ reproducible visuals and maps.
@@ -214,6 +224,13 @@ These patterns align with the Business Intelligence report’s narrative: opport
 - Future work: add COLA normalization, sector‑specific cuts, and predictive modeling.
 
 See `reports/data_science_report.md` for a concise, analyst‑oriented narrative, methods, and next steps.
+
+## Data sources & attribution
+
+- U.S. Bureau of Labor Statistics (BLS): state-level Occupational Employment and Wage Statistics (OEWS).
+- U.S. Census Bureau: microdata used for demographics and education fields.
+
+Data are used for educational/analytical purposes. Please consult each provider’s terms for reuse and citation.
 
 ## Repository structure
 
