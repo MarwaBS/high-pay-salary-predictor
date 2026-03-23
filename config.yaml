@@ -7,12 +7,12 @@
 
 # ── Data Paths ─────────────────────────────────────────────
 data:
-  resources_dir: "Ressources"
+  resources_dir: "Resources"
   data_dir: "Data"
   images_dir: "Images"
   models_dir: "models"
-  raw_bls: "Ressources/bls_state_data.xlsx"
-  raw_census: "Ressources/census_data.csv"
+  raw_bls: "Resources/bls_state_data.xlsx"
+  raw_census: "Resources/census_data.csv"
   cleaned: "Data/cleaned_high_pay_data.csv"
   bls_processed: "Data/bls_data.csv"
   census_processed: "Data/census_data.csv"
