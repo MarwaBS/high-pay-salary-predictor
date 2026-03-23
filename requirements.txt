@@ -38,7 +38,11 @@ pyyaml>=6.0              # config.yaml loading
 # ── Development & Testing ─────────────────────────────────────────────────────
 jupyter>=1.0.0
 pytest>=7.2.0
-flake8>=6.0.0
+pytest-cov>=4.0.0            # coverage reporting (make coverage)
+flake8>=6.0.0                # legacy linter (kept for CI compatibility)
+ruff>=0.3.0                  # fast linter + formatter (replaces flake8 + black + isort)
+mypy>=1.8.0                  # static type checker (make type-check)
+pre-commit>=3.6.0            # git pre-commit hooks (pre-commit install)
 
 # ── Exact versions for full reproducibility (generated with pip freeze) ─────────
 # Run: pip freeze > requirements-lock.txt

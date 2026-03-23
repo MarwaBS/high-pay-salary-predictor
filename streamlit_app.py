@@ -18,6 +18,8 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
+from pipeline import FEATURES_FULL, REGION_CODES, engineer_features
+
 warnings.filterwarnings("ignore")
 
 # ── Config ──────────────────────────────────────────────────────────────────
@@ -40,29 +42,11 @@ REGION_MAP = {
 
 # ── Data Loading ─────────────────────────────────────────────────────────────
 
+
 @st.cache_data(show_spinner="Loading dataset...")
 def load_data() -> pd.DataFrame:
     df = pd.read_csv(CFG["data"]["cleaned"])
-    df["Education_Ord"] = df["Education Level"].map(EDU_ORDER)
-    df["Gender_Bin"] = (df["Gender"] == "Male").astype(int)
-    df["Region"] = df["State Abbreviation"].map(REGION_MAP)
-    df["Occ_Mean_Income"] = df.groupby("Occupation")["Annual Income"].transform("mean")
-    df["State_Mean_Income"] = df.groupby("State Abbreviation")["Annual Income"].transform("mean")
-    return df
-
-
-FEATURES = [
-    "Age",
-    "Education_Ord",
-    "Gender_Bin",
-    "Employment",
-    "Location Quotient",
-    "Jobs per 1000",
-    "Hourly Mean",
-    "Annual Mean Wage",
-    "Occ_Mean_Income",
-    "State_Mean_Income",
-]
+    return engineer_features(df, EDU_ORDER, REGION_MAP)
 
 
 @st.cache_resource(show_spinner="Training model (first run)...")
@@ -72,7 +56,7 @@ def get_model(df: pd.DataFrame) -> XGBRegressor:
         with open(model_path, "rb") as f:
             model = pickle.load(f)
     else:
-        X = df[FEATURES]
+        X = df[FEATURES_FULL]
         y = df["Annual Income"]
         X_train, _, y_train, _ = train_test_split(
             X, y, test_size=CFG["model"]["test_size"], random_state=CFG["model"]["random_state"]
@@ -95,7 +79,7 @@ def get_model(df: pd.DataFrame) -> XGBRegressor:
 
 @st.cache_data(show_spinner=False)
 def get_model_metrics(_model: XGBRegressor, df: pd.DataFrame) -> dict[str, object]:
-    X = df[FEATURES]
+    X = df[FEATURES_FULL]
     y = df["Annual Income"]
     _, X_test, _, y_test = train_test_split(
         X, y, test_size=CFG["model"]["test_size"], random_state=CFG["model"]["random_state"]
@@ -112,6 +96,7 @@ def get_model_metrics(_model: XGBRegressor, df: pd.DataFrame) -> dict[str, objec
 
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
+
 
 def sidebar(df: pd.DataFrame) -> pd.DataFrame:
     st.sidebar.title("💼 Dashboard Controls")
@@ -147,10 +132,10 @@ def sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── Tab: Overview ────────────────────────────────────────────────────────────
 
+
 def tab_overview(df: pd.DataFrame) -> None:
     st.header("Overview")
 
-    # KPI row
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Records", f"{len(df):,}")
     col2.metric("Avg Annual Income", f"${df['Annual Income'].mean():,.0f}")
@@ -246,6 +231,7 @@ def tab_overview(df: pd.DataFrame) -> None:
 
 # ── Tab: Geographic ──────────────────────────────────────────────────────────
 
+
 def tab_geographic(df: pd.DataFrame) -> None:
     st.header("Geographic Analysis")
 
@@ -320,6 +306,7 @@ def tab_geographic(df: pd.DataFrame) -> None:
 
 # ── Tab: Salary Predictor ─────────────────────────────────────────────────────
 
+
 def tab_predictor(df: pd.DataFrame, model: XGBRegressor) -> None:
     st.header("Salary Predictor")
     st.markdown(
@@ -352,7 +339,6 @@ def tab_predictor(df: pd.DataFrame, model: XGBRegressor) -> None:
                 "BLS Annual Mean Wage ($)", value=124000, min_value=0, step=1000
             )
         else:
-            # Derive defaults from data
             mask = (df["State Abbreviation"] == state) & (df["Occupation"] == occupation)
             subset = df[mask] if mask.sum() > 0 else df[df["State Abbreviation"] == state]
             if len(subset) == 0:
@@ -366,13 +352,15 @@ def tab_predictor(df: pd.DataFrame, model: XGBRegressor) -> None:
     if st.button("Predict Salary", type="primary"):
         edu_ord = EDU_ORDER[education]
         gender_bin = 1 if gender == "Male" else 0
+        region = REGION_MAP.get(state, "South")
+        region_code = REGION_CODES.get(region, 0)
         occ_mean = df[df["Occupation"] == occupation]["Annual Income"].mean()
         state_mean = df[df["State Abbreviation"] == state]["Annual Income"].mean()
 
         row = pd.DataFrame(
-            [[age, edu_ord, gender_bin, employment, lq, jobs_k, hourly_mean, annual_mean,
-              occ_mean, state_mean]],
-            columns=FEATURES,
+            [[age, edu_ord, gender_bin, region_code, employment, lq,
+              jobs_k, hourly_mean, annual_mean, occ_mean, state_mean]],
+            columns=FEATURES_FULL,
         )
         prediction = model.predict(row)[0]
 
@@ -391,6 +379,7 @@ def tab_predictor(df: pd.DataFrame, model: XGBRegressor) -> None:
 
 # ── Tab: Model Insights ──────────────────────────────────────────────────────
 
+
 def tab_model(df: pd.DataFrame, model: XGBRegressor) -> None:
     st.header("Model Performance & Feature Importance")
 
@@ -408,7 +397,7 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor) -> None:
 
     with col_left:
         feat_imp = pd.DataFrame(
-            {"Feature": FEATURES, "Importance": model.feature_importances_}
+            {"Feature": FEATURES_FULL, "Importance": model.feature_importances_}
         ).sort_values("Importance", ascending=True)
         fig = px.bar(
             feat_imp,
@@ -442,7 +431,6 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor) -> None:
         )
         st.plotly_chart(fig, use_container_width=True)
 
-    # Actual vs Predicted scatter
     fig2 = px.scatter(
         x=metrics["y_test"],
         y=metrics["y_pred"],
@@ -464,6 +452,7 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor) -> None:
 
 
 # ── Main App ─────────────────────────────────────────────────────────────────
+
 
 def main() -> None:
     st.title("💼 High-Paying Jobs in the US")

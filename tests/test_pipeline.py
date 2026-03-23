@@ -1,50 +1,15 @@
 """
 Unit tests for the High-Paying Jobs analysis pipeline.
+
+Covers: config validation, raw-data schema, feature engineering, and
+model predictions. Fixtures are provided by tests/conftest.py.
+
 Run: pytest tests/ -v
 """
-import os
-import pickle
-from pathlib import Path
-
 import numpy as np
-import pandas as pd
 import pytest
-import yaml
 
-
-# ── Fixtures ──────────────────────────────────────────────────────────────────
-
-@pytest.fixture(scope="session")
-def cfg():
-    """Load project configuration."""
-    config_path = Path(__file__).parent.parent / "config.yaml"
-    with open(config_path) as f:
-        return yaml.safe_load(f)
-
-
-@pytest.fixture(scope="session")
-def df(cfg):
-    """Load cleaned dataset once for all tests."""
-    data_path = Path(__file__).parent.parent / cfg["data"]["cleaned"]
-    return pd.read_csv(data_path)
-
-
-@pytest.fixture(scope="session")
-def df_engineered(df, cfg):
-    """Return dataframe with engineered features."""
-    edu_order = cfg["education_order"]
-    region_map = {
-        state: region
-        for region, states in cfg["regions"].items()
-        for state in states
-    }
-    out = df.copy()
-    out["Education_Ord"] = out["Education Level"].map(edu_order)
-    out["Gender_Bin"] = (out["Gender"] == "Male").astype(int)
-    out["Region"] = out["State Abbreviation"].map(region_map)
-    out["Occ_Mean_Income"] = out.groupby("Occupation")["Annual Income"].transform("mean")
-    out["State_Mean_Income"] = out.groupby("State Abbreviation")["Annual Income"].transform("mean")
-    return out
+from pipeline import FEATURES_FULL, REGION_CODES
 
 
 # ── Config Tests ──────────────────────────────────────────────────────────────
@@ -61,7 +26,6 @@ class TestConfig:
         assert cfg["thresholds"]["min_annual_income"] == 100_000
 
     def test_hourly_threshold(self, cfg):
-        # 100000 / 2080 hours ≈ 48.08
         expected = 100_000 / 2_080
         assert abs(cfg["thresholds"]["min_hourly_mean"] - expected) < 0.01
 
@@ -150,8 +114,9 @@ class TestFeatureEngineering:
     def test_education_ordinal_no_nulls(self, df_engineered):
         assert df_engineered["Education_Ord"].isnull().sum() == 0
 
-    def test_education_ordinal_range(self, df_engineered):
-        assert df_engineered["Education_Ord"].between(1, 4).all()
+    def test_education_ordinal_range(self, df_engineered, cfg):
+        lo, hi = min(cfg["education_order"].values()), max(cfg["education_order"].values())
+        assert df_engineered["Education_Ord"].between(lo, hi).all()
 
     def test_gender_binary_values(self, df_engineered):
         assert set(df_engineered["Gender_Bin"].unique()).issubset({0, 1})
@@ -165,8 +130,13 @@ class TestFeatureEngineering:
         assert nulls == 0, f"{nulls} states not mapped to a region"
 
     def test_region_valid_values(self, df_engineered):
-        valid = {"Northeast", "Midwest", "South", "West"}
-        assert set(df_engineered["Region"].unique()).issubset(valid)
+        assert set(df_engineered["Region"].unique()).issubset(set(REGION_CODES.keys()))
+
+    def test_region_code_valid_values(self, df_engineered):
+        assert set(df_engineered["Region_Code"].unique()).issubset(set(REGION_CODES.values()))
+
+    def test_region_code_no_nulls(self, df_engineered):
+        assert df_engineered["Region_Code"].isnull().sum() == 0
 
     def test_occ_mean_income_positive(self, df_engineered):
         assert (df_engineered["Occ_Mean_Income"] > 0).all()
@@ -180,26 +150,35 @@ class TestFeatureEngineering:
     def test_state_mean_income_no_nulls(self, df_engineered):
         assert df_engineered["State_Mean_Income"].isnull().sum() == 0
 
+    def test_features_full_all_present(self, df_engineered):
+        """All columns in FEATURES_FULL must exist after engineering."""
+        for col in FEATURES_FULL:
+            assert col in df_engineered.columns, f"Missing engineered column: {col}"
+
+
+# ── Pipeline constants ────────────────────────────────────────────────────────
+
+class TestPipelineConstants:
+    def test_region_codes_cover_four_regions(self):
+        assert set(REGION_CODES.keys()) == {"Midwest", "Northeast", "South", "West"}
+
+    def test_region_codes_unique_integers(self):
+        vals = list(REGION_CODES.values())
+        assert len(vals) == len(set(vals)), "REGION_CODES values must be unique"
+
+    def test_features_full_length(self):
+        assert len(FEATURES_FULL) == 11, f"Expected 11 features, got {len(FEATURES_FULL)}"
+
+    def test_features_full_has_region_code(self):
+        assert "Region_Code" in FEATURES_FULL
+
 
 # ── Model Prediction Tests ─────────────────────────────────────────────────────
 
 class TestModelPrediction:
-    FEATURES = [
-        "Age",
-        "Education_Ord",
-        "Gender_Bin",
-        "Employment",
-        "Location Quotient",
-        "Jobs per 1000",
-        "Hourly Mean",
-        "Annual Mean Wage",
-        "Occ_Mean_Income",
-        "State_Mean_Income",
-    ]
-
     @pytest.fixture
     def trained_model(self, df_engineered):
-        """Train a regularized model for prediction tests.
+        """Train a regularized model on FEATURES_FULL for prediction tests.
 
         Uses shallow trees and L2 regularization to reduce overfitting.
         Individual Census income within the $100K+ cohort has very high
@@ -209,7 +188,7 @@ class TestModelPrediction:
         from sklearn.model_selection import train_test_split
         from xgboost import XGBRegressor
 
-        X = df_engineered[self.FEATURES]
+        X = df_engineered[FEATURES_FULL]
         y = df_engineered["Annual Income"]
         X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42)
         model = XGBRegressor(
@@ -225,17 +204,17 @@ class TestModelPrediction:
         return model
 
     def test_model_outputs_float(self, trained_model, df_engineered):
-        row = df_engineered[self.FEATURES].iloc[[0]]
+        row = df_engineered[FEATURES_FULL].iloc[[0]]
         pred = trained_model.predict(row)
         assert isinstance(pred[0], (float, np.floating))
 
     def test_prediction_above_zero(self, trained_model, df_engineered):
-        X = df_engineered[self.FEATURES].head(50)
+        X = df_engineered[FEATURES_FULL].head(50)
         preds = trained_model.predict(X)
         assert (preds > 0).all()
 
     def test_prediction_plausible_range(self, trained_model, df_engineered):
-        X = df_engineered[self.FEATURES].head(200)
+        X = df_engineered[FEATURES_FULL].head(200)
         preds = trained_model.predict(X)
         assert preds.min() > 10_000, "Predictions unrealistically low"
         assert preds.max() < 5_000_000, "Predictions unrealistically high"
@@ -247,17 +226,17 @@ class TestModelPrediction:
         within-occupation variance ($100K to $1M+). The available features
         (BLS occupation wages, demographics) explain occupation-level means
         but not individual variation. Empirically, well-regularized models
-        achieve R² ≈ 0.10-0.12 on this data. The 0.08 floor ensures the
+        achieve R² ≈ 0.10–0.12 on this data. The 0.08 floor ensures the
         model is non-trivially better than predicting the mean (R²=0).
         """
         from sklearn.metrics import r2_score
         from sklearn.model_selection import train_test_split
 
-        X = df_engineered[self.FEATURES]
+        X = df_engineered[FEATURES_FULL]
         y = df_engineered["Annual Income"]
         _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
         r2 = r2_score(y_test, trained_model.predict(X_test))
         assert r2 > 0.08, f"R² too low: {r2:.4f}"
 
     def test_feature_count_matches(self, trained_model):
-        assert trained_model.n_features_in_ == len(self.FEATURES)
+        assert trained_model.n_features_in_ == len(FEATURES_FULL)

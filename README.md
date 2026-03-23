@@ -1,4 +1,4 @@
-## High-Paying Jobs in the US — Complete Case Study
+# High-Paying Jobs in the US — End-to-End Data Science Case Study
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -6,13 +6,15 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](streamlit_app.py)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost-orange)](04_salary_prediction_model.ipynb)
 [![SHAP](https://img.shields.io/badge/Explainability-SHAP-brightgreen)](04_salary_prediction_model.ipynb)
+[![MLflow](https://img.shields.io/badge/Tracking-MLflow-0194E2?logo=mlflow&logoColor=white)](04_salary_prediction_model.ipynb)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
 
-An end-to-end data science pipeline analyzing high-paying jobs ($100K+) across the United States,
-integrating **Bureau of Labor Statistics (BLS)** and **US Census** microdata.
-Includes EDA, geospatial mapping, **XGBoost salary prediction**, **SHAP explainability**,
-and an **interactive Streamlit dashboard**.
+A **production-grade, end-to-end data science pipeline** analyzing high-paying jobs (≥ $100K/yr) across all 50 US states, integrating **Bureau of Labor Statistics (BLS) OEWS** and **US Census** microdata. The project covers the complete ML lifecycle: raw data ingestion → cleaning → EDA → geospatial mapping → XGBoost salary prediction with SHAP explainability → MLflow experiment tracking → FastAPI serving → interactive Streamlit dashboard → Docker deployment.
+
+**Keywords:** salary prediction, XGBoost, SHAP, MLflow, FastAPI, Streamlit, BLS OEWS, US Census, data science portfolio, income inequality analysis, feature engineering, CI/CD
+
+---
 
 ### Dashboard preview
 
@@ -36,25 +38,32 @@ and an **interactive Streamlit dashboard**.
 > **To see the live dashboard:** run `make dashboard` or `docker compose up --build`,
 > then open [http://localhost:8501](http://localhost:8501).
 
-The pipeline is organized across four notebooks:
+---
+
+## Pipeline overview
+
+The project is organized across four notebooks and two deployable services:
 
 | Notebook | Purpose |
 |----------|---------|
 | `high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
 | `high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
 | `us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
-| `04_salary_prediction_model.ipynb` | **ML: XGBoost + SHAP + statistical tests** |
+| `04_salary_prediction_model.ipynb` | **ML: XGBoost + LightGBM + SHAP + statistical tests + MLflow** |
 
-All figures are saved automatically to `Images/` at 300 DPI. Filenames are unique across notebooks.
+All figures are saved automatically to `Images/` at 300 DPI.
 
-### Quickstart — one command
+---
+
+## Quickstart — one command
 
 ```bash
 make install      # create .venv and install all dependencies
-make test         # run the full 57-test suite
-make dashboard    # launch Streamlit on http://localhost:8501
-make api          # launch FastAPI on http://localhost:8000
-make docker       # build and start both services via Docker Compose
+make test         # run the full 64-test suite
+make dashboard    # Streamlit dashboard → http://localhost:8501
+make api          # FastAPI server    → http://localhost:8000
+make docker       # build + start both services via Docker Compose
+make mlflow       # MLflow tracking UI → http://localhost:5000
 ```
 
 **All `make` targets:**
@@ -63,70 +72,81 @@ make docker       # build and start both services via Docker Compose
 |--------|-------------|
 | `make install` | Create `.venv`, install `requirements.txt` |
 | `make data` | Re-run cleaning notebook → `Data/cleaned_high_pay_data.csv` |
-| `make model` | Train XGBoost model → `models/xgb_salary_model.pkl` |
-| `make test` | Run all 57 pytest tests with `-v` |
+| `make model` | Train XGBoost model via `scripts/train_model.py` → `models/` |
+| `make test` | Run all 64 pytest tests with `-v` |
 | `make test-fast` | Same, quiet output |
-| `make lint` | `flake8` on `streamlit_app.py`, `api/`, `tests/` |
+| `make coverage` | Tests + HTML coverage report in `htmlcov/` |
+| `make lint` | `ruff check` (fast linter, replaces flake8) |
+| `make format` | `ruff format` (opinionated auto-formatter, Black-compatible) |
+| `make type-check` | `mypy` static type checker on `api/`, `pipeline.py`, `scripts/` |
 | `make dashboard` | Streamlit on port 8501 |
 | `make api` | FastAPI + uvicorn on port 8000 |
 | `make docker` | `docker compose up --build` |
-| `make clean` | Remove `models/*.pkl`, `__pycache__`, `.pytest_cache` |
+| `make mlflow` | MLflow tracking UI on port 5000 |
+| `make clean` | Remove `models/*.pkl`, `__pycache__`, `.pytest_cache`, `htmlcov/` |
 | `make clean-all` | `clean` + delete `.venv` |
 
-### Manual setup (no make)
+---
+
+## Manual setup (no make)
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Linux/macOS
-.\.venv\Scripts\Activate.ps1      # Windows PowerShell
+.\.venv\Scripts\Activate.ps1       # Windows PowerShell
 pip install -r requirements.txt
-pip freeze > requirements-lock.txt  # lock exact versions
+pre-commit install                 # install git quality hooks
 ```
+
+---
 
 ## Portfolio highlights
 
-- **ML salary prediction:** XGBoost model (R² reported in notebook) with cross-validation and SHAP explainability.
-- **Statistical rigor:** ANOVA and Welch t-tests validate EDA findings (education, gender, regional income gaps).
-- **Interactive dashboard:** Streamlit app with Plotly charts, geographic choropleth, salary predictor widget, and model insights.
-- **End-to-end pipeline:** raw BLS/Census → cleaned dataset → EDA → ML model → dashboard.
-- **Reproducible:** single `config.yaml` for all thresholds and paths; `pytest` test suite; GitHub Actions CI.
-- **Geospatial fallback:** maps render with GeoPandas; graceful pyshp fallback ensures PNG export.
+- **XGBoost salary prediction:** cross-validated model with SHAP global + dependence explainability.
+- **Statistical rigor:** ANOVA (education × income), Welch t-test (gender pay gap), and Tukey HSD post-hoc tests validate EDA findings.
+- **MLflow experiment tracking:** all model runs (Ridge, XGBoost full, XGBoost demographic, LightGBM) logged with params, metrics, and model artefacts. Compare in the UI with `make mlflow`.
+- **Production API:** FastAPI + Pydantic v2 with `/health`, `/meta`, `/predict` endpoints and Swagger docs.
+- **Interactive dashboard:** Streamlit with Plotly choropleth, salary predictor widget, and model insights tab.
+- **Shared pipeline module:** `pipeline.py` is the single source of truth for feature engineering and feature constants — consumed by the API, dashboard, training script, and all tests (zero duplication).
+- **Full DevOps stack:** multi-stage Docker build, Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11), Makefile, `pyproject.toml`, pre-commit hooks.
+- **64 tests** across config validation, data schema, feature engineering, pipeline constants, and API endpoints.
+
+---
 
 ## Data
 
-- Source file: Data/cleaned_high_pay_data.csv
-- Key fields used: Occupation, Annual Income, Education Level, Gender, State Abbreviation/State, (optional) Annual Mean Wage, Location Quotient, Employment, Jobs per 1000.
+**Sources:**
+- U.S. Bureau of Labor Statistics (BLS): state-level Occupational Employment and Wage Statistics (OEWS)
+- U.S. Census Bureau: microdata — demographics, education, occupation
+
+**Cleaned dataset:** `Data/cleaned_high_pay_data.csv` — 10,255 rows × 15 columns
+
+**Key fields:** Occupation, Annual Income, Education Level, Gender, State Abbreviation, Annual Mean Wage, Location Quotient, Employment, Jobs per 1000.
+
+Data are used for educational and analytical purposes only. Consult each provider's terms for reuse.
+
+---
 
 ## Data cleaning and preparation
 
-This repository includes a full cleaning and integration pipeline in `high_pay_jobs_data_cleaning.ipynb`. Here’s a concise summary of what it does and the resulting dataset used by the analysis notebooks:
+Implemented in `high_pay_jobs_data_cleaning.ipynb`:
 
-- Inputs
-	- BLS (wages/employment by occupation and state): raw in `Resources/bls_state_data.xlsx`, cleaned export saved as `Data/bls_data.csv`.
-	- Census (demographics, education, occupation microdata): raw in `Resources/census_data.csv`, cleaned export saved as `Data/census_data.csv`.
+**BLS cleaning:**
+- Normalize strings; strip whitespace and title-case state/occupation names
+- Remove hyphens from OCC_CODE; drop invalid codes
+- Convert numerics; drop missing values; keep 50 US states only
+- Define "high-paying" cohort: `A_MEAN ≥ 100,000` or `H_MEAN ≥ 48.08` (≈ $100K annualized)
 
-- BLS cleaning (occupation and wage stats)
-	- Standardize strings: strip whitespace and title‑case `AREA_TITLE` (state name) and `OCC_TITLE` (occupation).
-	- Normalize occupation codes: remove hyphens from `OCC_CODE` and drop invalid codes.
-	- Convert numeric columns to proper dtypes; drop rows with missing values for a clean baseline.
-	- Keep the 50 U.S. states only (exclude territories/aggregates) using `PRIM_STATE` and verify 50 unique states.
-	- Define “high‑paying” cohort: `A_MEAN >= 100000` or `H_MEAN >= 48.08` (≈$100K annualized).
-	- Rename `AREA_TITLE -> STATE`; save subset as `Data/bls_data.csv`.
+**Census cleaning:**
+- Extract 6-digit SOC from OCCSOC (zero-padded); decode SEX / STATEICP / EDUCD / DEGFIELDD
+- Drop rows with missing key fields
 
-- Census cleaning (demographics and education)
-	- Read `Resources/census_data.csv`; extract the 6‑digit SOC from `OCCSOC` and zero‑pad.
-	- Decode codes to labels: `SEX -> {Male,Female}`, `STATEICP ->` state abbreviation, education `EDUCD -> EDUCATION_LABEL`, degree field `DEGFIELDD -> DEGFIELDD_NAME`.
-	- Drop rows with missing key fields; rename `OCCSOC -> OCC_CODE`; save as `Data/census_data.csv`.
+**Integration:**
+- Inner join on `[OCC_CODE, STATE]`
+- Reorder and rename columns to a tidy schema; remove duplicates
+- Final output: `Data/cleaned_high_pay_data.csv` (10,255 × 15)
 
-- Integration
-	- Inner join on `['OCC_CODE','STATE']` to align Census demographics with BLS wages by occupation and state.
-	- Reorder and rename columns to a tidy schema; remove duplicate rows.
-	- Final dataset saved to `Data/cleaned_high_pay_data.csv` with shape `(10255, 15)`.
-
-- Final schema (columns)
-	- State Abbreviation, State, Gender, Age, Education Code, Education Level, Degree Field, Occupation Code, Occupation, Annual Income, Employment, Location Quotient, Jobs per 1000, Hourly Mean, Annual Mean Wage.
-
-For full implementation details and reproducibility steps, see `high_pay_jobs_data_cleaning.ipynb`.
+---
 
 ## How to run
 
@@ -134,32 +154,28 @@ For full implementation details and reproducibility steps, see `high_pay_jobs_da
 # 1. Install dependencies
 pip install -r requirements.txt
 
-# 2. Run EDA notebooks (open in Jupyter)
+# 2. (Optional) Install git quality hooks
+pre-commit install
+
+# 3. Run EDA notebooks (open in Jupyter)
 jupyter notebook
 
-# 3. Run the ML notebook (trains model, saves to models/)
-#    Open 04_salary_prediction_model.ipynb → Run All
+# 4. Train the model
+python scripts/train_model.py
 
-# 4. Launch the interactive dashboard
+# 5. Launch the interactive dashboard
 streamlit run streamlit_app.py
 
-# 5. Run the test suite
+# 6. Run the test suite
 pytest tests/ -v
-
-# Optional: full GIS stack for maps
-pip install geopandas shapely fiona pyproj rtree
 ```
 
 ### Run with Docker (one command, no Python setup needed)
 
 ```bash
-# Build and start both dashboard + API
 docker compose up --build
-
 # Dashboard → http://localhost:8501
 # API docs  → http://localhost:8000/docs
-# Both share the same trained model via ./models/ volume
-
 docker compose down
 ```
 
@@ -185,224 +201,181 @@ curl -X POST http://localhost:8000/predict \
   -d '{"state":"CA","occupation":"Software Developers","education_level":"Bachelor'\''s degree","gender":"Female","age":32}'
 ```
 
-### Run the cleaning pipeline (optional)
+### MLflow experiment tracking
 
-If you want to regenerate the cleaned dataset:
+After running notebook 4, compare all model runs:
+```bash
+make mlflow   # open http://localhost:5000
+```
+Logged per run: model type, hyperparameters, R², RMSE, MAE, CV R² mean ± std, and model artefact.
 
-1. Ensure the raw files are present:
-   - `Resources/bls_state_data.xlsx`
-   - `Resources/census_data.csv`
+---
 
-2. Open `high_pay_jobs_data_cleaning.ipynb` and Run All. It will create:
-   - `Data/bls_data.csv`
-   - `Data/census_data.csv`
-   - `Data/cleaned_high_pay_data.csv` (final; shape ~ 10K rows × 15 cols)
+## Findings with figures
 
-All notebooks consume `Data/cleaned_high_pay_data.csv` as the single source of truth.
-
-## Findings with figures (non‑map visuals)
-
-Top occupations by average income  
+Top occupations by average income
 ![Top 10 Occupations by Average Income](./Images/Top_Occupations_Avg_Income.png)
 - Specialized roles dominate the top earnings within the $100K+ cohort.
 
-Average income by education level  
+Average income by education level
 ![Average Income by Education Level](./Images/Average_Income_by_Education_Level.png)
-- Higher education levels correlate with higher average incomes; returns appear incremental.
+- Higher education levels correlate with higher average incomes.
 
-Salary distributions for top occupations  
+Salary distributions for top occupations
 ![Salary Distribution for Top Occupations](./Images/Top_10_Salary_Distribution.png)
 - Some roles show tight pay clusters; others exhibit wider dispersion.
 
-Correlation among numeric features  
+Correlation among numeric features
 ![Correlation Heatmap](./Images/Correlation_Annual_Income.png)
-- Employment and jobs-per-1000 co-move; wages co-move as expected. Annual income has weak links to these, implying other drivers (role, geography).
+- Employment and jobs-per-1000 co-move; annual income has weak links to headcount metrics.
 
-Age vs annual income  
+Age vs annual income
 ![Age vs Income](./Images/Age_Annual_Income.png)
-- Income rises early and plateaus later; scatter suggests additional factors influence earnings.
+- Income rises early and plateaus later.
 
-Gender distribution across top occupations  
+Gender distribution across top occupations
 ![Gender by Occupation](./Images/Gender_Distribution_Occupations.png)
-- Mix varies by occupation; some balanced, others skewed.
 
-Gender distribution across top states  
+Gender distribution across top states
 ![Gender by State](./Images/Gender_Distribution_States.png)
-- Large markets dominate headcount; balance differs by state reflecting industry mix.
 
-Gender distribution by education (within $100K+)  
+Gender distribution by education (within $100K+)
 ![Gender by Education](./Images/Gender_Education_Distribution.png)
-- Gender mix differs by education pathways feeding into high-paying jobs.
 
-Distribution of $100K+ individuals by state (bar)  
+Distribution of $100K+ individuals by state
 ![High-Paid Individuals by State](./Images/High_Paid_Individuals_by_State.png)
-- Headcount clusters in large economies and tech/finance hubs.
 
-Average income by state (bar)  
-![Average Income by State (Bar)](./Images/Average_Highest_Income_state_Viz.png)
-- Higher averages appear in states with strong tech/finance presence and higher COL.
+Average income by state
+![Average Income by State](./Images/Average_Highest_Income_state_Viz.png)
 
-Location Quotient by state (bar)  
-![LQ by State (Bar)](./Images/High_Paying_Jobs_LQ_Distribution_Viz.png)
-- Above-average concentration indicates specialized clusters.
+Location Quotient by state
+![LQ by State](./Images/High_Paying_Jobs_LQ_Distribution_Viz.png)
 
-Dominant education level by state (count of states)  
-![Dominant Education by State (Bar)](./Images/Dominant_education_by_state_Viz.png)
-- Most states lean toward higher education levels; some show strong professional/specialized degree presence.
+Dominant education level by state
+![Dominant Education by State](./Images/Dominant_education_by_state_Viz.png)
 
-Education–income premium by state (bar)  
-![Education Premium by State (Bar)](./Images/Education_Income_Premiums_by_State_Viz.png)
-- Premiums vary and tend to be larger where specialized credentials are rewarded.
+Education–income premium by state
+![Education Premium by State](./Images/Education_Income_Premiums_by_State_Viz.png)
 
-Market size vs education premium (scatter)  
+Market size vs education premium
 ![Market Size vs Premium](./Images/Market_Size_Income_Premium_Analysis_Viz.png)
-- Larger markets often show higher premiums, but composition matters more than size.
 
-Average income by US Census region (bar)  
-![Regional Patterns (Bar)](./Images/Regional_Patterns_Analysis_Viz.png)
-- Regions with dense tech/finance ecosystems show higher averages; market share reflects population/economic concentration.
+Average income by US Census region
+![Regional Patterns](./Images/Regional_Patterns_Analysis_Viz.png)
 
 ## Map gallery (choropleths)
 
-Average income by state (map)  
+Average income by state (map)
 ![Average Income by State (Map)](./Images/Average_Highest_Income_state.png)
 
-High‑paying jobs distribution (map)  
-![High‑Paying Jobs Distribution (Map)](./Images/High_Paying_Jobs_Distribution.png)
+High-paying jobs distribution (map)
+![High-Paying Jobs Distribution (Map)](./Images/High_Paying_Jobs_Distribution.png)
 
-Location Quotient by state (map)  
+Location Quotient by state (map)
 ![LQ by State (Map)](./Images/High_Paying_Jobs_LQ_Distribution.png)
 
-Dominant education by state (map)  
+Dominant education by state (map)
 ![Dominant Education by State (Map)](./Images/Dominant_education_by_state.png)
 
-Gender share overlays (map)  
-![Male % (Map)](./Images/Male_Percentage_state.png)  
+Gender share overlays (map)
+![Male % (Map)](./Images/Male_Percentage_state.png)
 ![Female % (Map)](./Images/Female_Percentage_state.png)
 
-Education premium and market dynamics (panels)  
-![Market Size vs Premium (Panels)](./Images/Market_Size_Income_Premium_Analysis.png)
-
-Regional patterns (panels)  
-![Regional Patterns (Panels)](./Images/Regional_Patterns_Analysis.png)
-
-Note: Maps render when GeoPandas+GIS stack is installed. The non-map notebook remains fully runnable without it.
+---
 
 ## Case interpretation and results
 
-Synthesis across all visuals and maps:
-
-- Geographic opportunity vs. concentration
-	- Large economies (CA, NY, TX) lead in absolute high‑income headcount.
-	- Concentration (LQ) is strongest in MD, VA, WA—specialized clusters drive premium roles.
-
-- Education ROI signals
-	- Bachelor’s degrees dominate most states for $100K+ roles.
-	- Master’s is dominant in a handful (SD, MT, NE, MO, WV); Professional dominates ND; Doctoral is not dominant in any state.
-	- Premiums rise with credential intensity, but vary regionally with industry mix.
-
-- Demographic dynamics
-	- Gender participation is uneven across occupations and states; large markets show mixed balance.
-	- Age–income patterns plateau later in career, suggesting role/region drive additional upside.
-
-- Market size vs. premium
-	- Bigger markets often pair with higher education premiums, but composition (tech/finance/healthcare) matters more than just size.
-
-- Correlation overview
-	- Employment and jobs‑per‑1000 move together; wage measures correlate as expected.
-	- Annual income shows weak links to headcount metrics—reinforcing the role of occupation and geography.
-
-These patterns align with the Business Intelligence report’s narrative: opportunity is not uniform; specialty clusters and education alignment amplify outcomes.
+- **Geographic:** Large economies (CA, NY, TX) lead in absolute headcount. Concentration (LQ) peaks in MD, VA, WA — specialized clusters drive premium roles.
+- **Education ROI:** Bachelor's degrees dominate most states for $100K+ roles. Master's is dominant in SD, MT, NE, MO, WV; Professional in ND.
+- **Demographic:** Gender participation is uneven across occupations and states. Age–income patterns plateau later in career.
+- **Market dynamics:** Bigger markets often pair with higher education premiums, but industry composition (tech / finance / healthcare) matters more than market size alone.
+- **Correlations:** Employment and jobs-per-1000 move together. Annual income shows weak correlation with headcount — reinforcing the primacy of occupation and geography.
 
 ### Recommendations
 
-- Job seekers
-	- Target states with strong concentration (LQ) for your field, not just volume.
-	- Align degree investments with target regions and sectors; consider timing to avoid oversaturated markets.
+**Job seekers:** Target states with strong concentration (LQ) for your field, not just volume. Align degree investments with target regions.
 
-- Employers
-	- Calibrate compensation to regional wage dynamics; recruit across clusters where talent density is highest.
-	- Use targeted outreach to improve diversity where gaps exist.
+**Employers:** Calibrate compensation to regional wage dynamics. Recruit across clusters where talent density is highest.
 
-- Policymakers
-	- Direct workforce and education funding toward regional specializations.
-	- Foster mobility pipelines and upskilling for underrepresented demographics.
+**Policymakers:** Direct workforce and education funding toward regional specializations.
 
-### Limitations and next steps
+### Limitations
 
-- The analysis focuses on a single timeframe and nominal incomes (no cost‑of‑living adjustment).
-- Industry deep‑dives and longitudinal trends can refine signals.
-- Future work: add COLA normalization, sector‑specific cuts, and predictive modeling.
+- Analysis covers a single timeframe; nominal incomes (no cost-of-living adjustment applied).
+- No causal inference; descriptive and exploratory focus.
+- Industry deep-dives and longitudinal trends would refine signals.
 
-See `reports/data_science_report.md` for a concise, analyst‑oriented narrative, methods, and next steps.
+See `reports/data_science_report.md` for the full analyst-oriented narrative.
 
-## Data sources & attribution
-
-- U.S. Bureau of Labor Statistics (BLS): state-level Occupational Employment and Wage Statistics (OEWS).
-- U.S. Census Bureau: microdata used for demographics and education fields.
-
-Data are used for educational/analytical purposes. Please consult each provider’s terms for reuse and citation.
+---
 
 ## Repository structure
 
 ```
 High_pay_Analysis_us/
-├── Notebooks
-│   ├── high_pay_jobs_data_cleaning.ipynb          # Pipeline: BLS + Census → cleaned CSV
-│   ├── high_paying_jobs_data_visualization.ipynb  # EDA: distributions, rankings, correlations
-│   ├── us_high_income_jobs_mapping.ipynb          # Geospatial: choropleth maps
-│   └── 04_salary_prediction_model.ipynb           # ★ ML: XGBoost + SHAP + statistical tests
 │
-├── streamlit_app.py                               # ★ Interactive dashboard (run with streamlit)
-├── config.yaml                                    # ★ All thresholds, paths, color palettes
-├── Dockerfile                                     # ★ Multi-stage build: builder → dashboard → api
-├── docker-compose.yml                             # ★ Two services: dashboard (8501) + api (8000)
-├── Makefile                                       # ★ install / data / model / test / lint / clean
+├── pipeline.py                                # ★ Single source of truth: FEATURES + engineer_features
+│
+├── Notebooks
+│   ├── high_pay_jobs_data_cleaning.ipynb      # Pipeline: BLS + Census → cleaned CSV
+│   ├── high_paying_jobs_data_visualization.ipynb  # EDA: distributions, rankings, correlations
+│   ├── us_high_income_jobs_mapping.ipynb      # Geospatial: choropleth maps
+│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests + MLflow
+│
+├── streamlit_app.py                           # ★ Interactive dashboard (run with streamlit)
+├── config.yaml                                # ★ All thresholds, paths, color palettes
+├── Dockerfile                                 # ★ Multi-stage build: dashboard + api (non-root)
+├── docker-compose.yml                         # ★ Two services: dashboard (8501) + api (8000)
+├── Makefile                                   # ★ install / data / model / test / lint / format / clean
+├── pyproject.toml                             # ★ Ruff, mypy, pytest, coverage configuration
+├── .pre-commit-config.yaml                    # ★ ruff, nbstripout, file hygiene hooks
 │
 ├── api/
-│   ├── main.py                                    # ★ FastAPI app: /health /meta /predict
-│   └── schemas.py                                 # ★ Pydantic request/response models
+│   ├── main.py                                # ★ FastAPI app: /health /meta /predict (logging, env CORS)
+│   └── schemas.py                             # ★ Pydantic v2 request/response models
 │
-├── Data/                                          # Processed datasets (single source of truth)
-│   ├── cleaned_high_pay_data.csv                  #   10,255 rows × 15 cols
+├── scripts/
+│   └── train_model.py                         # ★ Standalone model training script (replaces Makefile one-liner)
+│
+├── tests/
+│   ├── conftest.py                            # ★ Shared session-scope fixtures (cfg, df, df_engineered)
+│   ├── test_pipeline.py                       # ★ Config, schema, feature engineering, ML (48 tests)
+│   └── test_api.py                            # ★ API endpoints, validation, prediction (16 tests)
+│
+├── Data/                                      # Processed datasets (single source of truth)
+│   ├── cleaned_high_pay_data.csv              #   10,255 rows × 15 cols
 │   ├── bls_data.csv
 │   └── census_data.csv
 │
-├── Resources/                                     # Raw source data
+├── Resources/                                 # Raw source data
 │   ├── bls_state_data.xlsx
 │   └── census_data.csv
 │
-├── models/                                        # Saved ML model artefacts
-│   ├── xgb_salary_model.pkl                       #   (generated by notebook 4)
+├── models/                                    # Saved ML model artefacts (generated)
+│   ├── xgb_salary_model.pkl
 │   └── feature_names.pkl
 │
-├── Images/                                        # Auto-saved figures (300 DPI, unique names)
-│   ├── [26 EDA/map PNGs from notebooks 2 & 3]
-│   ├── SHAP_Feature_Importance_Bar.png            #   (generated by notebook 4)
-│   ├── SHAP_Beeswarm.png
-│   ├── SHAP_Dependence_Plots.png
-│   └── Residual_Analysis.png
-│
-├── tests/
-│   └── test_pipeline.py                           # ★ pytest unit tests (config, schema, ML)
-│
-├── .github/workflows/
-│   └── ci.yml                                     # ★ GitHub Actions: lint + test on every push
+├── Images/                                    # Auto-saved figures (300 DPI)
 │
 ├── reports/
-│   └── data_science_report.md
+│   └── data_science_report.md                 # Analyst-oriented narrative and findings
 │
-├── us_state/                                      # Shapefiles for mapping (optional)
-├── requirements.txt
-├── config.yaml
-└── LICENSE
+├── .github/workflows/
+│   └── ci.yml                                 # ★ GitHub Actions: lint + test on Python 3.10 & 3.11
+│
+├── requirements.txt                           # Pinned runtime + dev dependencies
+├── requirements-lock.txt                      # pip freeze — exact transitive deps for full reproducibility
+├── CONTRIBUTING.md                            # Contribution guide
+└── LICENSE                                    # MIT
 ```
 
-## Reproducibility and notes
+---
 
-- **Single source of truth:** all four notebooks consume `Data/cleaned_high_pay_data.csv`.
-- **Config-driven:** thresholds, paths, and color palettes live in `config.yaml` — never hardcoded.
-- **Tested:** `pytest tests/` covers data schema, feature engineering, and model performance.
-- **CI/CD:** GitHub Actions runs lint + tests on every push.
-- **Lock file:** run `pip freeze > requirements-lock.txt` for exact version pinning.
-- For narrative details, see `reports/data_science_report.md`.
+## Reproducibility
+
+- **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
+- **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
+- **64 tests:** config, data schema, feature engineering, pipeline constants, and API endpoints.
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11).
+- **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
+- **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
