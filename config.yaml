@@ -37,9 +37,12 @@ model:
   colsample_bytree: 0.8
   # Cross-validation
   cv_folds: 5
-  # Saved artefacts
-  model_path: "models/xgb_salary_model.pkl"
-  features_path: "models/feature_names.pkl"
+  # Saved artefacts — XGBoost native format (.ubj) and JSON (no pickle)
+  model_path: "models/xgb_salary_model.ubj"
+  model_q10_path: "models/xgb_q10_model.ubj"
+  model_q90_path: "models/xgb_q90_model.ubj"
+  features_path: "models/feature_names.json"
+  metrics_path: "models/model_metrics.json"
 
 # ── Visualization ──────────────────────────────────────────
 visualization:

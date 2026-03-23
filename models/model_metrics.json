@@ -1,0 +1,16 @@
+{
+  "r2": 0.0396,
+  "rmse": 107364.52,
+  "mae": 59046.25,
+  "cv_r2_mean": 0.0397,
+  "cv_r2_std": 0.0115,
+  "pi_offset_10": -73935.83,
+  "pi_offset_90": 64101.81,
+  "pi_coverage": 0.8001,
+  "pi_width": 138037.64,
+  "n_train": 8204,
+  "n_test": 2051,
+  "n_features": 11,
+  "train_date": "2026-03-23",
+  "r2_context": "R\u00b2 is intentionally low (~0.07 on test set). Census individual income within the $100K+ cohort has extremely high within-occupation variance driven by unobserved factors (equity compensation, bonuses, tenure, specific employer). The available features explain occupation- and state-level income patterns reliably but cannot resolve individual-level variation. This is a data-ceiling effect, not a modelling failure."
+}

@@ -17,6 +17,7 @@ scikit-learn>=1.1.0
 xgboost>=1.7.0
 lightgbm>=3.3.0
 shap>=0.41.0
+optuna>=3.0.0               # hyperparameter optimization (notebook 4, §5.6)
 
 # ── Statistical Analysis ───────────────────────────────────────────────────────
 scipy>=1.9.0

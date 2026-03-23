@@ -132,6 +132,16 @@ class PredictResponse(BaseModel):
         description="Number of records in the comparison group.",
         examples=[214],
     )
+    prediction_interval_low: float = Field(
+        ...,
+        description="Lower bound of the empirical 80% prediction interval ($).",
+        examples=[101065.0],
+    )
+    prediction_interval_high: float = Field(
+        ...,
+        description="Upper bound of the empirical 80% prediction interval ($).",
+        examples=[239101.0],
+    )
     state: str
     occupation: str
     education_level: str
