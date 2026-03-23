@@ -66,7 +66,7 @@ FEATURES = [
 
 
 @st.cache_resource(show_spinner="Training model (first run)...")
-def get_model(df: pd.DataFrame):
+def get_model(df: pd.DataFrame) -> XGBRegressor:
     model_path = CFG["model"]["model_path"]
     if os.path.exists(model_path):
         with open(model_path, "rb") as f:
@@ -94,7 +94,7 @@ def get_model(df: pd.DataFrame):
 
 
 @st.cache_data(show_spinner=False)
-def get_model_metrics(_model, df: pd.DataFrame) -> dict:
+def get_model_metrics(_model: XGBRegressor, df: pd.DataFrame) -> dict[str, object]:
     X = df[FEATURES]
     y = df["Annual Income"]
     _, X_test, _, y_test = train_test_split(
@@ -113,7 +113,7 @@ def get_model_metrics(_model, df: pd.DataFrame) -> dict:
 
 # ── Sidebar ──────────────────────────────────────────────────────────────────
 
-def sidebar(df: pd.DataFrame):
+def sidebar(df: pd.DataFrame) -> pd.DataFrame:
     st.sidebar.title("💼 Dashboard Controls")
     st.sidebar.markdown("---")
 
@@ -147,7 +147,7 @@ def sidebar(df: pd.DataFrame):
 
 # ── Tab: Overview ────────────────────────────────────────────────────────────
 
-def tab_overview(df: pd.DataFrame):
+def tab_overview(df: pd.DataFrame) -> None:
     st.header("Overview")
 
     # KPI row
@@ -246,7 +246,7 @@ def tab_overview(df: pd.DataFrame):
 
 # ── Tab: Geographic ──────────────────────────────────────────────────────────
 
-def tab_geographic(df: pd.DataFrame):
+def tab_geographic(df: pd.DataFrame) -> None:
     st.header("Geographic Analysis")
 
     metric = st.selectbox(
@@ -320,7 +320,7 @@ def tab_geographic(df: pd.DataFrame):
 
 # ── Tab: Salary Predictor ─────────────────────────────────────────────────────
 
-def tab_predictor(df: pd.DataFrame, model):
+def tab_predictor(df: pd.DataFrame, model: XGBRegressor) -> None:
     st.header("Salary Predictor")
     st.markdown(
         "Enter individual profile details to estimate annual income "
@@ -391,7 +391,7 @@ def tab_predictor(df: pd.DataFrame, model):
 
 # ── Tab: Model Insights ──────────────────────────────────────────────────────
 
-def tab_model(df: pd.DataFrame, model):
+def tab_model(df: pd.DataFrame, model: XGBRegressor) -> None:
     st.header("Model Performance & Feature Importance")
 
     metrics = get_model_metrics(model, df)
@@ -465,7 +465,7 @@ def tab_model(df: pd.DataFrame, model):
 
 # ── Main App ─────────────────────────────────────────────────────────────────
 
-def main():
+def main() -> None:
     st.title("💼 High-Paying Jobs in the US")
     st.markdown(
         "Interactive analysis of high-paying occupations (≥ $100K/yr) "
