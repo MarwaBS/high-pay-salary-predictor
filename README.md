@@ -127,7 +127,7 @@ pre-commit install                 # install git quality hooks
 - **Shared pipeline module:** `pipeline.py` is the single source of truth for feature engineering and feature constants — consumed by the API, dashboard, training script, and all tests (zero duplication).
 - **No pickle:** model stored as XGBoost native binary (`.ubj`); feature list and metrics as plain JSON — portable, version-independent, auditable.
 - **Full DevOps stack:** multi-stage Docker build, Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11), Makefile, `pyproject.toml`, pre-commit hooks.
-- **64 tests** across config validation, data schema, feature engineering, pipeline constants, and API endpoints.
+- **67 tests** across config validation, data schema, feature engineering, pipeline constants, and API endpoints.
 
 ---
 
@@ -394,7 +394,7 @@ High_pay_Analysis_us/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **64 tests:** config, data schema, feature engineering, pipeline constants, and API endpoints.
+- **67 tests:** config, data schema, feature engineering, pipeline constants, and API endpoints.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11).
 - **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.

@@ -35,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
-from pipeline import FEATURES_FULL, REGION_CODES, engineer_features, load_metrics, load_model
+from pipeline import FEATURES_FULL, REGION_CODES, build_feature_row, engineer_features, load_metrics, load_model
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -224,10 +224,18 @@ def predict(req: PredictRequest):
     state_mean = float(df[df["State Abbreviation"] == req.state]["Annual Income"].mean())
 
     # ── Predict ───────────────────────────────────────────────────────────────
-    row = pd.DataFrame(
-        [[req.age, edu_ord, gender_bin, region_code, employment, lq,
-          jobs_k, hourly_mean, annual_mean_w, occ_mean, state_mean]],
-        columns=FEATURES_FULL,
+    row = build_feature_row(
+        age=req.age,
+        edu_ord=edu_ord,
+        gender_bin=gender_bin,
+        region_code=region_code,
+        employment=employment,
+        lq=lq,
+        jobs_k=jobs_k,
+        hourly_mean=hourly_mean,
+        annual_mean_wage=annual_mean_w,
+        occ_mean_income=occ_mean,
+        state_mean_income=state_mean,
     )
     predicted = float(state.model.predict(row)[0])
     logger.debug(

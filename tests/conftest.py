@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from pipeline import engineer_features
+from pipeline import engineer_features, load_model
 
 
 # ---------------------------------------------------------------------------
@@ -52,3 +52,14 @@ def region_map(cfg: dict) -> dict[str, str]:
 def df_engineered(df: pd.DataFrame, edu_order: dict, region_map: dict) -> pd.DataFrame:
     """Dataset with all model-ready derived columns (from pipeline.engineer_features)."""
     return engineer_features(df, edu_order, region_map)
+
+
+@pytest.fixture(scope="session")
+def production_model(cfg: dict):
+    """The trained production XGBoost model loaded from disk.
+
+    Requires 'make model' (or 'python scripts/train_model.py') to have been
+    run first. CI runs that step before pytest.
+    """
+    model_path = Path(__file__).parent.parent / cfg["model"]["model_path"]
+    return load_model(str(model_path))

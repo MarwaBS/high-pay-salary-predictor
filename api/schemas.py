@@ -35,7 +35,13 @@ class PredictRequest(BaseModel):
     )
     gender: str = Field(
         ...,
-        description="Gender ('Male' or 'Female').",
+        description=(
+            "Gender ('Male' or 'Female'). "
+            "**Limitation**: the training data (US Census CPS) uses a binary "
+            "gender coding; non-binary identities are not represented. "
+            "The model encodes this as a binary feature and cannot produce "
+            "meaningful predictions outside this binary."
+        ),
         examples=["Female"],
     )
     age: int = Field(
