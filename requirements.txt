@@ -1,8 +1,38 @@
+# ── Core Data Stack ────────────────────────────────────────────────────────────
 pandas>=1.5.0
 numpy>=1.21.0
+openpyxl>=3.0.0          # Excel I/O for BLS OEWS data
+
+# ── Visualization ──────────────────────────────────────────────────────────────
 matplotlib>=3.5.0
 seaborn>=0.11.0
-jupyter>=1.0.0
-openpyxl>=3.0.0
+plotly>=5.10.0            # Interactive charts in Streamlit
+
+# ── Geospatial ─────────────────────────────────────────────────────────────────
 geopandas>=0.12.0
 pyshp>=2.3.1
+
+# ── Machine Learning ───────────────────────────────────────────────────────────
+scikit-learn>=1.1.0
+xgboost>=1.7.0
+lightgbm>=3.3.0
+shap>=0.41.0
+
+# ── Statistical Analysis ───────────────────────────────────────────────────────
+scipy>=1.9.0
+statsmodels>=0.13.0
+
+# ── Dashboard ─────────────────────────────────────────────────────────────────
+streamlit>=1.20.0
+
+# ── Configuration & Utilities ─────────────────────────────────────────────────
+pyyaml>=6.0              # config.yaml loading
+
+# ── Development & Testing ─────────────────────────────────────────────────────
+jupyter>=1.0.0
+pytest>=7.2.0
+flake8>=6.0.0
+
+# ── Exact versions for full reproducibility (generated with pip freeze) ─────────
+# Run: pip freeze > requirements-lock.txt
+# Install locked env: pip install -r requirements-lock.txt
