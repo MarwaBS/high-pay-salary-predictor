@@ -1,0 +1,119 @@
+---
+# ============================================================
+# Project Configuration — High-Paying Jobs in the US
+# ============================================================
+# All thresholds, paths, and constants live here.
+# Never hardcode these values in notebooks or scripts.
+
+# ── Data Paths ─────────────────────────────────────────────
+data:
+  resources_dir: "Ressources"
+  data_dir: "Data"
+  images_dir: "Images"
+  models_dir: "models"
+  raw_bls: "Ressources/bls_state_data.xlsx"
+  raw_census: "Ressources/census_data.csv"
+  cleaned: "Data/cleaned_high_pay_data.csv"
+  bls_processed: "Data/bls_data.csv"
+  census_processed: "Data/census_data.csv"
+
+# ── Cleaning Thresholds ────────────────────────────────────
+thresholds:
+  # Minimum annual income (Census CPS variable: INCTOT) to be
+  # classified as "high-pay". Equivalent to ~$48.08/hr at 40h/52w.
+  min_annual_income: 100000
+  # Corresponding BLS hourly mean floor (100000 / 2080 hours).
+  min_hourly_mean: 48.08
+
+# ── Model Configuration ────────────────────────────────────
+model:
+  test_size: 0.20
+  random_state: 42
+  # XGBoost hyper-parameters
+  n_estimators: 300
+  max_depth: 6
+  learning_rate: 0.05
+  subsample: 0.8
+  colsample_bytree: 0.8
+  # Cross-validation
+  cv_folds: 5
+  # Saved artefacts
+  model_path: "models/xgb_salary_model.pkl"
+  features_path: "models/feature_names.pkl"
+
+# ── Visualization ──────────────────────────────────────────
+visualization:
+  dpi: 300
+  figure_size: [12, 6]
+  colors:
+    money_seq: "Blues"
+    count_seq: "Greys"
+    gender_male: "#2196F3"
+    gender_female: "#E91E63"
+    accent: "#FF6F00"
+
+# ── Education Ordinal Mapping ──────────────────────────────
+# Used for both analysis and model feature encoding.
+education_order:
+  "Bachelor's degree": 1
+  "Master's degree": 2
+  "Professional degree": 3
+  "Doctoral degree": 4
+
+# ── Census Regional Classification ────────────────────────
+# US Census Bureau four-region schema.
+regions:
+  Northeast:
+    - CT
+    - ME
+    - MA
+    - NH
+    - RI
+    - VT
+    - NJ
+    - NY
+    - PA
+  Midwest:
+    - IL
+    - IN
+    - MI
+    - OH
+    - WI
+    - IA
+    - KS
+    - MN
+    - MO
+    - NE
+    - ND
+    - SD
+  South:
+    - DE
+    - FL
+    - GA
+    - MD
+    - NC
+    - SC
+    - VA
+    - WV
+    - AL
+    - KY
+    - MS
+    - TN
+    - AR
+    - LA
+    - OK
+    - TX
+  West:
+    - AZ
+    - CO
+    - ID
+    - MT
+    - NV
+    - NM
+    - UT
+    - WY
+    - AK
+    - CA
+    - HI
+    - OR
+    - WA
