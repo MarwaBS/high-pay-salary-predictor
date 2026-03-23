@@ -1,0 +1,43 @@
+# .pre-commit-config.yaml
+# ──────────────────────────────────────────────────────────────────────────────
+# Automated quality gates that run on every `git commit`.
+#
+# Install hooks once after cloning:
+#   pip install pre-commit
+#   pre-commit install
+#
+# Run manually against all files:
+#   pre-commit run --all-files
+# ──────────────────────────────────────────────────────────────────────────────
+
+repos:
+
+  # ── Ruff: fast linter + formatter (replaces flake8 + black + isort) ─────────
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.9.9
+    hooks:
+      - id: ruff
+        args: [--fix]           # auto-fix safe issues (imports, unused vars, etc.)
+      - id: ruff-format         # opinionated formatter (Black-compatible)
+
+  # ── General file hygiene ─────────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=5000]    # block accidental data file commits > 5 MB
+      - id: debug-statements    # catch leftover pdb / breakpoint() calls
+      - id: detect-private-key  # block accidental secret commits
+
+  # ── Notebook cleanliness (strip output before committing) ───────────────────
+  - repo: https://github.com/kynan/nbstripout
+    rev: 0.8.1
+    hooks:
+      - id: nbstripout
+        # Removes cell outputs so notebooks stay diff-friendly in git.
+        # Outputs are regenerated locally by running the notebook.
