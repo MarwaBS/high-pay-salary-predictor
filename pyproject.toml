@@ -35,11 +35,27 @@ indent-style = "space"
 
 # ── Mypy (static type checker) ────────────────────────────────────────────────
 [tool.mypy]
-python_version         = "3.10"
+python_version      = "3.10"
+warn_return_any     = true
+warn_unused_configs = true
+exclude             = [".venv", "build", "mlruns"]
+
+# Third-party packages without bundled stubs — ignore missing imports only for these.
+[[tool.mypy.overrides]]
+module = [
+    "xgboost.*",
+    "lightgbm.*",
+    "sklearn.*",
+    "mlflow.*",
+    "shap.*",
+    "plotly.*",
+    "streamlit.*",
+    "yaml",
+    "scipy.*",
+    "statsmodels.*",
+    "nbformat.*",
+]
 ignore_missing_imports = true
-warn_return_any        = true
-warn_unused_configs    = true
-exclude                = [".venv", "build", "mlruns"]
 
 # ── Pytest ────────────────────────────────────────────────────────────────────
 [tool.pytest.ini_options]
@@ -57,4 +73,4 @@ omit    = ["tests/*", ".venv/*", "mlruns/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under   = 60
+fail_under   = 75

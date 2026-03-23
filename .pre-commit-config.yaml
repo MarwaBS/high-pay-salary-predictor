@@ -34,6 +34,14 @@ repos:
       - id: debug-statements    # catch leftover pdb / breakpoint() calls
       - id: detect-private-key  # block accidental secret commits
 
+  # ── Mypy static type checker ─────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.11.2
+    hooks:
+      - id: mypy
+        files: ^(pipeline\.py|api/|scripts/)
+        additional_dependencies: [pandas-stubs, types-PyYAML]
+
   # ── Notebook cleanliness (strip output before committing) ───────────────────
   - repo: https://github.com/kynan/nbstripout
     rev: 0.8.1
