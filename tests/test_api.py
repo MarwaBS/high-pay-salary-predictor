@@ -98,6 +98,21 @@ class TestPredict:
         for field in ("group_median", "group_mean", "group_size"):
             assert field in data, f"Missing field: {field}"
 
+    def test_predict_returns_prediction_interval(self, client):
+        data = client.post("/predict", json=self.BASE_PAYLOAD).json()
+        assert "prediction_interval_low" in data
+        assert "prediction_interval_high" in data
+
+    def test_predict_interval_ordered(self, client):
+        """Lower PI bound must be less than the upper PI bound."""
+        data = client.post("/predict", json=self.BASE_PAYLOAD).json()
+        assert data["prediction_interval_low"] < data["prediction_interval_high"]
+
+    def test_predict_interval_contains_prediction(self, client):
+        """Predicted salary should lie within the empirical 80% PI."""
+        data = client.post("/predict", json=self.BASE_PAYLOAD).json()
+        assert data["prediction_interval_low"] <= data["predicted_salary"] <= data["prediction_interval_high"]
+
     def test_predict_echoes_inputs(self, client):
         data = client.post("/predict", json=self.BASE_PAYLOAD).json()
         assert data["state"] == "CA"
