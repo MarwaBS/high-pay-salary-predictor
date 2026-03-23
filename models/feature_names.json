@@ -1,0 +1,13 @@
+[
+  "Age",
+  "Education_Ord",
+  "Gender_Bin",
+  "Region_Code",
+  "Employment",
+  "Location Quotient",
+  "Jobs per 1000",
+  "Hourly Mean",
+  "Annual Mean Wage",
+  "Occ_Mean_Income",
+  "State_Mean_Income"
+]
