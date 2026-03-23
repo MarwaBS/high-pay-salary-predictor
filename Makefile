@@ -11,6 +11,7 @@
 #   make dashboard — launch Streamlit on http://localhost:8501
 #   make api      — launch FastAPI on http://localhost:8000
 #   make docker   — build and start both services with Docker Compose
+#   make mlflow   — launch MLflow tracking UI on http://localhost:5000
 #   make clean    — remove generated artefacts (models, images, cache)
 #   make clean-all — clean + remove the virtual environment
 # ============================================================
@@ -48,6 +49,7 @@ help:
 	@echo "  dashboard  Launch Streamlit dashboard (port 8501)"
 	@echo "  api        Launch FastAPI server (port 8000)"
 	@echo "  docker     Build and start both services with Docker Compose"
+	@echo "  mlflow     Launch MLflow tracking UI (port 5000)"
 	@echo "  clean      Remove generated artefacts (models, cache, .pyc)"
 	@echo "  clean-all  clean + remove .venv"
 	@echo ""
@@ -155,6 +157,13 @@ docker:
 .PHONY: docker-down
 docker-down:
 	docker compose down
+
+# ── MLflow UI ────────────────────────────────────────────────────────────────
+.PHONY: mlflow
+mlflow: install
+	@echo ">>> Launching MLflow UI on http://localhost:5000 ..."
+	@echo ">>> Run notebook 4 first to populate experiment runs."
+	$(VENV)/bin/mlflow ui --backend-store-uri mlruns --host 0.0.0.0 --port 5000
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 .PHONY: clean
