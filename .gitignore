@@ -161,7 +161,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Trained model artefacts (auto-generated on first run; not source)
+# Legacy pickle artefacts (project now uses XGBoost native .ubj + JSON — no pickle)
 models/*.pkl
 
 # MLflow experiment tracking data (auto-generated)
