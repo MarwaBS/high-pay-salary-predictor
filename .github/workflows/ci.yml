@@ -37,6 +37,10 @@ jobs:
         run: |
           ruff format --check .
 
+      - name: Train model (required by API + TestModelPrediction)
+        run: |
+          python scripts/train_model.py
+
       - name: Run pytest (67 tests)
         run: |
           pytest tests/ -v --tb=short

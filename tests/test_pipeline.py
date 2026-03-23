@@ -176,51 +176,32 @@ class TestPipelineConstants:
 # ── Model Prediction Tests ─────────────────────────────────────────────────────
 
 class TestModelPrediction:
-    @pytest.fixture
-    def trained_model(self, df_engineered):
-        """Train a regularized model on FEATURES_FULL for prediction tests.
+    """Tests against the production model loaded from disk.
 
-        Uses shallow trees and L2 regularization to reduce overfitting.
-        Individual Census income within the $100K+ cohort has very high
-        within-occupation variance, so a deep unregularized model memorizes
-        training data but generalizes poorly.
-        """
-        from sklearn.model_selection import train_test_split
-        from xgboost import XGBRegressor
+    The model is trained by scripts/train_model.py (run via 'make model').
+    CI runs that step before pytest so the artefact is always present.
+    Testing the production model (rather than re-training a toy one) catches
+    hyperparameter regressions and artefact-format changes.
+    """
 
-        X = df_engineered[FEATURES_FULL]
-        y = df_engineered["Annual Income"]
-        X_train, _, y_train, _ = train_test_split(X, y, test_size=0.2, random_state=42)
-        model = XGBRegressor(
-            n_estimators=100,
-            max_depth=3,
-            learning_rate=0.1,
-            reg_lambda=10.0,
-            reg_alpha=1.0,
-            random_state=42,
-            n_jobs=-1,
-        )
-        model.fit(X_train, y_train)
-        return model
-
-    def test_model_outputs_float(self, trained_model, df_engineered):
+    def test_model_outputs_float(self, production_model, df_engineered):
         row = df_engineered[FEATURES_FULL].iloc[[0]]
-        pred = trained_model.predict(row)
+        pred = production_model.predict(row)
         assert isinstance(pred[0], (float, np.floating))
 
-    def test_prediction_above_zero(self, trained_model, df_engineered):
+    def test_prediction_above_zero(self, production_model, df_engineered):
         X = df_engineered[FEATURES_FULL].head(50)
-        preds = trained_model.predict(X)
+        preds = production_model.predict(X)
         assert (preds > 0).all()
 
-    def test_prediction_plausible_range(self, trained_model, df_engineered):
+    def test_prediction_plausible_range(self, production_model, df_engineered):
         X = df_engineered[FEATURES_FULL].head(200)
-        preds = trained_model.predict(X)
+        preds = production_model.predict(X)
         assert preds.min() > 10_000, "Predictions unrealistically low"
         assert preds.max() < 5_000_000, "Predictions unrealistically high"
 
-    def test_r2_above_floor(self, trained_model, df_engineered):
-        """Model should explain at least 8% of variance on the test set.
+    def test_r2_above_floor(self, production_model, df_engineered):
+        """Production model should explain at least 8% of variance on the test set.
 
         Individual Census income within the $100K+ cohort has extremely high
         within-occupation variance ($100K to $1M+). The available features
@@ -235,8 +216,8 @@ class TestModelPrediction:
         X = df_engineered[FEATURES_FULL]
         y = df_engineered["Annual Income"]
         _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        r2 = r2_score(y_test, trained_model.predict(X_test))
+        r2 = r2_score(y_test, production_model.predict(X_test))
         assert r2 > 0.08, f"R² too low: {r2:.4f}"
 
-    def test_feature_count_matches(self, trained_model):
-        assert trained_model.n_features_in_ == len(FEATURES_FULL)
+    def test_feature_count_matches(self, production_model):
+        assert production_model.n_features_in_ == len(FEATURES_FULL)

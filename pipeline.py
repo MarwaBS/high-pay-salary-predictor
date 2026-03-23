@@ -5,6 +5,7 @@ Single source of truth for:
   - Feature constants (FEATURES_FULL, FEATURES_DEMO, REGION_CODES)
   - Feature-engineering function (engineer_features)
   - Model save / load helpers (no pickle — XGBoost native + JSON)
+  - build_feature_row helper (shared by API + dashboard)
 
 Shared across the entire project:
 
@@ -19,7 +20,11 @@ and ensures every layer of the stack uses an identical feature set.
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
+from xgboost import XGBRegressor
 
 # ---------------------------------------------------------------------------
 # Feature sets
@@ -74,6 +79,15 @@ REGION_CODES: dict[str, int] = {
 # Feature engineering
 # ---------------------------------------------------------------------------
 
+_REQUIRED_COLUMNS: list[str] = [
+    "Education Level",
+    "Gender",
+    "State Abbreviation",
+    "Occupation",
+    "Annual Income",
+]
+
+
 def engineer_features(
     df: pd.DataFrame,
     edu_order: dict[str, int],
@@ -95,7 +109,15 @@ def engineer_features(
     df         : raw or cleaned dataset (must contain the standard columns)
     edu_order  : mapping from education label → ordinal integer (from config.yaml)
     region_map : mapping from state abbreviation → region label (from config.yaml)
+
+    Raises
+    ------
+    ValueError  if any required column is missing from *df*.
     """
+    missing = [c for c in _REQUIRED_COLUMNS if c not in df.columns]
+    if missing:
+        raise ValueError(f"engineer_features: missing required columns: {missing}")
+
     out = df.copy()
     out["Education_Ord"] = out["Education Level"].map(edu_order)
     out["Gender_Bin"] = (out["Gender"] == "Male").astype(int)
@@ -113,31 +135,68 @@ def engineer_features(
 
 
 # ---------------------------------------------------------------------------
+# Shared prediction helper — eliminates duplication between API and dashboard
+# ---------------------------------------------------------------------------
+
+def build_feature_row(
+    *,
+    age: int,
+    edu_ord: int,
+    gender_bin: int,
+    region_code: int,
+    employment: float,
+    lq: float,
+    jobs_k: float,
+    hourly_mean: float,
+    annual_mean_wage: float,
+    occ_mean_income: float,
+    state_mean_income: float,
+) -> pd.DataFrame:
+    """Return a single-row DataFrame ready for model.predict().
+
+    All callers (api/main.py, streamlit_app.py) must go through this
+    function so the column order always matches FEATURES_FULL.
+    """
+    return pd.DataFrame(
+        [[age, edu_ord, gender_bin, region_code, employment, lq,
+          jobs_k, hourly_mean, annual_mean_wage, occ_mean_income, state_mean_income]],
+        columns=FEATURES_FULL,
+    )
+
+
+# ---------------------------------------------------------------------------
 # Model persistence — no pickle
 # ---------------------------------------------------------------------------
 # Pickle is Python-version-sensitive and can execute arbitrary code on load.
 # We use XGBoost's native binary format (.ubj) for models and plain JSON
 # for the feature list and metrics, making artefacts portable and auditable.
 
-def save_model(model, path: str) -> None:
+def save_model(model: XGBRegressor, path: str) -> None:
     """Save an XGBoost model using its native binary format (.ubj)."""
-    from pathlib import Path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     model.save_model(path)
 
 
-def load_model(path: str):
-    """Load an XGBoost model from its native binary format."""
-    from xgboost import XGBRegressor
+def load_model(path: str) -> XGBRegressor:
+    """Load an XGBoost model from its native binary format.
+
+    Raises
+    ------
+    FileNotFoundError  if *path* does not exist (e.g. model not yet trained).
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Model artefact not found: {p}. "
+            "Run 'make model' (or 'python scripts/train_model.py') to generate it."
+        )
     m = XGBRegressor()
-    m.load_model(path)
+    m.load_model(str(p))
     return m
 
 
 def save_features(features: list[str], path: str) -> None:
     """Persist the feature name list as plain JSON."""
-    import json
-    from pathlib import Path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(features, f, indent=2)
@@ -145,15 +204,12 @@ def save_features(features: list[str], path: str) -> None:
 
 def load_features(path: str) -> list[str]:
     """Load the feature name list from JSON."""
-    import json
     with open(path) as f:
         return json.load(f)
 
 
 def save_metrics(metrics: dict, path: str) -> None:
     """Persist model evaluation metrics as plain JSON."""
-    import json
-    from pathlib import Path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(metrics, f, indent=2)
@@ -161,8 +217,6 @@ def save_metrics(metrics: dict, path: str) -> None:
 
 def load_metrics(path: str) -> dict:
     """Load model evaluation metrics from JSON. Returns empty dict on missing file."""
-    import json
-    from pathlib import Path
     if not Path(path).exists():
         return {}
     with open(path) as f:

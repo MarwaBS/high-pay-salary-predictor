@@ -5,6 +5,7 @@ Streamlit app: EDA explorer + ML salary predictor.
 Run: streamlit run streamlit_app.py
 """
 import warnings
+from pathlib import Path
 
 import pandas as pd
 import plotly.express as px
@@ -12,7 +13,7 @@ import plotly.graph_objects as go
 import streamlit as st
 import yaml
 
-from pipeline import FEATURES_FULL, REGION_CODES, engineer_features, load_metrics, load_model
+from pipeline import FEATURES_FULL, REGION_CODES, build_feature_row, engineer_features, load_metrics, load_model
 
 warnings.filterwarnings("ignore")
 
@@ -24,7 +25,8 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-with open("config.yaml") as f:
+_CFG_PATH = Path(__file__).parent / "config.yaml"
+with open(_CFG_PATH) as f:
     CFG = yaml.safe_load(f)
 
 EDU_ORDER = CFG["education_order"]
@@ -312,10 +314,18 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
         occ_mean = float(df[df["Occupation"] == occupation]["Annual Income"].mean())
         state_mean_val = float(df[df["State Abbreviation"] == state]["Annual Income"].mean())
 
-        row = pd.DataFrame(
-            [[age, edu_ord, gender_bin, region_code, employment, lq,
-              jobs_k, hourly_mean, annual_mean, occ_mean, state_mean_val]],
-            columns=FEATURES_FULL,
+        row = build_feature_row(
+            age=age,
+            edu_ord=edu_ord,
+            gender_bin=gender_bin,
+            region_code=region_code,
+            employment=employment,
+            lq=lq,
+            jobs_k=jobs_k,
+            hourly_mean=hourly_mean,
+            annual_mean_wage=annual_mean,
+            occ_mean_income=occ_mean,
+            state_mean_income=state_mean_val,
         )
         prediction = float(model.predict(row)[0])
 
