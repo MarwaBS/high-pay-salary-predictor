@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+# ── Project metadata ──────────────────────────────────────────────────────────
+[project]
+name            = "high-pay-analysis-us"
+version         = "1.0.0"
+description     = "End-to-end data science pipeline for US high-paying jobs ($100K+)"
+readme          = "README.md"
+license         = {file = "LICENSE"}
+requires-python = ">=3.10"
+
+# ── Ruff (linter + formatter, replaces flake8 + black + isort) ───────────────
+[tool.ruff]
+line-length    = 120
+target-version = "py310"
+exclude        = [".venv", "__pycache__", "*.ipynb", "mlruns", "build", "dist"]
+
+[tool.ruff.lint]
+# E/W = pycodestyle  F = pyflakes  I = isort  UP = pyupgrade  B = flake8-bugbear
+select   = ["E", "W", "F", "I", "UP", "B"]
+ignore   = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # do not perform function calls in default arguments (FastAPI pattern)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*"    = ["S101"]   # allow assert in tests
+"scripts/*"  = ["T201"]   # allow print in scripts
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+# ── Mypy (static type checker) ────────────────────────────────────────────────
+[tool.mypy]
+python_version         = "3.10"
+ignore_missing_imports = true
+warn_return_any        = true
+warn_unused_configs    = true
+exclude                = [".venv", "build", "mlruns"]
+
+# ── Pytest ────────────────────────────────────────────────────────────────────
+[tool.pytest.ini_options]
+testpaths   = ["tests"]
+addopts     = "-v --tb=short"
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::UserWarning",
+]
+
+# ── Coverage ──────────────────────────────────────────────────────────────────
+[tool.coverage.run]
+source  = ["api", "pipeline", "scripts"]
+omit    = ["tests/*", ".venv/*", "mlruns/*"]
+
+[tool.coverage.report]
+show_missing = true
+fail_under   = 60

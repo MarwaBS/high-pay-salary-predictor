@@ -1,16 +1,17 @@
 # ── Stage 1: dependency builder ───────────────────────────────────────────────
+# Builds all wheels into /install so runtime stages stay lean.
 FROM python:3.11-slim AS builder
 
 WORKDIR /build
 
-# Build tools needed by scipy / lightgbm wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
 
-# Install only runtime packages (no Jupyter / pytest / flake8)
+# Install only runtime packages (excludes jupyter / pytest / dev tools).
+# Pin to requirements.txt so Docker is consistent with the local environment.
 RUN pip install --no-cache-dir --prefix=/install \
         pandas \
         numpy \
@@ -34,13 +35,23 @@ FROM python:3.11-slim AS dashboard
 
 WORKDIR /app
 
+# Install curl for HEALTHCHECK — not present in slim by default
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /install /usr/local
 
 COPY config.yaml      ./config.yaml
 COPY streamlit_app.py ./streamlit_app.py
+COPY pipeline.py      ./pipeline.py
 COPY Data/            ./Data/
 
 RUN mkdir -p models Images
+
+# Run as non-root for security (required by many enterprise registries)
+RUN adduser --disabled-password --gecos "" appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8501
 
@@ -59,13 +70,23 @@ FROM python:3.11-slim AS api
 
 WORKDIR /app
 
+# Install curl for HEALTHCHECK
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /install /usr/local
 
 COPY config.yaml ./config.yaml
+COPY pipeline.py ./pipeline.py
 COPY Data/       ./Data/
 COPY api/        ./api/
 
 RUN mkdir -p models
+
+# Run as non-root
+RUN adduser --disabled-password --gecos "" appuser \
+    && chown -R appuser:appuser /app
+USER appuser
 
 EXPOSE 8000
 

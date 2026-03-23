@@ -14,14 +14,20 @@ Run locally:
 
 Docker (via docker-compose):
   docker compose up api
+
+Environment variables:
+  CORS_ORIGINS   Comma-separated list of allowed origins.
+                 Defaults to "*" (open) — restrict in production.
+                 Example: CORS_ORIGINS=https://myapp.com,https://staging.myapp.com
 """
+import logging
 import os
 import pickle
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import numpy as np
+import numpy as np  # noqa: F401 — kept for type narrowing in callers
 import pandas as pd
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -31,6 +37,16 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
+from pipeline import FEATURES_FULL, REGION_CODES, engineer_features
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -42,25 +58,11 @@ with open(ROOT / "config.yaml") as f:
 EDU_ORDER = CFG["education_order"]
 REGION_MAP = {s: r for r, states in CFG["regions"].items() for s in states}
 
-FEATURES = [
-    "Age",
-    "Education_Ord",
-    "Gender_Bin",
-    "Region_Code",
-    "Employment",
-    "Location Quotient",
-    "Jobs per 1000",
-    "Hourly Mean",
-    "Annual Mean Wage",
-    "Occ_Mean_Income",
-    "State_Mean_Income",
-]
-
 VALID_EDUCATION = list(EDU_ORDER.keys())
 VALID_STATES = list({s for states in CFG["regions"].values() for s in states})
 
-
 # ── Application state (loaded once at startup) ────────────────────────────────
+
 
 class AppState:
     df: pd.DataFrame = None
@@ -77,14 +79,15 @@ def _load_or_train_model(df: pd.DataFrame):
     model_path = ROOT / CFG["model"]["model_path"]
 
     if model_path.exists():
+        logger.info("Loading model from %s", model_path)
         with open(model_path, "rb") as f:
             return pickle.load(f)
 
-    # Train on the fly (first run in a fresh environment)
+    logger.info("No saved model found — training from scratch (first run)")
     from sklearn.model_selection import train_test_split
     from xgboost import XGBRegressor
 
-    X = df[FEATURES]
+    X = df[FEATURES_FULL]
     y = df["Annual Income"]
     X_train, _, y_train, _ = train_test_split(
         X, y,
@@ -107,23 +110,8 @@ def _load_or_train_model(df: pd.DataFrame):
     with open(model_path, "wb") as f:
         pickle.dump(model, f)
 
+    logger.info("Model trained and saved to %s", model_path)
     return model
-
-
-def _engineer_features(df: pd.DataFrame) -> pd.DataFrame:
-    """Add derived columns required by the model."""
-    out = df.copy()
-    out["Education_Ord"] = out["Education Level"].map(EDU_ORDER)
-    out["Gender_Bin"] = (out["Gender"] == "Male").astype(int)
-    out["Region"] = out["State Abbreviation"].map(REGION_MAP)
-    out["Region_Code"] = pd.Categorical(out["Region"]).codes
-    out["Occ_Mean_Income"] = (
-        out.groupby("Occupation")["Annual Income"].transform("mean")
-    )
-    out["State_Mean_Income"] = (
-        out.groupby("State Abbreviation")["Annual Income"].transform("mean")
-    )
-    return out
 
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
@@ -131,22 +119,34 @@ def _engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── startup ──
+    logger.info("Starting up: loading dataset and model…")
     df_raw = pd.read_csv(ROOT / CFG["data"]["cleaned"])
-    df_eng = _engineer_features(df_raw)
+    df_eng = engineer_features(df_raw, EDU_ORDER, REGION_MAP)
 
     state.df = df_eng
     state.model = _load_or_train_model(df_eng)
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
-    state.region_codes = {
-        r: code
-        for code, r in enumerate(sorted(df_eng["Region"].dropna().unique()))
-    }
+    # Use the same deterministic mapping as pipeline.REGION_CODES
+    state.region_codes = REGION_CODES
+
+    logger.info(
+        "Ready — dataset rows: %d, occupations: %d, model features: %d",
+        len(df_eng),
+        len(state.occupations),
+        state.model.n_features_in_,
+    )
 
     yield
-    # ── shutdown (nothing to clean up) ──
+    # ── shutdown ──
+    logger.info("Shutting down.")
 
 
 # ── App ───────────────────────────────────────────────────────────────────────
+
+# Allow CORS origins to be configured via environment variable so the same
+# Docker image works in dev ("*") and production (explicit allow-list).
+_raw_origins = os.getenv("CORS_ORIGINS", "*")
+CORS_ORIGINS = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
 
 app = FastAPI(
     title="US High-Pay Salary Predictor",
@@ -160,7 +160,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
@@ -236,16 +236,16 @@ async def predict(req: PredictRequest):
     if len(subset) == 0:
         subset = df  # final fallback: global medians
 
-    employment    = req.employment     if req.employment     is not None else float(subset["Employment"].median())
-    lq            = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
-    jobs_k        = req.jobs_per_1000  if req.jobs_per_1000  is not None else float(subset["Jobs per 1000"].median())
-    hourly_mean   = req.hourly_mean    if req.hourly_mean    is not None else float(subset["Hourly Mean"].median())
-    annual_mean_w = req.annual_mean_wage if req.annual_mean_wage is not None else float(subset["Annual Mean Wage"].median())
+    employment    = req.employment           if req.employment           is not None else float(subset["Employment"].median())
+    lq            = req.location_quotient    if req.location_quotient    is not None else float(subset["Location Quotient"].median())
+    jobs_k        = req.jobs_per_1000        if req.jobs_per_1000        is not None else float(subset["Jobs per 1000"].median())
+    hourly_mean   = req.hourly_mean          if req.hourly_mean          is not None else float(subset["Hourly Mean"].median())
+    annual_mean_w = req.annual_mean_wage     if req.annual_mean_wage     is not None else float(subset["Annual Mean Wage"].median())
 
     # ── Encode categorical inputs ─────────────────────────────────────────────
     edu_ord     = EDU_ORDER[req.education_level]
     gender_bin  = 1 if req.gender == "Male" else 0
-    region      = REGION_MAP.get(req.state, "South")  # default fallback
+    region      = REGION_MAP.get(req.state, "South")
     region_code = state.region_codes.get(region, 0)
 
     occ_mean   = float(df[df["Occupation"] == req.occupation]["Annual Income"].mean())
@@ -255,9 +255,13 @@ async def predict(req: PredictRequest):
     row = pd.DataFrame(
         [[req.age, edu_ord, gender_bin, region_code, employment, lq,
           jobs_k, hourly_mean, annual_mean_w, occ_mean, state_mean]],
-        columns=FEATURES,
+        columns=FEATURES_FULL,
     )
     predicted = float(state.model.predict(row)[0])
+    logger.debug(
+        "Prediction: state=%s occ=%s edu=%s gender=%s age=%d → $%.0f",
+        req.state, req.occupation, req.education_level, req.gender, req.age, predicted,
+    )
 
     # ── Contextual benchmarks ─────────────────────────────────────────────────
     group = df[
@@ -266,15 +270,15 @@ async def predict(req: PredictRequest):
     ]["Annual Income"]
 
     if len(group) > 0:
-        percentile = float((group < predicted).mean() * 100)
+        percentile   = float((group < predicted).mean() * 100)
         group_median = float(group.median())
-        group_mean = float(group.mean())
-        group_size = len(group)
+        group_mean   = float(group.mean())
+        group_size   = len(group)
     else:
-        percentile = 50.0
+        percentile   = 50.0
         group_median = float(df["Annual Income"].median())
-        group_mean = float(df["Annual Income"].mean())
-        group_size = 0
+        group_mean   = float(df["Annual Income"].mean())
+        group_size   = 0
 
     return PredictResponse(
         predicted_salary=round(predicted, 2),

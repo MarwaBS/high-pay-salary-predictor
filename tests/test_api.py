@@ -30,7 +30,7 @@ class TestHealth:
         assert r.status_code == 200
 
     def test_health_model_loaded(self, client):
-        data = r = client.get("/health").json()
+        data = client.get("/health").json()
         assert data["model_loaded"] is True
 
     def test_health_dataset_rows(self, client):

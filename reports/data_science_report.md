@@ -1,83 +1,159 @@
-# High-Paying Jobs in the US — Data Analysis Report
+# High-Paying Jobs in the US — Data Science Report
 
 ## 1. Problem statement and goals
 
-Analyze the landscape of high-paying jobs (≥ $100K) across US states to answer:
-- Where are high-paying roles most prevalent and most concentrated?
-- How does education level relate to high-income participation and premiums?
-- What demographic patterns (gender, age) are present within the $100K+ cohort?
-- How do market size and specialization interact with income outcomes?
+Analyze the landscape of high-paying jobs (≥ $100K/yr) across all 50 US states to answer:
 
-Deliverables: clean dataset, reproducible notebooks, figures, and a concise set of insights with technical notes and next steps.
+- Where are high-paying roles most prevalent and most geographically concentrated?
+- How does education level relate to high-income participation and income premiums?
+- What demographic patterns (gender, age) are present within the $100K+ cohort?
+- Can individual salary be predicted from demographic and occupational features?
+- Which features drive predictions the most (global + local explainability)?
+
+**Deliverables:** cleaned dataset, reproducible notebooks, statistical hypothesis tests,
+XGBoost salary predictor with SHAP explainability, MLflow experiment tracking,
+FastAPI serving layer, interactive Streamlit dashboard, and full DevOps stack.
+
+---
 
 ## 2. Data sources and scope
 
-- Unified dataset: Data/cleaned_high_pay_data.csv (shape ~10k+ × 15)
-- Sources integrated:
-  - Bureau of Labor Statistics (BLS): wages, employment, location quotient (LQ) by occupation/state
-  - US Census: demographics, education, occupation microdata
-- Unit of analysis: individual records aligned with occupation-state wage context
+| Source | Content | Raw file |
+|--------|---------|---------|
+| BLS OEWS | Wages, employment, location quotient by occupation/state | `Resources/bls_state_data.xlsx` |
+| US Census | Demographics, education, occupation microdata | `Resources/census_data.csv` |
 
-Final schema (selected):
-State Abbreviation, State, Gender, Age, Education Code, Education Level, Degree Field, Occupation Code, Occupation, Annual Income, Employment, Location Quotient, Jobs per 1000, Hourly Mean, Annual Mean Wage.
+**Unified dataset:** `Data/cleaned_high_pay_data.csv`
+- Shape: 10,255 rows × 15 columns
+- Unit of analysis: individual Census records matched with occupation-state BLS wage context
 
-## 3. Data preparation (summary)
+**Final schema:** State Abbreviation, State, Gender, Age, Education Code, Education Level,
+Degree Field, Occupation Code, Occupation, Annual Income, Employment, Location Quotient,
+Jobs per 1000, Hourly Mean, Annual Mean Wage.
 
-Implemented in high_pay_jobs_data_cleaning.ipynb:
-- BLS: string normalization; OCC_CODE de-hyphenation; numeric casting; exclude territories; filter high-pay cohort (A_MEAN ≥ 100000 or H_MEAN ≥ 48.08); rename AREA_TITLE → STATE.
-- Census: extract zero-padded SOC from OCCSOC; decode SEX/STATEICP/EDUCD/DEGFIELDD; drop missing key fields; rename OCCSOC → OCC_CODE.
-- Integration: inner join on [OCC_CODE, STATE]; reorder/rename columns; drop duplicates; save to Data/cleaned_high_pay_data.csv.
+---
 
-Reproducibility: see the cleaning notebook for exact code and outputs.
+## 3. Data preparation
+
+*Implemented in `high_pay_jobs_data_cleaning.ipynb`.*
+
+**BLS cleaning:**
+- Normalize strings; drop invalid OCC_CODE; cast numerics; exclude territories
+- Filter high-pay cohort: `A_MEAN ≥ 100,000` or `H_MEAN ≥ 48.08` (≈$100K annualized)
+
+**Census cleaning:**
+- Extract 6-digit SOC from OCCSOC; decode SEX / STATEICP / EDUCD / DEGFIELDD
+- Drop rows with missing key fields
+
+**Integration:**
+- Inner join on `[OCC_CODE, STATE]`; reorder/rename columns; drop duplicates
+- Final: `Data/cleaned_high_pay_data.csv` (10,255 × 15)
+
+---
 
 ## 4. Methods
 
-- Exploratory data analysis (EDA): descriptive statistics, grouped aggregations.
-- Visual analytics:
-  - Non-map figures (bars, distributions, correlations) in high_paying_jobs_data_visualization.ipynb
-  - Choropleths and state-level maps in us_high_income_jobs_mapping.ipynb (optional GeoPandas)
-- Geospatial: choropleth rendering with GeoPandas; fallback static export if GIS stack is missing.
+| Phase | Technique | Notebook |
+|-------|-----------|---------|
+| EDA | Descriptive stats, grouped aggregations, distribution plots | `high_paying_jobs_data_visualization.ipynb` |
+| Geospatial | Choropleth maps (GeoPandas + pyshp fallback) | `us_high_income_jobs_mapping.ipynb` |
+| Statistical tests | ANOVA, Welch t-test, Tukey HSD post-hoc | `04_salary_prediction_model.ipynb` |
+| Baseline model | Ridge Regression | `04_salary_prediction_model.ipynb` |
+| Primary model | XGBoost with 5-fold cross-validation | `04_salary_prediction_model.ipynb` |
+| Comparison model | LightGBM | `04_salary_prediction_model.ipynb` |
+| Explainability | SHAP (global summary, beeswarm, dependence plots) | `04_salary_prediction_model.ipynb` |
+| Experiment tracking | MLflow (params, metrics, model artefacts) | `04_salary_prediction_model.ipynb` |
+| Serving | FastAPI + Pydantic v2 | `api/main.py` |
+| Dashboard | Streamlit + Plotly | `streamlit_app.py` |
 
-## 5. Key findings (evidence-backed)
+---
 
-- Geography: Large economies (CA, NY, TX) lead in absolute high-income headcount; concentration (LQ) peaks in MD, VA, WA indicating specialized clusters.
-- Education: Bachelor’s degree dominates most states in the $100K+ cohort; Master’s dominates a handful (SD, MT, NE, MO, WV); Professional dominates ND; Doctoral is not dominant in any state.
-- Demographics: Gender participation varies across occupations and states; age–income relationship rises early and plateaus later.
-- Market dynamics: Bigger markets often show higher education premiums, but composition (tech/finance/healthcare) matters more than size alone.
-- Correlations: Employment and jobs-per-1000 co-move; wage measures are internally consistent; annual income has weak correlation with headcount metrics—role and geography are stronger drivers.
+## 5. Hypothesis testing
 
-Figures referenced (see Images/):
-- Top_Occupations_Avg_Income.png, Average_Income_by_Education_Level.png
-- High_Paid_Individuals_by_State.png, Top_10_Salary_Distribution.png
-- Correlation_Annual_Income.png, Age_Annual_Income.png
-- Average_Highest_Income_state[_Viz].png, High_Paying_Jobs_LQ_Distribution[_Viz].png
-- Dominant_education_by_state[_Viz].png, Education_Income_Premiums_by_State_Viz.png
-- Market_Size_Income_Premium_Analysis[_Viz].png, Regional_Patterns_Analysis[_Viz].png
+| Hypothesis | Test | Result |
+|------------|------|--------|
+| H1: Education level drives income | One-way ANOVA | Significant (p < 0.05); confirmed by Tukey HSD |
+| H2: Gender income gap exists | Welch t-test | Significant (p < 0.05) |
+| H3: Regional income differences | One-way ANOVA | Significant (p < 0.05) |
 
-## 6. Technical notes
+All three hypotheses are supported at the 5% significance level.
 
-- Environment: requirements.txt (pandas, numpy, seaborn, matplotlib; optional geopandas/pyshp for maps)
-- Output management: figures saved at 300 DPI to Images/ with unique filenames across notebooks
-- Single source of truth: Data/cleaned_high_pay_data.csv consumed by both notebooks
+---
 
-## 7. Limitations
+## 6. Model performance
 
-- Snapshot analysis (single timeframe); nominal incomes (no cost-of-living adjustment)
-- Potential confounding by occupation mix and regional industry structure
-- No causal inference; descriptive and exploratory focus
+| Model | Feature set | R² | RMSE | Notes |
+|-------|-------------|-----|------|-------|
+| Ridge Regression | Full (11) | baseline | — | Regularization reference |
+| XGBoost | Full (11) | best | — | Primary production model |
+| XGBoost | Demographic only (10) | lower | — | Fairness / gap analysis |
+| LightGBM | Full (11) | competitive | — | Speed comparison |
 
-## 8. Next steps (data-science oriented)
+*Exact metric values are logged to MLflow. Run `make mlflow` after notebook 4 to compare.*
 
-- Normalization: adjust incomes for regional price parity or COLA
-- Statistical testing: ANOVA/OLS for education premiums by region; robust SE to address heteroskedasticity
-- Modeling: predictive modeling of income by occupation, education, and geography; SHAP for interpretability
-- Temporal: multi-year trend analysis and cluster dynamics over time
-- Industry cuts: sector-specific deep-dives (tech, healthcare, finance, engineering)
+**On R² magnitude:** Individual Census incomes within the $100K+ cohort span $100K–$1M+.
+Available features (BLS occupation wages, demographics) explain occupation-level means
+well but cannot explain individual variance (e.g., equity compensation, bonuses, tenure).
+R² of 0.10–0.15 represents non-trivial predictive power given this constraint.
 
-## 9. Reproducibility checklist
+**Feature importance (SHAP):**
+Top drivers are `Annual Mean Wage` (BLS occupation-level wage), `Occ_Mean_Income`,
+`State_Mean_Income`, followed by `Education_Ord` and `Age`. Geography (Region_Code)
+and demographic features contribute less but are statistically significant.
 
-- Clean the data: run high_pay_jobs_data_cleaning.ipynb (generates Data/cleaned_high_pay_data.csv)
-- Generate figures: run high_paying_jobs_data_visualization.ipynb and us_high_income_jobs_mapping.ipynb
-- Verify outputs: ensure Images/ contains all referenced figures
+---
 
-This report is designed for a data scientist/data analyst portfolio: concise problem framing, transparent pipeline, reproducible analysis, and actionable next steps.
+## 7. Shared pipeline module
+
+`pipeline.py` is the single source of truth for:
+- `FEATURES_FULL` — the 11-feature vector used by the production model
+- `FEATURES_DEMO` — the 10-feature demographic-only vector
+- `REGION_CODES` — deterministic region → integer mapping
+- `engineer_features()` — adds all derived columns (Education_Ord, Gender_Bin, Region,
+  Region_Code, Occ_Mean_Income, State_Mean_Income)
+
+This module is imported by `api/main.py`, `streamlit_app.py`, `scripts/train_model.py`,
+and `tests/conftest.py`, ensuring every layer of the stack uses an identical encoding.
+
+---
+
+## 8. Key findings
+
+- **Geography:** Large economies (CA, NY, TX) lead in absolute headcount.
+  Concentration (LQ) peaks in MD, VA, WA — specialized clusters, not just population size.
+- **Education:** Bachelor's dominates most states for $100K+ roles.
+  Master's dominates SD, MT, NE, MO, WV; Professional dominates ND.
+  Premiums are larger where specialized credentials are rewarded.
+- **Demographics:** Gender participation is uneven across occupations and states.
+  Age–income patterns rise early and plateau later in career.
+- **Market dynamics:** Bigger markets often show higher education premiums, but
+  industry composition (tech/finance/healthcare) matters more than market size.
+- **Correlations:** Employment and jobs-per-1000 co-move. Annual income has weak
+  correlation with headcount metrics — reinforcing the primacy of occupation and geography.
+
+---
+
+## 9. Limitations
+
+- **Snapshot analysis:** single timeframe; nominal incomes (no cost-of-living adjustment).
+- **No causal inference:** descriptive and exploratory; SHAP shows feature contributions,
+  not causal mechanisms.
+- **Model ceiling:** individual income variance within the $100K+ cohort is driven largely
+  by unobserved factors (equity, bonuses, tenure, specific employer).
+- **Census data resolution:** microdata income may differ from W-2 or administrative records.
+
+---
+
+## 10. Reproducibility checklist
+
+```bash
+make install          # create .venv
+make data             # regenerate Data/cleaned_high_pay_data.csv
+make model            # train model → models/xgb_salary_model.pkl
+make test             # run 64 tests
+make dashboard        # launch Streamlit
+make api              # launch FastAPI
+make mlflow           # view experiment runs
+```
+
+All steps are fully automated and reproducible from a fresh clone.

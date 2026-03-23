@@ -2,28 +2,32 @@
 # High-Paying Jobs in the US — Reproducibility Makefile
 # ============================================================
 # Usage:
-#   make          — show this help
-#   make install  — create venv and install all dependencies
-#   make data     — regenerate cleaned dataset from raw sources
-#   make model    — train XGBoost model and save to models/
-#   make test     — run full pytest suite (57 tests)
-#   make lint     — run flake8 on Python source files
-#   make dashboard — launch Streamlit on http://localhost:8501
-#   make api      — launch FastAPI on http://localhost:8000
-#   make docker   — build and start both services with Docker Compose
-#   make mlflow   — launch MLflow tracking UI on http://localhost:5000
-#   make clean    — remove generated artefacts (models, images, cache)
-#   make clean-all — clean + remove the virtual environment
+#   make              — show this help
+#   make install      — create .venv and install all dependencies
+#   make data         — regenerate cleaned dataset from raw sources
+#   make model        — train XGBoost model (via scripts/train_model.py)
+#   make test         — run full pytest suite
+#   make coverage     — run tests with coverage report
+#   make lint         — ruff check (fast linter)
+#   make format       — ruff format (opinionated auto-formatter)
+#   make type-check   — mypy static type checker
+#   make dashboard    — launch Streamlit on http://localhost:8501
+#   make api          — launch FastAPI on http://localhost:8000
+#   make docker       — build and start both services with Docker Compose
+#   make mlflow       — launch MLflow tracking UI on http://localhost:5000
+#   make clean        — remove generated artefacts (models, cache, .pyc)
+#   make clean-all    — clean + remove the virtual environment
 # ============================================================
 
-PYTHON   := python3
-VENV     := .venv
-PIP      := $(VENV)/bin/pip
-PYTEST   := $(VENV)/bin/pytest
-FLAKE8   := $(VENV)/bin/flake8
-JUPYTER  := $(VENV)/bin/jupyter
-STREAMLIT:= $(VENV)/bin/streamlit
-UVICORN  := $(VENV)/bin/uvicorn
+PYTHON    := python3
+VENV      := .venv
+PIP       := $(VENV)/bin/pip
+PYTEST    := $(VENV)/bin/pytest
+RUFF      := $(VENV)/bin/ruff
+MYPY      := $(VENV)/bin/mypy
+JUPYTER   := $(VENV)/bin/jupyter
+STREAMLIT := $(VENV)/bin/streamlit
+UVICORN   := $(VENV)/bin/uvicorn
 
 # Detect OS for open-browser command
 UNAME := $(shell uname -s)
@@ -41,17 +45,20 @@ help:
 	@echo ""
 	@echo "  High-Paying Jobs in the US — available targets"
 	@echo "  ------------------------------------------------"
-	@echo "  install    Create .venv and install all dependencies"
-	@echo "  data       Regenerate cleaned dataset from raw sources"
-	@echo "  model      Train XGBoost model and save to models/"
-	@echo "  test       Run full pytest suite"
-	@echo "  lint       Run flake8 on Python source files"
-	@echo "  dashboard  Launch Streamlit dashboard (port 8501)"
-	@echo "  api        Launch FastAPI server (port 8000)"
-	@echo "  docker     Build and start both services with Docker Compose"
-	@echo "  mlflow     Launch MLflow tracking UI (port 5000)"
-	@echo "  clean      Remove generated artefacts (models, cache, .pyc)"
-	@echo "  clean-all  clean + remove .venv"
+	@echo "  install     Create .venv and install all dependencies"
+	@echo "  data        Regenerate cleaned dataset from raw sources"
+	@echo "  model       Train XGBoost model → models/xgb_salary_model.pkl"
+	@echo "  test        Run full pytest suite (64 tests)"
+	@echo "  coverage    Run tests with HTML coverage report"
+	@echo "  lint        Ruff linter (fast, replaces flake8)"
+	@echo "  format      Ruff auto-formatter (Black-compatible)"
+	@echo "  type-check  Mypy static type checker"
+	@echo "  dashboard   Streamlit dashboard (port 8501)"
+	@echo "  api         FastAPI server (port 8000)"
+	@echo "  docker      Build and start both services with Docker Compose"
+	@echo "  mlflow      Launch MLflow tracking UI (port 5000)"
+	@echo "  clean       Remove generated artefacts (models, cache, .pyc)"
+	@echo "  clean-all   clean + remove .venv"
 	@echo ""
 
 # ── Environment ───────────────────────────────────────────────────────────────
@@ -81,37 +88,13 @@ data: install
 	@echo ">>> Cleaned dataset saved to Data/cleaned_high_pay_data.csv"
 
 # ── Model training ────────────────────────────────────────────────────────────
+# Uses scripts/train_model.py — no more fragile inline Python one-liners.
 .PHONY: model
 model: install
 	@echo ">>> Training XGBoost salary prediction model..."
 	@mkdir -p models
-	$(PYTHON) -c "\
-import pickle, yaml, pandas as pd; \
-from sklearn.model_selection import train_test_split; \
-from xgboost import XGBRegressor; \
-cfg = yaml.safe_load(open('config.yaml')); \
-edu = cfg['education_order']; \
-reg = {s:r for r,ss in cfg['regions'].items() for s in ss}; \
-df = pd.read_csv(cfg['data']['cleaned']); \
-df['Education_Ord']    = df['Education Level'].map(edu); \
-df['Gender_Bin']       = (df['Gender']=='Male').astype(int); \
-df['Region']           = df['State Abbreviation'].map(reg); \
-df['Region_Code']      = pd.Categorical(df['Region']).codes; \
-df['Occ_Mean_Income']  = df.groupby('Occupation')['Annual Income'].transform('mean'); \
-df['State_Mean_Income']= df.groupby('State Abbreviation')['Annual Income'].transform('mean'); \
-FEAT = ['Age','Education_Ord','Gender_Bin','Region_Code','Employment', \
-        'Location Quotient','Jobs per 1000','Hourly Mean','Annual Mean Wage', \
-        'Occ_Mean_Income','State_Mean_Income']; \
-X,y = df[FEAT], df['Annual Income']; \
-Xtr,_,ytr,_ = train_test_split(X,y,test_size=cfg['model']['test_size'],random_state=cfg['model']['random_state']); \
-m = XGBRegressor(n_estimators=cfg['model']['n_estimators'],max_depth=cfg['model']['max_depth'], \
-    learning_rate=cfg['model']['learning_rate'],subsample=cfg['model']['subsample'], \
-    colsample_bytree=cfg['model']['colsample_bytree'],random_state=cfg['model']['random_state'],n_jobs=-1,verbosity=0); \
-m.fit(Xtr,ytr); \
-pickle.dump(m,open(cfg['model']['model_path'],'wb')); \
-pickle.dump(FEAT,open(cfg['model']['features_path'],'wb')); \
-print('Model saved to', cfg['model']['model_path'])"
-	@echo ">>> Model training complete."
+	$(VENV)/bin/python scripts/train_model.py
+	@echo ">>> Model artefacts saved to models/"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 .PHONY: test
@@ -124,15 +107,39 @@ test-fast: install
 	@echo ">>> Running test suite (quiet)..."
 	$(PYTEST) tests/ -q
 
-# ── Linting ───────────────────────────────────────────────────────────────────
+.PHONY: coverage
+coverage: install
+	@echo ">>> Running tests with coverage..."
+	$(PYTEST) tests/ \
+	  --cov=api --cov=pipeline --cov=scripts \
+	  --cov-report=term-missing \
+	  --cov-report=html:htmlcov \
+	  -q
+	@echo ">>> HTML report: open htmlcov/index.html"
+
+# ── Code quality ──────────────────────────────────────────────────────────────
 .PHONY: lint
 lint: install
-	@echo ">>> Linting with flake8..."
-	$(FLAKE8) streamlit_app.py api/ tests/ \
-	  --max-line-length=120 \
-	  --exclude=__pycache__ \
+	@echo ">>> Linting with ruff..."
+	$(RUFF) check streamlit_app.py pipeline.py api/ tests/ scripts/ \
 	  --statistics
 	@echo ">>> Lint complete."
+
+.PHONY: format
+format: install
+	@echo ">>> Formatting with ruff..."
+	$(RUFF) format streamlit_app.py pipeline.py api/ tests/ scripts/
+	$(RUFF) check streamlit_app.py pipeline.py api/ tests/ scripts/ \
+	  --fix --select I  # sort imports
+	@echo ">>> Format complete."
+
+.PHONY: type-check
+type-check: install
+	@echo ">>> Type-checking with mypy..."
+	$(MYPY) api/ pipeline.py scripts/ \
+	  --ignore-missing-imports \
+	  --no-error-summary
+	@echo ">>> Type check complete."
 
 # ── Services ──────────────────────────────────────────────────────────────────
 .PHONY: dashboard
@@ -174,6 +181,8 @@ clean:
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
 	find . -type d -name ".ipynb_checkpoints" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name ".coverage" -delete 2>/dev/null || true
 	@echo ">>> Clean complete."
 
 .PHONY: clean-all
