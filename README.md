@@ -14,6 +14,28 @@ integrating **Bureau of Labor Statistics (BLS)** and **US Census** microdata.
 Includes EDA, geospatial mapping, **XGBoost salary prediction**, **SHAP explainability**,
 and an **interactive Streamlit dashboard**.
 
+### Dashboard preview
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│  💼 High-Paying Jobs in the US                                          │
+│  ─────────────────────────────────────────────────────────────────────  │
+│  Sidebar filters:          │  Overview  │  Geographic  │  Predictor  │  │
+│  • Region(s)               │                                            │
+│  • Education Level(s)      │  10,255 records  │  $168K avg  │  CA  │   │
+│  • Income range ($)        │                                            │
+│                            │  [Top 15 Occupations bar chart]            │
+│                            │  [Avg Income by Education bar chart]       │
+│                            │  [Gender distribution violin plot]         │
+│                            │  [US choropleth — income / LQ / count]     │
+│                            │  [Salary predictor form → live estimate]   │
+│                            │  [SHAP feature importance + residuals]     │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+> **To see the live dashboard:** run `make dashboard` or `docker compose up --build`,
+> then open [http://localhost:8501](http://localhost:8501).
+
 The pipeline is organized across four notebooks:
 
 | Notebook | Purpose |
