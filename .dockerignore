@@ -1,0 +1,41 @@
+# Version control
+.git
+.gitignore
+
+# Python virtual environments
+.venv
+venv
+env
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Development-only files (not needed in the runtime image)
+Resources/          # Raw source data (large; Data/ is the cleaned single source of truth)
+*.ipynb             # Jupyter notebooks
+tests/
+.github/
+reports/
+
+# Geospatial shapefiles (maps are rendered inside notebook, not in Streamlit)
+us_state/
+
+# IDE / editor
+.vscode
+.idea
+*.swp
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Generated model artefacts — mounted as a volume in docker-compose
+# (allow Docker to use the host-side models/ dir instead)
+models/
+
+# Lock files (handled by requirements.txt inside the image)
+requirements-lock.txt
