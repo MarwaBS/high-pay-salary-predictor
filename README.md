@@ -7,6 +7,7 @@
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost-orange)](04_salary_prediction_model.ipynb)
 [![SHAP](https://img.shields.io/badge/Explainability-SHAP-brightgreen)](04_salary_prediction_model.ipynb)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
 
 An end-to-end data science pipeline analyzing high-paying jobs ($100K+) across the United States,
 integrating **Bureau of Labor Statistics (BLS)** and **US Census** microdata.
@@ -125,14 +126,36 @@ pip install geopandas shapely fiona pyproj rtree
 ### Run with Docker (one command, no Python setup needed)
 
 ```bash
-# Build image and start the dashboard
+# Build and start both dashboard + API
 docker compose up --build
 
-# Dashboard available at http://localhost:8501
-# The trained model is saved to ./models/ and reused on subsequent starts
+# Dashboard → http://localhost:8501
+# API docs  → http://localhost:8000/docs
+# Both share the same trained model via ./models/ volume
 
-# Stop
 docker compose down
+```
+
+### Run the API locally
+
+```bash
+uvicorn api.main:app --reload --port 8000
+```
+
+**Key API endpoints:**
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/health` | Liveness probe — model loaded, dataset rows |
+| `GET` | `/meta` | Valid states, occupations, education levels |
+| `POST` | `/predict` | Salary prediction + percentile + group benchmarks |
+| `GET` | `/docs` | Auto-generated Swagger UI |
+
+**Example request:**
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"state":"CA","occupation":"Software Developers","education_level":"Bachelor'\''s degree","gender":"Female","age":32}'
 ```
 
 ### Run the cleaning pipeline (optional)
@@ -305,8 +328,12 @@ High_pay_Analysis_us/
 │
 ├── streamlit_app.py                               # ★ Interactive dashboard (run with streamlit)
 ├── config.yaml                                    # ★ All thresholds, paths, color palettes
-├── Dockerfile                                     # ★ Multi-stage Docker build (python:3.11-slim)
-├── docker-compose.yml                             # ★ One-command deployment
+├── Dockerfile                                     # ★ Multi-stage build: builder → dashboard → api
+├── docker-compose.yml                             # ★ Two services: dashboard (8501) + api (8000)
+│
+├── api/
+│   ├── main.py                                    # ★ FastAPI app: /health /meta /predict
+│   └── schemas.py                                 # ★ Pydantic request/response models
 │
 ├── Data/                                          # Processed datasets (single source of truth)
 │   ├── cleaned_high_pay_data.csv                  #   10,255 rows × 15 cols
