@@ -6,6 +6,7 @@
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](streamlit_app.py)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost-orange)](04_salary_prediction_model.ipynb)
 [![SHAP](https://img.shields.io/badge/Explainability-SHAP-brightgreen)](04_salary_prediction_model.ipynb)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 
 An end-to-end data science pipeline analyzing high-paying jobs ($100K+) across the United States,
 integrating **Bureau of Labor Statistics (BLS)** and **US Census** microdata.
@@ -119,6 +120,19 @@ pytest tests/ -v
 
 # Optional: full GIS stack for maps
 pip install geopandas shapely fiona pyproj rtree
+```
+
+### Run with Docker (one command, no Python setup needed)
+
+```bash
+# Build image and start the dashboard
+docker compose up --build
+
+# Dashboard available at http://localhost:8501
+# The trained model is saved to ./models/ and reused on subsequent starts
+
+# Stop
+docker compose down
 ```
 
 ### Run the cleaning pipeline (optional)
@@ -291,6 +305,8 @@ High_pay_Analysis_us/
 │
 ├── streamlit_app.py                               # ★ Interactive dashboard (run with streamlit)
 ├── config.yaml                                    # ★ All thresholds, paths, color palettes
+├── Dockerfile                                     # ★ Multi-stage Docker build (python:3.11-slim)
+├── docker-compose.yml                             # ★ One-command deployment
 │
 ├── Data/                                          # Processed datasets (single source of truth)
 │   ├── cleaned_high_pay_data.csv                  #   10,255 rows × 15 cols
