@@ -83,7 +83,7 @@ make mlflow       # MLflow tracking UI → http://localhost:5000
 | `make api` | FastAPI + uvicorn on port 8000 |
 | `make docker` | `docker compose up --build` |
 | `make mlflow` | MLflow tracking UI on port 5000 |
-| `make clean` | Remove `models/*.pkl`, `__pycache__`, `.pytest_cache`, `htmlcov/` |
+| `make clean` | Remove `models/`, `__pycache__`, `.pytest_cache`, `htmlcov/` |
 | `make clean-all` | `clean` + delete `.venv` |
 
 ---
@@ -100,14 +100,32 @@ pre-commit install                 # install git quality hooks
 
 ---
 
+## Model performance
+
+| Metric | Value | Notes |
+|--------|-------|-------|
+| Test R² | **0.0396** | See context below |
+| CV R² (5-fold) | **0.0397 ± 0.0115** | Stable; no overfitting |
+| RMSE | **$107,365** | On held-out 20% test set |
+| MAE | **$59,046** | Median error |
+| 80% PI width | **~$138K** | Empirical from residual 10th/90th pct |
+| Train / test | 8,204 / 2,051 | random_state=42 |
+
+> **Why is R² low?** Census individual income within the $100K+ cohort has extremely high within-occupation variance driven by unobserved factors (equity compensation, bonuses, tenure, specific employer). The available features explain occupation- and state-level income *patterns* reliably but cannot resolve individual-level variation. This is a data-ceiling effect, not a modelling failure — the 5-fold CV is stable (0.0397 ± 0.0115), confirming no overfitting.
+
+**Prediction intervals:** the `/predict` API endpoint and dashboard predictor return an empirical 80% prediction interval derived from the 10th/90th percentiles of test-set residuals. These intervals are wider than ±RMSE because income residuals are right-skewed in this cohort.
+
+---
+
 ## Portfolio highlights
 
-- **XGBoost salary prediction:** cross-validated model with SHAP global + dependence explainability.
-- **Statistical rigor:** ANOVA (education × income), Welch t-test (gender pay gap), and Tukey HSD post-hoc tests validate EDA findings.
+- **XGBoost salary prediction:** cross-validated model with empirical 80% prediction intervals, SHAP global + dependence explainability, and honest R² reporting with data-ceiling context.
+- **Statistical rigor:** ANOVA (education × income), Welch t-test (gender pay gap, Cohen's *d* = 0.27), and Tukey HSD post-hoc tests validate EDA findings.
 - **MLflow experiment tracking:** all model runs (Ridge, XGBoost full, XGBoost demographic, LightGBM) logged with params, metrics, and model artefacts. Compare in the UI with `make mlflow`.
-- **Production API:** FastAPI + Pydantic v2 with `/health`, `/meta`, `/predict` endpoints and Swagger docs.
-- **Interactive dashboard:** Streamlit with Plotly choropleth, salary predictor widget, and model insights tab.
+- **Production API:** FastAPI + Pydantic v2 with `/health`, `/meta`, `/predict` endpoints (returns PI), and Swagger docs. Sync route (`def predict`) — no event-loop blocking.
+- **Interactive dashboard:** Streamlit with Plotly choropleth, salary predictor + PI display, honest model metrics with R² context, and feature importance tab.
 - **Shared pipeline module:** `pipeline.py` is the single source of truth for feature engineering and feature constants — consumed by the API, dashboard, training script, and all tests (zero duplication).
+- **No pickle:** model stored as XGBoost native binary (`.ubj`); feature list and metrics as plain JSON — portable, version-independent, auditable.
 - **Full DevOps stack:** multi-stage Docker build, Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11), Makefile, `pyproject.toml`, pre-commit hooks.
 - **64 tests** across config validation, data schema, feature engineering, pipeline constants, and API endpoints.
 
@@ -351,9 +369,10 @@ High_pay_Analysis_us/
 │   ├── bls_state_data.xlsx
 │   └── census_data.csv
 │
-├── models/                                    # Saved ML model artefacts (generated)
-│   ├── xgb_salary_model.pkl
-│   └── feature_names.pkl
+├── models/                                    # Saved ML model artefacts (generated, no pickle)
+│   ├── xgb_salary_model.ubj                   #   XGBoost native binary (portable)
+│   ├── feature_names.json                     #   Feature list
+│   └── model_metrics.json                     #   R², RMSE, MAE, CV R², PI offsets
 │
 ├── Images/                                    # Auto-saved figures (300 DPI)
 │

@@ -7,7 +7,7 @@ Endpoints:
   GET  /            — API info
   GET  /health      — liveness probe
   GET  /meta        — valid states, occupations, education levels
-  POST /predict     — salary prediction with contextual benchmarks
+  POST /predict     — salary prediction with contextual benchmarks and PI
 
 Run locally:
   uvicorn api.main:app --reload --port 8000
@@ -22,12 +22,10 @@ Environment variables:
 """
 import logging
 import os
-import pickle
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-import numpy as np  # noqa: F401 — kept for type narrowing in callers
 import pandas as pd
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -37,7 +35,7 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
-from pipeline import FEATURES_FULL, REGION_CODES, engineer_features
+from pipeline import FEATURES_FULL, REGION_CODES, engineer_features, load_metrics, load_model
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -67,6 +65,8 @@ VALID_STATES = list({s for states in CFG["regions"].values() for s in states})
 class AppState:
     df: pd.DataFrame = None
     model = None
+    pi_offset_10: float = 0.0
+    pi_offset_90: float = 0.0
     occupations: list[str] = []
     region_codes: dict[str, int] = {}
 
@@ -74,66 +74,33 @@ class AppState:
 state = AppState()
 
 
-def _load_or_train_model(df: pd.DataFrame):
-    """Load saved model or train a fresh one if pkl not found."""
-    model_path = ROOT / CFG["model"]["model_path"]
-
-    if model_path.exists():
-        logger.info("Loading model from %s", model_path)
-        with open(model_path, "rb") as f:
-            return pickle.load(f)
-
-    logger.info("No saved model found — training from scratch (first run)")
-    from sklearn.model_selection import train_test_split
-    from xgboost import XGBRegressor
-
-    X = df[FEATURES_FULL]
-    y = df["Annual Income"]
-    X_train, _, y_train, _ = train_test_split(
-        X, y,
-        test_size=CFG["model"]["test_size"],
-        random_state=CFG["model"]["random_state"],
-    )
-    model = XGBRegressor(
-        n_estimators=CFG["model"]["n_estimators"],
-        max_depth=CFG["model"]["max_depth"],
-        learning_rate=CFG["model"]["learning_rate"],
-        subsample=CFG["model"]["subsample"],
-        colsample_bytree=CFG["model"]["colsample_bytree"],
-        random_state=CFG["model"]["random_state"],
-        n_jobs=-1,
-        verbosity=0,
-    )
-    model.fit(X_train, y_train)
-
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(model_path, "wb") as f:
-        pickle.dump(model, f)
-
-    logger.info("Model trained and saved to %s", model_path)
-    return model
-
-
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── startup ──
-    logger.info("Starting up: loading dataset and model…")
+    logger.info("Starting up: loading dataset, model, and metrics…")
     df_raw = pd.read_csv(ROOT / CFG["data"]["cleaned"])
     df_eng = engineer_features(df_raw, EDU_ORDER, REGION_MAP)
 
     state.df = df_eng
-    state.model = _load_or_train_model(df_eng)
+    state.model = load_model(str(ROOT / CFG["model"]["model_path"]))
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
-    # Use the same deterministic mapping as pipeline.REGION_CODES
     state.region_codes = REGION_CODES
 
+    # Load empirical prediction-interval offsets from training artefacts
+    metrics = load_metrics(str(ROOT / CFG["model"]["metrics_path"]))
+    state.pi_offset_10 = metrics.get("pi_offset_10", 0.0)
+    state.pi_offset_90 = metrics.get("pi_offset_90", 0.0)
+
     logger.info(
-        "Ready — dataset rows: %d, occupations: %d, model features: %d",
+        "Ready — dataset rows: %d, occupations: %d, model features: %d, "
+        "80%% PI offsets: [%d, %+d]",
         len(df_eng),
         len(state.occupations),
         state.model.n_features_in_,
+        int(state.pi_offset_10),
+        int(state.pi_offset_90),
     )
 
     yield
@@ -200,7 +167,7 @@ async def meta():
 
 
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
-async def predict(req: PredictRequest):
+def predict(req: PredictRequest):
     """
     Predict annual income for a given demographic + occupational profile.
 
@@ -208,8 +175,13 @@ async def predict(req: PredictRequest):
     Optional BLS context fields default to dataset medians for the given
     state/occupation combination when omitted.
 
-    Returns the predicted salary alongside percentile rank and group benchmarks
-    (median and mean for same state + education level).
+    Returns the predicted salary alongside an empirical 80% prediction interval,
+    percentile rank, and group benchmarks (median and mean for same state +
+    education level).
+
+    **Prediction interval**: derived from the 10th/90th percentiles of
+    test-set residuals at training time.  The interval is approximate — income
+    residuals are heteroscedastic — but is clearly labelled as such in the response.
     """
     df = state.df
 
@@ -236,11 +208,11 @@ async def predict(req: PredictRequest):
     if len(subset) == 0:
         subset = df  # final fallback: global medians
 
-    employment    = req.employment           if req.employment           is not None else float(subset["Employment"].median())
-    lq            = req.location_quotient    if req.location_quotient    is not None else float(subset["Location Quotient"].median())
-    jobs_k        = req.jobs_per_1000        if req.jobs_per_1000        is not None else float(subset["Jobs per 1000"].median())
-    hourly_mean   = req.hourly_mean          if req.hourly_mean          is not None else float(subset["Hourly Mean"].median())
-    annual_mean_w = req.annual_mean_wage     if req.annual_mean_wage     is not None else float(subset["Annual Mean Wage"].median())
+    employment    = req.employment        if req.employment        is not None else float(subset["Employment"].median())
+    lq            = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
+    jobs_k        = req.jobs_per_1000     if req.jobs_per_1000     is not None else float(subset["Jobs per 1000"].median())
+    hourly_mean   = req.hourly_mean       if req.hourly_mean       is not None else float(subset["Hourly Mean"].median())
+    annual_mean_w = req.annual_mean_wage  if req.annual_mean_wage  is not None else float(subset["Annual Mean Wage"].median())
 
     # ── Encode categorical inputs ─────────────────────────────────────────────
     edu_ord     = EDU_ORDER[req.education_level]
@@ -263,6 +235,10 @@ async def predict(req: PredictRequest):
         req.state, req.occupation, req.education_level, req.gender, req.age, predicted,
     )
 
+    # ── Empirical 80% prediction interval ────────────────────────────────────
+    pi_low  = round(predicted + state.pi_offset_10, 2)
+    pi_high = round(predicted + state.pi_offset_90, 2)
+
     # ── Contextual benchmarks ─────────────────────────────────────────────────
     group = df[
         (df["State Abbreviation"] == req.state) &
@@ -282,6 +258,8 @@ async def predict(req: PredictRequest):
 
     return PredictResponse(
         predicted_salary=round(predicted, 2),
+        prediction_interval_low=pi_low,
+        prediction_interval_high=pi_high,
         percentile_in_group=round(percentile, 1),
         group_median=round(group_median, 2),
         group_mean=round(group_mean, 2),
