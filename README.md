@@ -25,35 +25,40 @@ The pipeline is organized across four notebooks:
 
 All figures are saved automatically to `Images/` at 300 DPI. Filenames are unique across notebooks.
 
-### Quickstart
+### Quickstart — one command
 
 ```bash
-# Create and activate virtual environment
+make install      # create .venv and install all dependencies
+make test         # run the full 57-test suite
+make dashboard    # launch Streamlit on http://localhost:8501
+make api          # launch FastAPI on http://localhost:8000
+make docker       # build and start both services via Docker Compose
+```
+
+**All `make` targets:**
+
+| Target | What it does |
+|--------|-------------|
+| `make install` | Create `.venv`, install `requirements.txt` |
+| `make data` | Re-run cleaning notebook → `Data/cleaned_high_pay_data.csv` |
+| `make model` | Train XGBoost model → `models/xgb_salary_model.pkl` |
+| `make test` | Run all 57 pytest tests with `-v` |
+| `make test-fast` | Same, quiet output |
+| `make lint` | `flake8` on `streamlit_app.py`, `api/`, `tests/` |
+| `make dashboard` | Streamlit on port 8501 |
+| `make api` | FastAPI + uvicorn on port 8000 |
+| `make docker` | `docker compose up --build` |
+| `make clean` | Remove `models/*.pkl`, `__pycache__`, `.pytest_cache` |
+| `make clean-all` | `clean` + delete `.venv` |
+
+### Manual setup (no make)
+
+```bash
 python -m venv .venv
-
-# Linux/macOS
-source .venv/bin/activate
-
-# Windows PowerShell
-.\.venv\Scripts\Activate.ps1
-
-# Install all dependencies (ML + dashboard + testing)
+source .venv/bin/activate          # Linux/macOS
+.\.venv\Scripts\Activate.ps1      # Windows PowerShell
 pip install -r requirements.txt
-
-# Optional: lock exact versions for reproducibility
-pip freeze > requirements-lock.txt
-```
-
-### Run the interactive dashboard
-
-```bash
-streamlit run streamlit_app.py
-```
-
-### Run tests
-
-```bash
-pytest tests/ -v
+pip freeze > requirements-lock.txt  # lock exact versions
 ```
 
 ## Portfolio highlights
@@ -330,6 +335,7 @@ High_pay_Analysis_us/
 ├── config.yaml                                    # ★ All thresholds, paths, color palettes
 ├── Dockerfile                                     # ★ Multi-stage build: builder → dashboard → api
 ├── docker-compose.yml                             # ★ Two services: dashboard (8501) + api (8000)
+├── Makefile                                       # ★ install / data / model / test / lint / clean
 │
 ├── api/
 │   ├── main.py                                    # ★ FastAPI app: /health /meta /predict
