@@ -47,7 +47,7 @@ help:
 	@echo "  ------------------------------------------------"
 	@echo "  install     Create .venv and install all dependencies"
 	@echo "  data        Regenerate cleaned dataset from raw sources"
-	@echo "  model       Train XGBoost model → models/xgb_salary_model.pkl"
+	@echo "  model       Train XGBoost model → models/xgb_salary_model.ubj"
 	@echo "  test        Run full pytest suite (64 tests)"
 	@echo "  coverage    Run tests with HTML coverage report"
 	@echo "  lint        Ruff linter (fast, replaces flake8)"
@@ -176,7 +176,7 @@ mlflow: install
 .PHONY: clean
 clean:
 	@echo ">>> Removing generated artefacts..."
-	rm -f models/*.pkl
+	rm -f models/*.ubj models/*.json
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
