@@ -12,7 +12,7 @@ import pandas as pd
 import pytest
 import yaml
 
-from pipeline import engineer_features, load_model
+from pipeline import engineer_features, load_group_means, load_model
 
 
 # ---------------------------------------------------------------------------
@@ -49,9 +49,30 @@ def region_map(cfg: dict) -> dict[str, str]:
 
 
 @pytest.fixture(scope="session")
-def df_engineered(df: pd.DataFrame, edu_order: dict, region_map: dict) -> pd.DataFrame:
-    """Dataset with all model-ready derived columns (from pipeline.engineer_features)."""
-    return engineer_features(df, edu_order, region_map)
+def group_means(cfg: dict) -> dict:
+    """Training-set group means loaded from the saved artefact.
+
+    Using the saved values (computed from the training split only) ensures
+    tests exercise the same encoding path as production inference.
+    """
+    gm_path = Path(__file__).parent.parent / cfg["model"]["group_means_path"]
+    return load_group_means(str(gm_path))
+
+
+@pytest.fixture(scope="session")
+def df_engineered(
+    df: pd.DataFrame, edu_order: dict, region_map: dict, group_means: dict
+) -> pd.DataFrame:
+    """Dataset with all model-ready derived columns (from pipeline.engineer_features).
+
+    Uses saved training-set group means so encoding is consistent with
+    what the production model saw during training.
+    """
+    return engineer_features(
+        df, edu_order, region_map,
+        occ_means=group_means["occ_means"],
+        state_means=group_means["state_means"],
+    )
 
 
 @pytest.fixture(scope="session")

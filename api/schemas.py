@@ -73,11 +73,6 @@ class PredictRequest(BaseModel):
         ge=0,
         description="BLS hourly mean wage for this occupation in the state ($). Defaults to dataset median.",
     )
-    annual_mean_wage: Optional[float] = Field(
-        default=None,
-        ge=0,
-        description="BLS annual mean wage for this occupation in the state ($). Defaults to dataset median.",
-    )
 
     @field_validator("state")
     @classmethod
