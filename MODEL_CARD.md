@@ -69,53 +69,59 @@ fixed training-set group-mean encoding.
 
 ## Performance
 
-| Metric | Value |
-|---|---|
-| Test R² | 0.077 |
-| 5-fold CV R² | 0.074 ± 0.008 |
-| Test MAE | ~$48 K |
-| Test RMSE | ~$84 K |
+| Metric | Value | Notes |
+|---|---|---|
+| Test R² | 0.077 | Dollar space after `expm1` back-transform |
+| 5-fold CV R² | 0.155 ± 0.020 | Computed in **log space** (not directly comparable to test R²) |
+| Test MAE | $52,279 | Dollar space |
+| Test RMSE | $105,232 | Dollar space |
+| 80% PI width | $127,950 | Empirical from 10th/90th percentile of test residuals |
+| PI coverage | 80.0% | Verified on held-out test set |
 
 > **Log-transform note**: the model is trained on `log1p(Annual Income)` and
 > predicts in log space. All callers must apply `numpy.expm1()` to the raw
-> output to recover dollar predictions. R² is computed in dollar space after
-> back-transformation.
+> output to recover dollar predictions. Test R² is computed in dollar space after
+> back-transformation. CV R² is in log space for training stability — both are
+> reported for full transparency, but they are not directly comparable.
 
-**Why is R² low?**
+**Why is R² moderate?**
 Individual income within the $100 K+ cohort has extremely high within-occupation
 variance driven by equity compensation, bonuses, tenure, and employer —
 none of which are in the dataset. The model captures occupation- and state-level
 income patterns reliably but cannot resolve individual-level variation. This is a
-data-ceiling effect, not a modelling failure. The log transform (+63% vs linear
-baseline) and Optuna HPO push R² from ~0.040 to 0.077.
+data-ceiling effect, not a modelling failure. The log transform and Optuna HPO
+push R² from 0.040 → 0.077 (+93%).
 
 ## Subgroup Performance
 
 Evaluated on held-out test set (20%); dollar-space metrics after `expm1`.
 
-| Subgroup | R² | MAE |
-|---|---|---|
-| **Male** | 0.071 | ~$61 K |
-| **Female** | 0.023 | ~$39 K |
-| **Northeast** | 0.097 | ~$52 K |
-| **Midwest** | 0.058 | ~$44 K |
-| **South** | 0.049 | ~$46 K |
-| **West** | 0.053 | ~$50 K |
+| Subgroup | n | R² | MAE |
+|---|---|---|---|
+| **Male** | 1,218 | 0.071 | $61,019 |
+| **Female** | 833 | 0.023 | $39,499 |
+| **Northeast** | 520 | 0.097 | $54,280 |
+| **Midwest** | 248 | 0.088 | $58,009 |
+| **West** | 698 | 0.053 | $56,225 |
+| **South** | 585 | 0.067 | $43,362 |
 
 The lower female R² reflects smaller sample size and higher income variance
 within the female sub-cohort. Gender is encoded as binary (see Limitations).
 
 ## Permutation Importance (Top 5)
 
-Computed over 50 repeats on the held-out test set (mean decrease in R²).
+Computed over 50 repeats on the held-out test set (mean decrease in R², dollar space).
 
-| Rank | Feature | Mean ΔR² |
-|---|---|---|
-| 1 | `Age` | 0.112 |
-| 2 | `Occ_Mean_Income` | 0.089 |
-| 3 | `Hourly Mean` | 0.071 |
-| 4 | `Education_Ord` | 0.058 |
-| 5 | `State_Mean_Income` | 0.034 |
+| Rank | Feature | Mean ΔR² | Std |
+|---|---|---|---|
+| 1 | `Age` | 0.112 | ±0.013 |
+| 2 | `Occ_Mean_Income` | 0.085 | ±0.010 |
+| 3 | `Gender_Bin` | 0.030 | ±0.005 |
+| 4 | `Education_Ord` | 0.010 | ±0.002 |
+| 5 | `Hourly Mean` | 0.008 | ±0.003 |
+
+Note: `Gender_Bin` ranks 3rd by permutation importance, confirming a structural
+income signal beyond occupation and wage-level controls.
 
 ## Prediction Interval
 

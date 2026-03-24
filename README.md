@@ -149,7 +149,7 @@ pre-commit install                 # install git quality hooks
 - **Interactive dashboard:** Streamlit with 4 tabs — Overview, Geographic choropleth, Salary Predictor, and Model Insights (gain importance, permutation importance, subgroup R² charts, residual + actual-vs-predicted plots).
 - **Shared pipeline module:** `pipeline.py` is the single source of truth — consumed by API, dashboard, training script, and all 77 tests. Zero duplication.
 - **No pickle:** model stored as XGBoost native binary (`.ubj`); all other artefacts as plain JSON — portable, auditable, language-agnostic.
-- **Full DevOps stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI (pip-audit CVE scan + lint + test on Python 3.10 and 3.11), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
+- **Full DevOps stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11 + advisory pip-audit CVE logging), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
 - **77 tests** across unit (config, data schema, feature engineering, model prediction) and integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check).
 
 ---
@@ -431,7 +431,7 @@ High_pay_Analysis_us/
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
 - **77 tests:** unit (config, data schema, feature engineering, model prediction) + integration (leakage proof, group-means round-trip, end-to-end R², PI sign check).
-- **CI/CD:** GitHub Actions runs `pip-audit` CVE scan + lint + tests on every push (Python 3.10 and 3.11).
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as an advisory CVE scan (non-blocking — data-science dependency chains produce unavoidable false positives; results are logged for review).
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
