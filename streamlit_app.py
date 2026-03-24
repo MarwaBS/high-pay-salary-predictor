@@ -38,6 +38,8 @@ _CFG_PATH = Path(__file__).parent / "config.yaml"
 with open(_CFG_PATH) as f:
     CFG = yaml.safe_load(f)
 
+ROOT = Path(__file__).parent  # project root — resolve all paths relative to here
+
 EDU_ORDER = CFG["education_order"]
 REGION_MAP = {
     state: region
@@ -50,13 +52,13 @@ REGION_MAP = {
 
 @st.cache_resource(show_spinner="Loading group means...")
 def get_group_means() -> dict:
-    return load_group_means(CFG["model"]["group_means_path"])
+    return load_group_means(str(ROOT / CFG["model"]["group_means_path"]))
 
 
 @st.cache_data(show_spinner="Loading dataset...")
 def load_data() -> pd.DataFrame:
     gm = get_group_means()
-    df = pd.read_csv(CFG["data"]["cleaned"])
+    df = pd.read_csv(ROOT / CFG["data"]["cleaned"])
     return engineer_features(df, EDU_ORDER, REGION_MAP,
                              occ_means=gm["occ_means"],
                              state_means=gm["state_means"])
@@ -64,13 +66,13 @@ def load_data() -> pd.DataFrame:
 
 @st.cache_resource(show_spinner="Loading model...")
 def get_model():
-    return load_model(CFG["model"]["model_path"])
+    return load_model(str(ROOT / CFG["model"]["model_path"]))
 
 
 @st.cache_data(show_spinner=False)
 def get_metrics() -> dict:
     """Load pre-computed model metrics from training artefacts."""
-    return load_metrics(CFG["model"]["metrics_path"])
+    return load_metrics(str(ROOT / CFG["model"]["metrics_path"]))
 
 
 # ── Sidebar ───────────────────────────────────────────────────────────────────
@@ -429,12 +431,14 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
             test_size=CFG["model"]["test_size"],
             random_state=CFG["model"]["random_state"],
         )
-        y_pred = model.predict(X_test)
-        residuals = y_test.values - y_pred
+        # Model predicts log1p(income) — back-transform to dollar space before
+        # computing residuals (dollar − log would be meaningless)
+        y_pred_dollar = np.expm1(model.predict(X_test))
+        residuals = y_test.values - y_pred_dollar
 
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=y_pred,
+            x=y_pred_dollar,
             y=residuals,
             mode="markers",
             marker={"opacity": 0.4, "size": 4, "color": "#2196F3"},
@@ -442,7 +446,7 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         ))
         fig.add_hline(y=0, line_dash="dash", line_color="red")
         fig.update_layout(
-            title="Residual Plot (Predicted vs Residual)",
+            title="Residual Plot — Dollar Space (Predicted vs Residual)",
             xaxis_title="Predicted Annual Income ($)",
             yaxis_title="Residual ($)",
         )
@@ -450,12 +454,12 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
 
     fig2 = px.scatter(
         x=y_test.values,
-        y=y_pred,
+        y=y_pred_dollar,
         opacity=0.4,
         labels={"x": "Actual Income ($)", "y": "Predicted Income ($)"},
         title="Actual vs Predicted Annual Income",
     )
-    max_val = max(y_test.values.max(), y_pred.max())
+    max_val = max(y_test.values.max(), y_pred_dollar.max())
     fig2.add_trace(go.Scatter(
         x=[0, max_val],
         y=[0, max_val],
@@ -464,6 +468,67 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         name="Perfect Prediction",
     ))
     st.plotly_chart(fig2, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Permutation importance (from training artefacts) ──────────────────────
+    perm_imp = metrics.get("permutation_importance", {})
+    if perm_imp:
+        perm_df = pd.DataFrame([
+            {"Feature": feat, "Mean ΔR²": v["mean"], "Std": v["std"]}
+            for feat, v in sorted(perm_imp.items(), key=lambda x: x[1]["mean"], reverse=True)
+        ])
+        fig_perm = px.bar(
+            perm_df.sort_values("Mean ΔR²"),
+            x="Mean ΔR²", y="Feature", orientation="h",
+            error_x="Std",
+            title="Permutation Importance (Mean Decrease in R², 50 repeats)",
+            color="Mean ΔR²", color_continuous_scale="Oranges",
+        )
+        fig_perm.update_layout(showlegend=False)
+        st.plotly_chart(fig_perm, use_container_width=True)
+        st.caption(
+            "Permutation importance shuffles each feature and measures R² drop — "
+            "more trustworthy than gain-based importance for correlated features."
+        )
+
+    st.markdown("---")
+
+    # ── Subgroup performance ───────────────────────────────────────────────────
+    subgroup = metrics.get("subgroup_metrics", {})
+    if subgroup:
+        st.subheader("Subgroup Performance (held-out test set)")
+        sg_df = pd.DataFrame([
+            {"Subgroup": k, "n": v["n"], "R²": round(v["r2"], 4), "MAE ($)": int(v["mae"])}
+            for k, v in subgroup.items()
+        ])
+        col_g, col_r = st.columns(2)
+        with col_g:
+            gender_df = sg_df[sg_df["Subgroup"].str.startswith("Gender")]
+            fig_g = px.bar(
+                gender_df, x="Subgroup", y="R²",
+                title="R² by Gender", color="Subgroup",
+                color_discrete_map={"Gender=Male": "#2196F3", "Gender=Female": "#E91E63"},
+                text="R²",
+            )
+            fig_g.update_traces(texttemplate="%{text:.3f}", textposition="outside")
+            fig_g.update_layout(showlegend=False, yaxis_range=[0, sg_df["R²"].max() * 1.3])
+            st.plotly_chart(fig_g, use_container_width=True)
+        with col_r:
+            region_df = sg_df[sg_df["Subgroup"].str.startswith("Region")]
+            fig_r = px.bar(
+                region_df, x="Subgroup", y="R²",
+                title="R² by Region", color="R²",
+                color_continuous_scale="Blues", text="R²",
+            )
+            fig_r.update_traces(texttemplate="%{text:.3f}", textposition="outside")
+            fig_r.update_layout(showlegend=False, yaxis_range=[0, sg_df["R²"].max() * 1.3])
+            st.plotly_chart(fig_r, use_container_width=True)
+        st.dataframe(sg_df, use_container_width=True, hide_index=True)
+        st.caption(
+            "Lower female R² reflects smaller sample size and higher within-cohort income variance. "
+            "Gender is encoded as binary (Census CPS limitation)."
+        )
 
 
 # ── Main App ──────────────────────────────────────────────────────────────────
