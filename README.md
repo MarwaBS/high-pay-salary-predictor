@@ -90,7 +90,7 @@ make mlflow       # MLflow tracking UI → http://localhost:5000
 | `make install` | Create `.venv`, install `requirements.txt` |
 | `make data` | Re-run cleaning notebook → `Data/cleaned_high_pay_data.csv` |
 | `make model` | Train XGBoost model via `scripts/train_model.py` → `models/` |
-| `make test` | Run all 64 pytest tests with `-v` |
+| `make test` | Run all 77 pytest tests with `-v` (unit + integration) |
 | `make test-fast` | Same, quiet output |
 | `make coverage` | Tests + HTML coverage report in `htmlcov/` |
 | `make lint` | `ruff check` (fast linter, replaces flake8) |
