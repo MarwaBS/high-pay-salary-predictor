@@ -44,9 +44,11 @@ COPY --from=builder /install /usr/local
 COPY config.yaml      ./config.yaml
 COPY streamlit_app.py ./streamlit_app.py
 COPY pipeline.py      ./pipeline.py
-COPY Data/            ./Data/
+# Data/ is NOT baked into the image — mount ./Data as a read-only volume
+# in docker-compose.yml so the image stays lean and dataset changes don't
+# require a rebuild.
 
-RUN mkdir -p models Images
+RUN mkdir -p models Images Data
 
 # Run as non-root for security (required by many enterprise registries)
 RUN adduser --disabled-password --gecos "" appuser \
@@ -78,10 +80,10 @@ COPY --from=builder /install /usr/local
 
 COPY config.yaml ./config.yaml
 COPY pipeline.py ./pipeline.py
-COPY Data/       ./Data/
 COPY api/        ./api/
+# Data/ is NOT baked into the image — mounted as a read-only volume.
 
-RUN mkdir -p models
+RUN mkdir -p models Data
 
 # Run as non-root
 RUN adduser --disabled-password --gecos "" appuser \
