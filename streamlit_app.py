@@ -7,13 +7,22 @@ Run: streamlit run streamlit_app.py
 import warnings
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import yaml
 
-from pipeline import FEATURES_FULL, REGION_CODES, build_feature_row, engineer_features, load_metrics, load_model
+from pipeline import (
+    FEATURES_FULL,
+    REGION_CODES,
+    build_feature_row,
+    engineer_features,
+    load_group_means,
+    load_metrics,
+    load_model,
+)
 
 warnings.filterwarnings("ignore")
 
@@ -39,10 +48,18 @@ REGION_MAP = {
 # ── Data & Model Loading ──────────────────────────────────────────────────────
 
 
+@st.cache_resource(show_spinner="Loading group means...")
+def get_group_means() -> dict:
+    return load_group_means(CFG["model"]["group_means_path"])
+
+
 @st.cache_data(show_spinner="Loading dataset...")
 def load_data() -> pd.DataFrame:
+    gm = get_group_means()
     df = pd.read_csv(CFG["data"]["cleaned"])
-    return engineer_features(df, EDU_ORDER, REGION_MAP)
+    return engineer_features(df, EDU_ORDER, REGION_MAP,
+                             occ_means=gm["occ_means"],
+                             state_means=gm["state_means"])
 
 
 @st.cache_resource(show_spinner="Loading model...")
@@ -294,7 +311,6 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
             lq = st.number_input("Location Quotient", value=1.0, min_value=0.0, step=0.1)
             jobs_k = st.number_input("Jobs per 1,000", value=2.0, min_value=0.0, step=0.1)
             hourly_mean = st.number_input("BLS Hourly Mean Wage ($)", value=60.0, min_value=0.0, step=1.0)
-            annual_mean = st.number_input("BLS Annual Mean Wage ($)", value=124000, min_value=0, step=1000)
         else:
             mask = (df["State Abbreviation"] == state) & (df["Occupation"] == occupation)
             subset = df[mask] if mask.sum() > 0 else df[df["State Abbreviation"] == state]
@@ -304,15 +320,17 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
             lq = float(subset["Location Quotient"].median())
             jobs_k = float(subset["Jobs per 1000"].median())
             hourly_mean = float(subset["Hourly Mean"].median())
-            annual_mean = float(subset["Annual Mean Wage"].median())
 
     if st.button("Predict Salary", type="primary"):
         edu_ord = EDU_ORDER[education]
         gender_bin = 1 if gender == "Male" else 0
         region = REGION_MAP.get(state, "South")
         region_code = REGION_CODES.get(region, 0)
-        occ_mean = float(df[df["Occupation"] == occupation]["Annual Income"].mean())
-        state_mean_val = float(df[df["State Abbreviation"] == state]["Annual Income"].mean())
+        gm = get_group_means()
+        _occ_fallback = float(np.mean(list(gm["occ_means"].values())))
+        _state_fallback = float(np.mean(list(gm["state_means"].values())))
+        occ_mean = gm["occ_means"].get(occupation, _occ_fallback)
+        state_mean_val = gm["state_means"].get(state, _state_fallback)
 
         row = build_feature_row(
             age=age,
@@ -323,11 +341,10 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
             lq=lq,
             jobs_k=jobs_k,
             hourly_mean=hourly_mean,
-            annual_mean_wage=annual_mean,
             occ_mean_income=occ_mean,
             state_mean_income=state_mean_val,
         )
-        prediction = float(model.predict(row)[0])
+        prediction = float(np.expm1(model.predict(row)[0]))
 
         # Empirical 80% prediction interval from training-time residual offsets
         pi_low  = prediction + metrics.get("pi_offset_10", 0.0)

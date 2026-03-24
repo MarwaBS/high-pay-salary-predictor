@@ -29,20 +29,27 @@ thresholds:
 model:
   test_size: 0.20
   random_state: 42
-  # XGBoost hyper-parameters
-  n_estimators: 300
-  max_depth: 6
-  learning_rate: 0.05
-  subsample: 0.8
-  colsample_bytree: 0.8
+  # XGBoost hyper-parameters (tuned via 30-trial Optuna TPE search on
+  # log1p-transformed target with fixed train-only group-mean encoding).
+  # Rerun scripts/train_model.py --tune to refresh.
+  n_estimators: 169
+  max_depth: 3
+  learning_rate: 0.045
+  subsample: 0.741
+  colsample_bytree: 0.829
+  reg_lambda: 9.88      # L2 regularisation — critical for high-variance income data
+  # Target transformation: model is trained on log1p(Annual Income).
+  # Callers must expm1() the raw prediction to get dollar values.
+  log_transform_target: true
   # Cross-validation
   cv_folds: 5
+  # Optuna HPO
+  optuna_n_trials: 30
   # Saved artefacts — XGBoost native format (.ubj) and JSON (no pickle)
   model_path: "models/xgb_salary_model.ubj"
-  model_q10_path: "models/xgb_q10_model.ubj"
-  model_q90_path: "models/xgb_q90_model.ubj"
   features_path: "models/feature_names.json"
   metrics_path: "models/model_metrics.json"
+  group_means_path: "models/group_means.json"
 
 # ── Visualization ──────────────────────────────────────────
 visualization:
