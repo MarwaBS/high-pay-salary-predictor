@@ -13,6 +13,8 @@ services:
     volumes:
       # Persist trained model so it survives container restarts
       - ./models:/app/models
+      # Dataset mounted read-only — not baked into the image
+      - ./Data:/app/Data:ro
     restart: unless-stopped
     environment:
       - STREAMLIT_SERVER_PORT=8501
@@ -44,6 +46,8 @@ services:
     volumes:
       # Share the same model artefact with the dashboard service
       - ./models:/app/models
+      # Dataset mounted read-only — not baked into the image
+      - ./Data:/app/Data:ro
     restart: unless-stopped
     deploy:
       resources:
