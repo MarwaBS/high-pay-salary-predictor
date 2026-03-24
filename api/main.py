@@ -26,6 +26,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -35,7 +36,15 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
-from pipeline import FEATURES_FULL, REGION_CODES, build_feature_row, engineer_features, load_metrics, load_model
+from pipeline import (
+    FEATURES_FULL,
+    REGION_CODES,
+    build_feature_row,
+    engineer_features,
+    load_group_means,
+    load_metrics,
+    load_model,
+)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -69,6 +78,8 @@ class AppState:
     pi_offset_90: float = 0.0
     occupations: list[str] = []
     region_codes: dict[str, int] = {}
+    occ_means: dict[str, float] = {}
+    state_means: dict[str, float] = {}
 
 
 state = AppState()
@@ -79,16 +90,28 @@ state = AppState()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── startup ──
-    logger.info("Starting up: loading dataset, model, and metrics…")
-    df_raw = pd.read_csv(ROOT / CFG["data"]["cleaned"])
-    df_eng = engineer_features(df_raw, EDU_ORDER, REGION_MAP)
+    logger.info("Starting up: loading dataset, model, group means, and metrics…")
 
-    state.df = df_eng
-    state.model = load_model(str(ROOT / CFG["model"]["model_path"]))
+    # Load training-set group means for consistent target encoding at inference
+    group_means = load_group_means(str(ROOT / CFG["model"]["group_means_path"]))
+    state.occ_means   = group_means["occ_means"]
+    state.state_means = group_means["state_means"]
+
+    # Engineer features using saved training means (no leakage at inference)
+    df_raw = pd.read_csv(ROOT / CFG["data"]["cleaned"])
+    df_eng = engineer_features(
+        df_raw, EDU_ORDER, REGION_MAP,
+        occ_means=state.occ_means,
+        state_means=state.state_means,
+    )
+
+    state.df          = df_eng
+    state.model       = load_model(str(ROOT / CFG["model"]["model_path"]))
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
     state.region_codes = REGION_CODES
 
     # Load empirical prediction-interval offsets from training artefacts
+    # (offsets are in dollar space — applied after expm1 back-transform)
     metrics = load_metrics(str(ROOT / CFG["model"]["metrics_path"]))
     state.pi_offset_10 = metrics.get("pi_offset_10", 0.0)
     state.pi_offset_90 = metrics.get("pi_offset_90", 0.0)
@@ -179,9 +202,15 @@ def predict(req: PredictRequest):
     percentile rank, and group benchmarks (median and mean for same state +
     education level).
 
+    **Model notes**:
+    - Trained on log1p(Annual Income); back-transformed with expm1 internally.
+    - Group means (Occ_Mean_Income, State_Mean_Income) use training-set values
+      for consistent encoding with no leakage.
+
     **Prediction interval**: derived from the 10th/90th percentiles of
-    test-set residuals at training time.  The interval is approximate — income
-    residuals are heteroscedastic — but is clearly labelled as such in the response.
+    test-set residuals (in dollar space) at training time.  The interval is
+    approximate — income residuals are heteroscedastic — but is clearly
+    labelled as such in the response.
     """
     df = state.df
 
@@ -208,11 +237,10 @@ def predict(req: PredictRequest):
     if len(subset) == 0:
         subset = df  # final fallback: global medians
 
-    employment    = req.employment        if req.employment        is not None else float(subset["Employment"].median())
-    lq            = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
-    jobs_k        = req.jobs_per_1000     if req.jobs_per_1000     is not None else float(subset["Jobs per 1000"].median())
-    hourly_mean   = req.hourly_mean       if req.hourly_mean       is not None else float(subset["Hourly Mean"].median())
-    annual_mean_w = req.annual_mean_wage  if req.annual_mean_wage  is not None else float(subset["Annual Mean Wage"].median())
+    employment  = req.employment        if req.employment        is not None else float(subset["Employment"].median())
+    lq          = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
+    jobs_k      = req.jobs_per_1000     if req.jobs_per_1000     is not None else float(subset["Jobs per 1000"].median())
+    hourly_mean = req.hourly_mean       if req.hourly_mean       is not None else float(subset["Hourly Mean"].median())
 
     # ── Encode categorical inputs ─────────────────────────────────────────────
     edu_ord     = EDU_ORDER[req.education_level]
@@ -220,10 +248,13 @@ def predict(req: PredictRequest):
     region      = REGION_MAP.get(req.state, "South")
     region_code = state.region_codes.get(region, 0)
 
-    occ_mean   = float(df[df["Occupation"] == req.occupation]["Annual Income"].mean())
-    state_mean = float(df[df["State Abbreviation"] == req.state]["Annual Income"].mean())
+    # Use training-set group means for consistent encoding with training
+    fallback_occ_mean   = float(np.mean(list(state.occ_means.values())))
+    fallback_state_mean = float(np.mean(list(state.state_means.values())))
+    occ_mean   = state.occ_means.get(req.occupation, fallback_occ_mean)
+    state_mean = state.state_means.get(req.state, fallback_state_mean)
 
-    # ── Predict ───────────────────────────────────────────────────────────────
+    # ── Predict (model trained on log1p scale — back-transform with expm1) ───
     row = build_feature_row(
         age=req.age,
         edu_ord=edu_ord,
@@ -233,17 +264,16 @@ def predict(req: PredictRequest):
         lq=lq,
         jobs_k=jobs_k,
         hourly_mean=hourly_mean,
-        annual_mean_wage=annual_mean_w,
         occ_mean_income=occ_mean,
         state_mean_income=state_mean,
     )
-    predicted = float(state.model.predict(row)[0])
+    predicted = float(np.expm1(state.model.predict(row)[0]))
     logger.debug(
         "Prediction: state=%s occ=%s edu=%s gender=%s age=%d → $%.0f",
         req.state, req.occupation, req.education_level, req.gender, req.age, predicted,
     )
 
-    # ── Empirical 80% prediction interval ────────────────────────────────────
+    # ── Empirical 80% prediction interval (dollar-space offsets) ─────────────
     pi_low  = round(predicted + state.pi_offset_10, 2)
     pi_high = round(predicted + state.pi_offset_90, 2)
 
