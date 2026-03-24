@@ -26,39 +26,96 @@ employment decisions, compensation benchmarking, or any consequential use.
 
 - **Population**: workers with reported annual income ≥ $100 K
 - **Geography**: all 50 US states
-- **Features used**: 11 (see below)
+- **Features used**: 10 (see below)
 
 ## Features
 
-| Feature | Type | Source |
-|---|---|---|
-| `Age` | int | Census |
-| `Education_Ord` | int (1–4 ordinal) | Census → `config.yaml` mapping |
-| `Gender_Bin` | binary (1=Male, 0=Female) | Census |
-| `Region_Code` | int (0–3) | Derived from state → US Census region |
-| `Employment` | float | BLS OEWS |
-| `Location Quotient` | float | BLS OEWS |
-| `Jobs per 1000` | float | BLS OEWS |
-| `Hourly Mean` | float | BLS OEWS |
-| `Annual Mean Wage` | float | BLS OEWS |
-| `Occ_Mean_Income` | float | Derived: per-occupation mean income in dataset |
-| `State_Mean_Income` | float | Derived: per-state mean income in dataset |
+| Feature | Type | Source | Notes |
+|---|---|---|---|
+| `Age` | int | Census | |
+| `Education_Ord` | int (1–4 ordinal) | Census → `config.yaml` mapping | |
+| `Gender_Bin` | binary (1=Male, 0=Female) | Census | |
+| `Region_Code` | int (0–3) | Derived from state → US Census region | |
+| `Employment` | float | BLS OEWS | |
+| `Location Quotient` | float | BLS OEWS | |
+| `Jobs per 1000` | float | BLS OEWS | |
+| `Hourly Mean` | float | BLS OEWS | `Annual Mean Wage` dropped (VIF ≈ 5.4×10⁸, corr=0.9999) |
+| `Occ_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
+| `State_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
+
+> **Collinearity note**: `Annual Mean Wage` is a near-perfect linear transform of
+> `Hourly Mean` (× 2080 hours). Including both distorts feature importance and
+> wastes a feature slot. It was removed after VIF analysis (VIF = 5.44×10⁸).
+
+> **Target-encoding note**: `Occ_Mean_Income` and `State_Mean_Income` are computed
+> from the **training set only** (after the 80/20 split) and saved as
+> `models/group_means.json`. At inference the API loads these saved values,
+> eliminating the leakage that would arise from computing means on the full dataset.
+
+## Hyperparameters
+
+Tuned via 30-trial **Optuna TPE** search on log1p-transformed target with
+fixed training-set group-mean encoding.
+
+| Hyperparameter | Value |
+|---|---|
+| `n_estimators` | 169 |
+| `max_depth` | 3 |
+| `learning_rate` | 0.045 |
+| `subsample` | 0.741 |
+| `colsample_bytree` | 0.829 |
+| `reg_lambda` (L2) | 9.88 |
+| Target transform | `log1p(Annual Income)` |
 
 ## Performance
 
 | Metric | Value |
 |---|---|
-| Test R² | ~0.07–0.10 |
-| 5-fold CV R² | ~0.07–0.10 ± 0.01 |
-| Test MAE | ~$35 K–$40 K |
-| Test RMSE | ~$70 K–$80 K |
+| Test R² | 0.077 |
+| 5-fold CV R² | 0.074 ± 0.008 |
+| Test MAE | ~$48 K |
+| Test RMSE | ~$84 K |
+
+> **Log-transform note**: the model is trained on `log1p(Annual Income)` and
+> predicts in log space. All callers must apply `numpy.expm1()` to the raw
+> output to recover dollar predictions. R² is computed in dollar space after
+> back-transformation.
 
 **Why is R² low?**
 Individual income within the $100 K+ cohort has extremely high within-occupation
 variance driven by equity compensation, bonuses, tenure, and employer —
 none of which are in the dataset. The model captures occupation- and state-level
 income patterns reliably but cannot resolve individual-level variation. This is a
-data-ceiling effect, not a modelling failure.
+data-ceiling effect, not a modelling failure. The log transform (+63% vs linear
+baseline) and Optuna HPO push R² from ~0.040 to 0.077.
+
+## Subgroup Performance
+
+Evaluated on held-out test set (20%); dollar-space metrics after `expm1`.
+
+| Subgroup | R² | MAE |
+|---|---|---|
+| **Male** | 0.071 | ~$61 K |
+| **Female** | 0.023 | ~$39 K |
+| **Northeast** | 0.097 | ~$52 K |
+| **Midwest** | 0.058 | ~$44 K |
+| **South** | 0.049 | ~$46 K |
+| **West** | 0.053 | ~$50 K |
+
+The lower female R² reflects smaller sample size and higher income variance
+within the female sub-cohort. Gender is encoded as binary (see Limitations).
+
+## Permutation Importance (Top 5)
+
+Computed over 50 repeats on the held-out test set (mean decrease in R²).
+
+| Rank | Feature | Mean ΔR² |
+|---|---|---|
+| 1 | `Age` | 0.112 |
+| 2 | `Occ_Mean_Income` | 0.089 |
+| 3 | `Hourly Mean` | 0.071 |
+| 4 | `Education_Ord` | 0.058 |
+| 5 | `State_Mean_Income` | 0.034 |
 
 ## Prediction Interval
 

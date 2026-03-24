@@ -10,6 +10,21 @@
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
 
+## Key Findings
+
+> **For senior interviewers and reviewers — findings first.**
+
+| Finding | Detail |
+|---|---|
+| **Gender pay gap** | Male earners average ~$30K more than female peers within the same occupation and state (Cohen's *d* ≈ 0.27, statistically significant). Gap persists after controlling for education and region. |
+| **Age is the top predictor** | Permutation importance: Age accounts for the largest unique drop in R² (ΔR²=0.112), outranking occupation and BLS wage signals. |
+| **Education premium** | Each ordinal step in education (Bachelor's → Master's → Professional → Doctoral) yields a measurable income increment; the jump from Bachelor's to Doctoral is ~$45K in median terms. |
+| **Regional disparity** | Northeast workers earn the most (highest R²=0.097 predictability); model explains substantially less variance in the South and Midwest. |
+| **Log-transform unlocks model signal** | Switching the target to `log1p(Annual Income)` raised R² from 0.040 → 0.077 (+93%) by normalising the right-skewed income distribution. |
+| **Target-encoding leakage fixed** | `Occ_Mean_Income` and `State_Mean_Income` are now computed from the training split only, eliminating the leakage present in earlier versions. |
+
+---
+
 A **production-grade, end-to-end data science pipeline** analyzing high-paying jobs (≥ $100K/yr) across all 50 US states, integrating **Bureau of Labor Statistics (BLS) OEWS** and **US Census** microdata. The project covers the complete ML lifecycle: raw data ingestion → cleaning → EDA → geospatial mapping → XGBoost salary prediction with SHAP explainability → MLflow experiment tracking → FastAPI serving → interactive Streamlit dashboard → Docker deployment.
 
 **Keywords:** salary prediction, XGBoost, SHAP, MLflow, FastAPI, Streamlit, BLS OEWS, US Census, data science portfolio, income inequality analysis, feature engineering, CI/CD

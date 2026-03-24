@@ -167,7 +167,7 @@ class TestPipelineConstants:
         assert len(vals) == len(set(vals)), "REGION_CODES values must be unique"
 
     def test_features_full_length(self):
-        assert len(FEATURES_FULL) == 11, f"Expected 11 features, got {len(FEATURES_FULL)}"
+        assert len(FEATURES_FULL) == 10, f"Expected 10 features, got {len(FEATURES_FULL)}"
 
     def test_features_full_has_region_code(self):
         assert "Region_Code" in FEATURES_FULL
@@ -195,21 +195,20 @@ class TestModelPrediction:
         assert (preds > 0).all()
 
     def test_prediction_plausible_range(self, production_model, df_engineered):
+        # Model predicts log1p(income); back-transform with expm1 for dollar check
         X = df_engineered[FEATURES_FULL].head(200)
-        preds = production_model.predict(X)
+        preds = np.expm1(production_model.predict(X))
         assert preds.min() > 10_000, "Predictions unrealistically low"
         assert preds.max() < 5_000_000, "Predictions unrealistically high"
 
     def test_r2_above_floor(self, production_model, df_engineered):
-        """Production model should explain at least 3% of variance on the test set.
+        """Production model should explain at least 5% of variance on the test set.
 
-        Individual Census income within the $100K+ cohort has extremely high
-        within-occupation variance ($100K to $1M+). The available features
-        (BLS occupation wages, demographics) explain occupation-level means
-        but not individual variation. The production model (max_depth=6,
-        no explicit L2) achieves R² ≈ 0.04 empirically on this dataset.
-        The 0.03 floor ensures the model is non-trivially better than predicting
-        the mean (R²=0) while matching the real production hyperparameters.
+        Model is trained on log1p(Annual Income); predictions are back-transformed
+        with expm1 before computing R². With log transform + Optuna HPO + fixed
+        target encoding, the production model achieves R² ≈ 0.077 on this dataset.
+        The 0.05 floor guards against hyperparameter regressions while staying
+        safely below the expected value.
         """
         from sklearn.metrics import r2_score
         from sklearn.model_selection import train_test_split
@@ -217,8 +216,9 @@ class TestModelPrediction:
         X = df_engineered[FEATURES_FULL]
         y = df_engineered["Annual Income"]
         _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        r2 = r2_score(y_test, production_model.predict(X_test))
-        assert r2 > 0.03, f"R² too low: {r2:.4f}"
+        preds = np.expm1(production_model.predict(X_test))
+        r2 = r2_score(y_test, preds)
+        assert r2 > 0.05, f"R² too low: {r2:.4f}"
 
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)
