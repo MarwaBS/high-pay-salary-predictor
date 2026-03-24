@@ -130,7 +130,14 @@ class TestPredict:
         assert data["age"] == base_payload["age"]
 
     def test_predict_with_optional_bls_fields(self, client, base_payload):
-        payload = {**base_payload, "hourly_mean": 75.0, "annual_mean_wage": 156000}
+        """Optional BLS fields (employment, lq, jobs_per_1000, hourly_mean) can be supplied."""
+        payload = {
+            **base_payload,
+            "hourly_mean": 75.0,
+            "employment": 5000,
+            "location_quotient": 1.2,
+            "jobs_per_1000": 3.5,
+        }
         r = client.post("/predict", json=payload)
         assert r.status_code == 200
 
