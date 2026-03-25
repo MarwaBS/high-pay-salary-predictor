@@ -3,6 +3,7 @@ API endpoint tests.
 Uses FastAPI's TestClient (synchronous, no server needed).
 Run: pytest tests/test_api.py -v
 """
+
 import sys
 from pathlib import Path
 
@@ -40,6 +41,7 @@ def base_payload(client):
 
 
 # ── Health & Meta ──────────────────────────────────────────────────────────────
+
 
 class TestHealth:
     def test_health_200(self, client):
@@ -82,6 +84,7 @@ class TestMeta:
 
 
 # ── Prediction ────────────────────────────────────────────────────────────────
+
 
 class TestPredict:
     def test_predict_200(self, client, base_payload):
@@ -154,6 +157,7 @@ class TestPredict:
 
 
 # ── Validation errors ─────────────────────────────────────────────────────────
+
 
 class TestValidation:
     def test_unknown_state_422(self, client):

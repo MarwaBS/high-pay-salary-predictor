@@ -1,10 +1,9 @@
 """Pydantic request/response schemas for the salary prediction API."""
-from typing import Optional
 
 from pydantic import BaseModel, Field, field_validator
 
-
 # ── Request ───────────────────────────────────────────────────────────────────
+
 
 class PredictRequest(BaseModel):
     """Input features for salary prediction.
@@ -53,22 +52,22 @@ class PredictRequest(BaseModel):
     )
 
     # Optional BLS context — filled from dataset medians if omitted
-    employment: Optional[float] = Field(
+    employment: float | None = Field(
         default=None,
         ge=0,
         description="State-occupation employment count (BLS OEWS). Defaults to dataset median.",
     )
-    location_quotient: Optional[float] = Field(
+    location_quotient: float | None = Field(
         default=None,
         ge=0,
         description="Location Quotient for this occupation in the state. Defaults to dataset median.",
     )
-    jobs_per_1000: Optional[float] = Field(
+    jobs_per_1000: float | None = Field(
         default=None,
         ge=0,
         description="Jobs per 1,000 total employment. Defaults to dataset median.",
     )
-    hourly_mean: Optional[float] = Field(
+    hourly_mean: float | None = Field(
         default=None,
         ge=0,
         description="BLS hourly mean wage for this occupation in the state ($). Defaults to dataset median.",
@@ -87,18 +86,21 @@ class PredictRequest(BaseModel):
             raise ValueError("gender must be 'Male' or 'Female'")
         return normalised
 
-    model_config = {"json_schema_extra": {
-        "example": {
-            "state": "CA",
-            "occupation": "Software Developers",
-            "education_level": "Bachelor's degree",
-            "gender": "Female",
-            "age": 32,
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "state": "CA",
+                "occupation": "Software Developers",
+                "education_level": "Bachelor's degree",
+                "gender": "Female",
+                "age": 32,
+            }
         }
-    }}
+    }
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
+
 
 class PredictResponse(BaseModel):
     """Salary prediction result with contextual benchmarks."""
