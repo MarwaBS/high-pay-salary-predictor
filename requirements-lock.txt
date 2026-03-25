@@ -86,7 +86,7 @@ pydantic==2.12.5
 pydantic_core==2.42.0
 pydeck==0.9.1
 Pygments==2.19.2
-PyGObject==3.48.2
+PyGObject==3.56.2
 PyJWT==2.7.0
 pyparsing==3.3.2
 pytest==9.0.2
