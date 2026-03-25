@@ -11,7 +11,7 @@
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
-  "train_date": "2026-03-24",
+  "train_date": "2026-03-25",
   "hyperparameters": {
     "n_estimators": 169,
     "max_depth": 3,
