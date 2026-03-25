@@ -4,6 +4,7 @@ High-Paying Jobs in the US — Interactive Dashboard
 Streamlit app: EDA explorer + ML salary predictor.
 Run: streamlit run streamlit_app.py
 """
+
 import warnings
 from pathlib import Path
 
@@ -41,11 +42,7 @@ with open(_CFG_PATH) as f:
 ROOT = Path(__file__).parent  # project root — resolve all paths relative to here
 
 EDU_ORDER = CFG["education_order"]
-REGION_MAP = {
-    state: region
-    for region, states in CFG["regions"].items()
-    for state in states
-}
+REGION_MAP = {state: region for region, states in CFG["regions"].items() for state in states}
 
 # ── Data & Model Loading ──────────────────────────────────────────────────────
 
@@ -59,9 +56,7 @@ def get_group_means() -> dict:
 def load_data() -> pd.DataFrame:
     gm = get_group_means()
     df = pd.read_csv(ROOT / CFG["data"]["cleaned"])
-    return engineer_features(df, EDU_ORDER, REGION_MAP,
-                             occ_means=gm["occ_means"],
-                             state_means=gm["state_means"])
+    return engineer_features(df, EDU_ORDER, REGION_MAP, occ_means=gm["occ_means"], state_means=gm["state_means"])
 
 
 @st.cache_resource(show_spinner="Loading model...")
@@ -177,11 +172,7 @@ def tab_overview(df: pd.DataFrame) -> None:
     col_left2, col_right2 = st.columns(2)
 
     with col_left2:
-        gender_edu = (
-            df.groupby(["Education Level", "Gender"])
-            .size()
-            .reset_index(name="Count")
-        )
+        gender_edu = df.groupby(["Education Level", "Gender"]).size().reset_index(name="Count")
         fig = px.bar(
             gender_edu,
             x="Education Level",
@@ -224,11 +215,15 @@ def tab_geographic(df: pd.DataFrame) -> None:
         ["Avg Annual Income", "Job Count", "Avg Location Quotient"],
     )
 
-    state_agg = df.groupby("State Abbreviation").agg(
-        avg_income=("Annual Income", "mean"),
-        job_count=("Annual Income", "count"),
-        avg_lq=("Location Quotient", "mean"),
-    ).reset_index()
+    state_agg = (
+        df.groupby("State Abbreviation")
+        .agg(
+            avg_income=("Annual Income", "mean"),
+            job_count=("Annual Income", "count"),
+            avg_lq=("Location Quotient", "mean"),
+        )
+        .reset_index()
+    )
 
     metric_map = {
         "Avg Annual Income": ("avg_income", "Average Annual Income ($)", "Blues"),
@@ -293,10 +288,7 @@ def tab_geographic(df: pd.DataFrame) -> None:
 
 def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
     st.header("Salary Predictor")
-    st.markdown(
-        "Enter individual profile details to estimate annual income "
-        "using the trained XGBoost model."
-    )
+    st.markdown("Enter individual profile details to estimate annual income using the trained XGBoost model.")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -349,7 +341,7 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
         prediction = float(np.expm1(model.predict(row)[0]))
 
         # Empirical 80% prediction interval from training-time residual offsets
-        pi_low  = prediction + metrics.get("pi_offset_10", 0.0)
+        pi_low = prediction + metrics.get("pi_offset_10", 0.0)
         pi_high = prediction + metrics.get("pi_offset_90", 0.0)
 
         st.success(f"Estimated Annual Income: **${prediction:,.0f}**")
@@ -359,15 +351,11 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
             "treat as a directional range, not a precise bound._"
         )
 
-        comparable = df[
-            (df["Education Level"] == education)
-            & (df["State Abbreviation"] == state)
-        ]["Annual Income"]
+        comparable = df[(df["Education Level"] == education) & (df["State Abbreviation"] == state)]["Annual Income"]
         if len(comparable) > 0:
             pct = (comparable < prediction).mean() * 100
             st.markdown(
-                f"This estimate is higher than **{pct:.1f}%** of {education} "
-                f"earners in {state} in the dataset."
+                f"This estimate is higher than **{pct:.1f}%** of {education} earners in {state} in the dataset."
             )
 
 
@@ -406,9 +394,9 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        feat_imp = pd.DataFrame(
-            {"Feature": FEATURES_FULL, "Importance": model.feature_importances_}
-        ).sort_values("Importance", ascending=True)
+        feat_imp = pd.DataFrame({"Feature": FEATURES_FULL, "Importance": model.feature_importances_}).sort_values(
+            "Importance", ascending=True
+        )
         fig = px.bar(
             feat_imp,
             x="Importance",
@@ -427,7 +415,8 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         X = df[FEATURES_FULL]
         y = df["Annual Income"]
         _, X_test, _, y_test = train_test_split(
-            X, y,
+            X,
+            y,
             test_size=CFG["model"]["test_size"],
             random_state=CFG["model"]["random_state"],
         )
@@ -437,13 +426,15 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         residuals = y_test.values - y_pred_dollar
 
         fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=y_pred_dollar,
-            y=residuals,
-            mode="markers",
-            marker={"opacity": 0.4, "size": 4, "color": "#2196F3"},
-            name="Residuals",
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=y_pred_dollar,
+                y=residuals,
+                mode="markers",
+                marker={"opacity": 0.4, "size": 4, "color": "#2196F3"},
+                name="Residuals",
+            )
+        )
         fig.add_hline(y=0, line_dash="dash", line_color="red")
         fig.update_layout(
             title="Residual Plot — Dollar Space (Predicted vs Residual)",
@@ -460,13 +451,15 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         title="Actual vs Predicted Annual Income",
     )
     max_val = max(y_test.values.max(), y_pred_dollar.max())
-    fig2.add_trace(go.Scatter(
-        x=[0, max_val],
-        y=[0, max_val],
-        mode="lines",
-        line={"dash": "dash", "color": "red"},
-        name="Perfect Prediction",
-    ))
+    fig2.add_trace(
+        go.Scatter(
+            x=[0, max_val],
+            y=[0, max_val],
+            mode="lines",
+            line={"dash": "dash", "color": "red"},
+            name="Perfect Prediction",
+        )
+    )
     st.plotly_chart(fig2, use_container_width=True)
 
     st.markdown("---")
@@ -474,16 +467,21 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
     # ── Permutation importance (from training artefacts) ──────────────────────
     perm_imp = metrics.get("permutation_importance", {})
     if perm_imp:
-        perm_df = pd.DataFrame([
-            {"Feature": feat, "Mean ΔR²": v["mean"], "Std": v["std"]}
-            for feat, v in sorted(perm_imp.items(), key=lambda x: x[1]["mean"], reverse=True)
-        ])
+        perm_df = pd.DataFrame(
+            [
+                {"Feature": feat, "Mean ΔR²": v["mean"], "Std": v["std"]}
+                for feat, v in sorted(perm_imp.items(), key=lambda x: x[1]["mean"], reverse=True)
+            ]
+        )
         fig_perm = px.bar(
             perm_df.sort_values("Mean ΔR²"),
-            x="Mean ΔR²", y="Feature", orientation="h",
+            x="Mean ΔR²",
+            y="Feature",
+            orientation="h",
             error_x="Std",
             title="Permutation Importance (Mean Decrease in R², 50 repeats)",
-            color="Mean ΔR²", color_continuous_scale="Oranges",
+            color="Mean ΔR²",
+            color_continuous_scale="Oranges",
         )
         fig_perm.update_layout(showlegend=False)
         st.plotly_chart(fig_perm, use_container_width=True)
@@ -498,16 +496,21 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
     subgroup = metrics.get("subgroup_metrics", {})
     if subgroup:
         st.subheader("Subgroup Performance (held-out test set)")
-        sg_df = pd.DataFrame([
-            {"Subgroup": k, "n": v["n"], "R²": round(v["r2"], 4), "MAE ($)": int(v["mae"])}
-            for k, v in subgroup.items()
-        ])
+        sg_df = pd.DataFrame(
+            [
+                {"Subgroup": k, "n": v["n"], "R²": round(v["r2"], 4), "MAE ($)": int(v["mae"])}
+                for k, v in subgroup.items()
+            ]
+        )
         col_g, col_r = st.columns(2)
         with col_g:
             gender_df = sg_df[sg_df["Subgroup"].str.startswith("Gender")]
             fig_g = px.bar(
-                gender_df, x="Subgroup", y="R²",
-                title="R² by Gender", color="Subgroup",
+                gender_df,
+                x="Subgroup",
+                y="R²",
+                title="R² by Gender",
+                color="Subgroup",
                 color_discrete_map={"Gender=Male": "#2196F3", "Gender=Female": "#E91E63"},
                 text="R²",
             )
@@ -517,9 +520,13 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         with col_r:
             region_df = sg_df[sg_df["Subgroup"].str.startswith("Region")]
             fig_r = px.bar(
-                region_df, x="Subgroup", y="R²",
-                title="R² by Region", color="R²",
-                color_continuous_scale="Blues", text="R²",
+                region_df,
+                x="Subgroup",
+                y="R²",
+                title="R² by Region",
+                color="R²",
+                color_continuous_scale="Blues",
+                text="R²",
             )
             fig_r.update_traces(texttemplate="%{text:.3f}", textposition="outside")
             fig_r.update_layout(showlegend=False, yaxis_range=[0, sg_df["R²"].max() * 1.3])
@@ -551,9 +558,7 @@ def main() -> None:
         st.warning("No data matches current filters. Adjust the sidebar selections.")
         return
 
-    tab1, tab2, tab3, tab4 = st.tabs(
-        ["Overview", "Geographic Analysis", "Salary Predictor", "Model Insights"]
-    )
+    tab1, tab2, tab3, tab4 = st.tabs(["Overview", "Geographic Analysis", "Salary Predictor", "Model Insights"])
 
     with tab1:
         tab_overview(filtered_df)
