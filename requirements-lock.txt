@@ -83,7 +83,7 @@ pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic==2.12.5
-pydantic_core==2.41.5
+pydantic_core==2.42.0
 pydeck==0.9.1
 Pygments==2.19.2
 PyGObject==3.48.2
