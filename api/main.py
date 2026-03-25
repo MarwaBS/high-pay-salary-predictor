@@ -37,7 +37,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
 from pipeline import (
-    FEATURES_FULL,
     REGION_CODES,
     build_feature_row,
     engineer_features,

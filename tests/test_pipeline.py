@@ -7,10 +7,8 @@ model predictions. Fixtures are provided by tests/conftest.py.
 Run: pytest tests/ -v
 """
 import numpy as np
-import pytest
 
 from pipeline import FEATURES_FULL, REGION_CODES
-
 
 # ── Config Tests ──────────────────────────────────────────────────────────────
 

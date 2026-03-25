@@ -303,7 +303,7 @@ def main() -> None:
     perm_importance = {
         feat: {"mean": round(float(m), 6), "std": round(float(s), 6)}
         for feat, m, s in zip(
-            FEATURES_FULL, perm.importances_mean, perm.importances_std
+            FEATURES_FULL, perm.importances_mean, perm.importances_std, strict=True
         )
     }
     # Log top features
