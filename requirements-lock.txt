@@ -2,8 +2,8 @@ alembic==1.18.4
 altair==6.0.0
 annotated-doc==0.0.4
 annotated-types==0.7.0
-anyio==4.12.1
-argcomplete==3.1.4
+anyio==4.13.0
+argcomplete==3.6.3
 attrs==26.1.0
 blinker==1.9.0
 cachetools==7.0.5
@@ -83,7 +83,7 @@ pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycparser==3.0
 pydantic==2.12.5
-pydantic_core==2.41.5
+pydantic_core==2.42.0
 pydeck==0.9.1
 Pygments==2.19.2
 PyGObject==3.48.2
