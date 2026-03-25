@@ -25,7 +25,6 @@ from pipeline import (
     save_group_means,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _make_split(df_raw: pd.DataFrame, edu_order: dict, region_map: dict):
@@ -143,6 +142,7 @@ class TestProductionModelEndToEnd:
     def test_prediction_interval_ordered(self, production_model, df, cfg, edu_order, region_map):
         """pi_offset_10 < 0 and pi_offset_90 > 0 so PI always contains prediction."""
         from pathlib import Path
+
         from pipeline import load_metrics
         metrics = load_metrics(str(Path(__file__).parent.parent / cfg["model"]["metrics_path"]))
         assert metrics["pi_offset_10"] < 0, "Lower PI offset must be negative (residual below prediction)"
