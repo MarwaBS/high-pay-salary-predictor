@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field, field_validator
 
 # ── Request ───────────────────────────────────────────────────────────────────
 
+
 class PredictRequest(BaseModel):
     """Input features for salary prediction.
 
@@ -85,18 +86,21 @@ class PredictRequest(BaseModel):
             raise ValueError("gender must be 'Male' or 'Female'")
         return normalised
 
-    model_config = {"json_schema_extra": {
-        "example": {
-            "state": "CA",
-            "occupation": "Software Developers",
-            "education_level": "Bachelor's degree",
-            "gender": "Female",
-            "age": 32,
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "state": "CA",
+                "occupation": "Software Developers",
+                "education_level": "Bachelor's degree",
+                "gender": "Female",
+                "age": 32,
+            }
         }
-    }}
+    }
 
 
 # ── Response ──────────────────────────────────────────────────────────────────
+
 
 class PredictResponse(BaseModel):
     """Salary prediction result with contextual benchmarks."""

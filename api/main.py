@@ -20,6 +20,7 @@ Environment variables:
                  Defaults to "*" (open) — restrict in production.
                  Example: CORS_ORIGINS=https://myapp.com,https://staging.myapp.com
 """
+
 import logging
 import os
 import sys
@@ -86,6 +87,7 @@ state = AppState()
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── startup ──
@@ -93,19 +95,21 @@ async def lifespan(app: FastAPI):
 
     # Load training-set group means for consistent target encoding at inference
     group_means = load_group_means(str(ROOT / CFG["model"]["group_means_path"]))
-    state.occ_means   = group_means["occ_means"]
+    state.occ_means = group_means["occ_means"]
     state.state_means = group_means["state_means"]
 
     # Engineer features using saved training means (no leakage at inference)
     df_raw = pd.read_csv(ROOT / CFG["data"]["cleaned"])
     df_eng = engineer_features(
-        df_raw, EDU_ORDER, REGION_MAP,
+        df_raw,
+        EDU_ORDER,
+        REGION_MAP,
         occ_means=state.occ_means,
         state_means=state.state_means,
     )
 
-    state.df          = df_eng
-    state.model       = load_model(str(ROOT / CFG["model"]["model_path"]))
+    state.df = df_eng
+    state.model = load_model(str(ROOT / CFG["model"]["model_path"]))
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
     state.region_codes = REGION_CODES
 
@@ -116,8 +120,7 @@ async def lifespan(app: FastAPI):
     state.pi_offset_90 = metrics.get("pi_offset_90", 0.0)
 
     logger.info(
-        "Ready — dataset rows: %d, occupations: %d, model features: %d, "
-        "80%% PI offsets: [%d, %+d]",
+        "Ready — dataset rows: %d, occupations: %d, model features: %d, 80%% PI offsets: [%d, %+d]",
         len(df_eng),
         len(state.occupations),
         state.model.n_features_in_,
@@ -156,6 +159,7 @@ app.add_middleware(
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
+
 
 @app.get("/", include_in_schema=False)
 async def root():
@@ -236,21 +240,21 @@ def predict(req: PredictRequest):
     if len(subset) == 0:
         subset = df  # final fallback: global medians
 
-    employment  = req.employment        if req.employment        is not None else float(subset["Employment"].median())
-    lq          = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
-    jobs_k      = req.jobs_per_1000     if req.jobs_per_1000     is not None else float(subset["Jobs per 1000"].median())
-    hourly_mean = req.hourly_mean       if req.hourly_mean       is not None else float(subset["Hourly Mean"].median())
+    employment = req.employment if req.employment is not None else float(subset["Employment"].median())
+    lq = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
+    jobs_k = req.jobs_per_1000 if req.jobs_per_1000 is not None else float(subset["Jobs per 1000"].median())
+    hourly_mean = req.hourly_mean if req.hourly_mean is not None else float(subset["Hourly Mean"].median())
 
     # ── Encode categorical inputs ─────────────────────────────────────────────
-    edu_ord     = EDU_ORDER[req.education_level]
-    gender_bin  = 1 if req.gender == "Male" else 0
-    region      = REGION_MAP.get(req.state, "South")
+    edu_ord = EDU_ORDER[req.education_level]
+    gender_bin = 1 if req.gender == "Male" else 0
+    region = REGION_MAP.get(req.state, "South")
     region_code = state.region_codes.get(region, 0)
 
     # Use training-set group means for consistent encoding with training
-    fallback_occ_mean   = float(np.mean(list(state.occ_means.values())))
+    fallback_occ_mean = float(np.mean(list(state.occ_means.values())))
     fallback_state_mean = float(np.mean(list(state.state_means.values())))
-    occ_mean   = state.occ_means.get(req.occupation, fallback_occ_mean)
+    occ_mean = state.occ_means.get(req.occupation, fallback_occ_mean)
     state_mean = state.state_means.get(req.state, fallback_state_mean)
 
     # ── Predict (model trained on log1p scale — back-transform with expm1) ───
@@ -269,29 +273,33 @@ def predict(req: PredictRequest):
     predicted = float(np.expm1(state.model.predict(row)[0]))
     logger.debug(
         "Prediction: state=%s occ=%s edu=%s gender=%s age=%d → $%.0f",
-        req.state, req.occupation, req.education_level, req.gender, req.age, predicted,
+        req.state,
+        req.occupation,
+        req.education_level,
+        req.gender,
+        req.age,
+        predicted,
     )
 
     # ── Empirical 80% prediction interval (dollar-space offsets) ─────────────
-    pi_low  = round(predicted + state.pi_offset_10, 2)
+    pi_low = round(predicted + state.pi_offset_10, 2)
     pi_high = round(predicted + state.pi_offset_90, 2)
 
     # ── Contextual benchmarks ─────────────────────────────────────────────────
-    group = df[
-        (df["State Abbreviation"] == req.state) &
-        (df["Education Level"] == req.education_level)
-    ]["Annual Income"]
+    group = df[(df["State Abbreviation"] == req.state) & (df["Education Level"] == req.education_level)][
+        "Annual Income"
+    ]
 
     if len(group) > 0:
-        percentile   = float((group < predicted).mean() * 100)
+        percentile = float((group < predicted).mean() * 100)
         group_median = float(group.median())
-        group_mean   = float(group.mean())
-        group_size   = len(group)
+        group_mean = float(group.mean())
+        group_size = len(group)
     else:
-        percentile   = 50.0
+        percentile = 50.0
         group_median = float(df["Annual Income"].median())
-        group_mean   = float(df["Annual Income"].mean())
-        group_size   = 0
+        group_mean = float(df["Annual Income"].mean())
+        group_size = 0
 
     return PredictResponse(
         predicted_salary=round(predicted, 2),
