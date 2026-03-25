@@ -6,13 +6,13 @@ model predictions. Fixtures are provided by tests/conftest.py.
 
 Run: pytest tests/ -v
 """
+
 import numpy as np
-import pytest
 
 from pipeline import FEATURES_FULL, REGION_CODES
 
-
 # ── Config Tests ──────────────────────────────────────────────────────────────
+
 
 class TestConfig:
     def test_config_loads(self, cfg):
@@ -46,6 +46,7 @@ class TestConfig:
 
 
 # ── Data Schema Tests ─────────────────────────────────────────────────────────
+
 
 class TestDataSchema:
     REQUIRED_COLUMNS = [
@@ -110,6 +111,7 @@ class TestDataSchema:
 
 # ── Feature Engineering Tests ─────────────────────────────────────────────────
 
+
 class TestFeatureEngineering:
     def test_education_ordinal_no_nulls(self, df_engineered):
         assert df_engineered["Education_Ord"].isnull().sum() == 0
@@ -158,6 +160,7 @@ class TestFeatureEngineering:
 
 # ── Pipeline constants ────────────────────────────────────────────────────────
 
+
 class TestPipelineConstants:
     def test_region_codes_cover_four_regions(self):
         assert set(REGION_CODES.keys()) == {"Midwest", "Northeast", "South", "West"}
@@ -174,6 +177,7 @@ class TestPipelineConstants:
 
 
 # ── Model Prediction Tests ─────────────────────────────────────────────────────
+
 
 class TestModelPrediction:
     """Tests against the production model loaded from disk.

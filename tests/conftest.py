@@ -6,6 +6,7 @@ Session-scoped fixtures shared across ALL test modules.
 Having fixtures here (instead of duplicated in each test file) means
 pytest auto-discovers them and any test can use them without importing.
 """
+
 from pathlib import Path
 
 import pandas as pd
@@ -14,10 +15,10 @@ import yaml
 
 from pipeline import engineer_features, load_group_means, load_model
 
-
 # ---------------------------------------------------------------------------
 # Session-scope: load once, reuse across the entire test run
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture(scope="session")
 def cfg() -> dict:
@@ -41,11 +42,7 @@ def edu_order(cfg: dict) -> dict[str, int]:
 
 @pytest.fixture(scope="session")
 def region_map(cfg: dict) -> dict[str, str]:
-    return {
-        state: region
-        for region, states in cfg["regions"].items()
-        for state in states
-    }
+    return {state: region for region, states in cfg["regions"].items() for state in states}
 
 
 @pytest.fixture(scope="session")
@@ -60,16 +57,16 @@ def group_means(cfg: dict) -> dict:
 
 
 @pytest.fixture(scope="session")
-def df_engineered(
-    df: pd.DataFrame, edu_order: dict, region_map: dict, group_means: dict
-) -> pd.DataFrame:
+def df_engineered(df: pd.DataFrame, edu_order: dict, region_map: dict, group_means: dict) -> pd.DataFrame:
     """Dataset with all model-ready derived columns (from pipeline.engineer_features).
 
     Uses saved training-set group means so encoding is consistent with
     what the production model saw during training.
     """
     return engineer_features(
-        df, edu_order, region_map,
+        df,
+        edu_order,
+        region_map,
         occ_means=group_means["occ_means"],
         state_means=group_means["state_means"],
     )

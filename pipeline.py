@@ -33,6 +33,7 @@ Shared across the entire project:
   - tests/test_pipeline.py
   - 04_salary_prediction_model.ipynb
 """
+
 from __future__ import annotations
 
 import json
@@ -143,29 +144,19 @@ def engineer_features(
 
     out = df.copy()
     out["Education_Ord"] = out["Education Level"].map(edu_order)
-    out["Gender_Bin"]    = (out["Gender"] == "Male").astype(int)
-    out["Region"]        = out["State Abbreviation"].map(region_map)
-    out["Region_Code"]   = out["Region"].map(REGION_CODES).fillna(0).astype(int)
+    out["Gender_Bin"] = (out["Gender"] == "Male").astype(int)
+    out["Region"] = out["State Abbreviation"].map(region_map)
+    out["Region_Code"] = out["Region"].map(REGION_CODES).fillna(0).astype(int)
 
     if occ_means is not None:
-        out["Occ_Mean_Income"] = (
-            out["Occupation"].map(occ_means)
-            .fillna(pd.Series(occ_means).mean())
-        )
+        out["Occ_Mean_Income"] = out["Occupation"].map(occ_means).fillna(pd.Series(occ_means).mean())
     else:
-        out["Occ_Mean_Income"] = (
-            out.groupby("Occupation")["Annual Income"].transform("mean")
-        )
+        out["Occ_Mean_Income"] = out.groupby("Occupation")["Annual Income"].transform("mean")
 
     if state_means is not None:
-        out["State_Mean_Income"] = (
-            out["State Abbreviation"].map(state_means)
-            .fillna(pd.Series(state_means).mean())
-        )
+        out["State_Mean_Income"] = out["State Abbreviation"].map(state_means).fillna(pd.Series(state_means).mean())
     else:
-        out["State_Mean_Income"] = (
-            out.groupby("State Abbreviation")["Annual Income"].transform("mean")
-        )
+        out["State_Mean_Income"] = out.groupby("State Abbreviation")["Annual Income"].transform("mean")
 
     return out
 
@@ -182,7 +173,7 @@ def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
     dict with keys ``"occ_means"`` and ``"state_means"``.
     """
     return {
-        "occ_means":   df_train.groupby("Occupation")["Annual Income"].mean().to_dict(),
+        "occ_means": df_train.groupby("Occupation")["Annual Income"].mean().to_dict(),
         "state_means": df_train.groupby("State Abbreviation")["Annual Income"].mean().to_dict(),
     }
 
@@ -190,6 +181,7 @@ def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
 # ---------------------------------------------------------------------------
 # Shared prediction helper — eliminates duplication between API and dashboard
 # ---------------------------------------------------------------------------
+
 
 def build_feature_row(
     *,
@@ -213,8 +205,20 @@ def build_feature_row(
     apply ``numpy.expm1()`` to the raw prediction to get dollar values.
     """
     return pd.DataFrame(
-        [[age, edu_ord, gender_bin, region_code, employment, lq,
-          jobs_k, hourly_mean, occ_mean_income, state_mean_income]],
+        [
+            [
+                age,
+                edu_ord,
+                gender_bin,
+                region_code,
+                employment,
+                lq,
+                jobs_k,
+                hourly_mean,
+                occ_mean_income,
+                state_mean_income,
+            ]
+        ],
         columns=FEATURES_FULL,
     )
 
@@ -225,6 +229,7 @@ def build_feature_row(
 # Pickle is Python-version-sensitive and can execute arbitrary code on load.
 # We use XGBoost's native binary format (.ubj) for models and plain JSON
 # for the feature list and metrics, making artefacts portable and auditable.
+
 
 def save_model(model: XGBRegressor, path: str) -> None:
     """Save an XGBoost model using its native binary format (.ubj)."""
@@ -242,8 +247,7 @@ def load_model(path: str) -> XGBRegressor:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(
-            f"Model artefact not found: {p}. "
-            "Run 'make model' (or 'python scripts/train_model.py') to generate it."
+            f"Model artefact not found: {p}. Run 'make model' (or 'python scripts/train_model.py') to generate it."
         )
     m = XGBRegressor()
     m.load_model(str(p))

@@ -10,6 +10,7 @@ encoding, log/dollar-scale confusion).
 
 Run: pytest tests/test_integration.py -v
 """
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -25,23 +26,24 @@ from pipeline import (
     save_group_means,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
 
 def _make_split(df_raw: pd.DataFrame, edu_order: dict, region_map: dict):
     """Split raw data, compute group means from train, engineer both splits."""
     train_raw, test_raw = train_test_split(df_raw, test_size=0.2, random_state=42)
     gm = compute_group_means(train_raw)
-    df_train = engineer_features(train_raw, edu_order, region_map,
-                                 occ_means=gm["occ_means"],
-                                 state_means=gm["state_means"])
-    df_test  = engineer_features(test_raw,  edu_order, region_map,
-                                 occ_means=gm["occ_means"],
-                                 state_means=gm["state_means"])
+    df_train = engineer_features(
+        train_raw, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
+    )
+    df_test = engineer_features(
+        test_raw, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
+    )
     return df_train, df_test, gm
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 class TestSplitThenEngineer:
     """Group means must be derived from train split only."""
@@ -50,23 +52,17 @@ class TestSplitThenEngineer:
         df_train, df_test, _ = _make_split(df, edu_order, region_map)
         n = len(df)
         assert abs(len(df_train) / n - 0.8) < 0.02
-        assert abs(len(df_test)  / n - 0.2) < 0.02
+        assert abs(len(df_test) / n - 0.2) < 0.02
 
     def test_no_occ_mean_leakage(self, df, edu_order, region_map):
         """Training-set occ means must not equal full-dataset means (leakage check)."""
-        gm_train = compute_group_means(
-            train_test_split(df, test_size=0.2, random_state=42)[0]
-        )
-        gm_full  = compute_group_means(df)
+        gm_train = compute_group_means(train_test_split(df, test_size=0.2, random_state=42)[0])
+        gm_full = compute_group_means(df)
         # At least one occupation's mean should differ after splitting
         shared = set(gm_train["occ_means"]) & set(gm_full["occ_means"])
-        diffs = [
-            abs(gm_train["occ_means"][k] - gm_full["occ_means"][k])
-            for k in shared
-        ]
+        diffs = [abs(gm_train["occ_means"][k] - gm_full["occ_means"][k]) for k in shared]
         assert max(diffs) > 100, (
-            "Train-only group means are identical to full-dataset means — "
-            "leakage may not have been eliminated."
+            "Train-only group means are identical to full-dataset means — leakage may not have been eliminated."
         )
 
     def test_features_present_after_split_engineer(self, df, edu_order, region_map):
@@ -105,10 +101,9 @@ class TestProductionModelEndToEnd:
     def test_production_encoding_consistent(self, production_model, df, cfg, edu_order, region_map):
         """Model trained with training-set means must get same feature names as saved means."""
         from pathlib import Path
+
         gm = load_group_means(str(Path(__file__).parent.parent / cfg["model"]["group_means_path"]))
-        df_eng = engineer_features(df, edu_order, region_map,
-                                   occ_means=gm["occ_means"],
-                                   state_means=gm["state_means"])
+        df_eng = engineer_features(df, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"])
         X = df_eng[FEATURES_FULL].head(10)
         preds_log = production_model.predict(X)
         preds_dollar = np.expm1(preds_log)
@@ -118,9 +113,16 @@ class TestProductionModelEndToEnd:
     def test_build_feature_row_matches_training_features(self, production_model):
         """build_feature_row must produce exactly the columns the model expects."""
         row = build_feature_row(
-            age=35, edu_ord=2, gender_bin=1, region_code=1,
-            employment=1000.0, lq=1.0, jobs_k=2.0, hourly_mean=60.0,
-            occ_mean_income=130_000.0, state_mean_income=140_000.0,
+            age=35,
+            edu_ord=2,
+            gender_bin=1,
+            region_code=1,
+            employment=1000.0,
+            lq=1.0,
+            jobs_k=2.0,
+            hourly_mean=60.0,
+            occ_mean_income=130_000.0,
+            state_mean_income=140_000.0,
         )
         assert list(row.columns) == FEATURES_FULL
         assert row.shape == (1, len(FEATURES_FULL))
@@ -130,10 +132,9 @@ class TestProductionModelEndToEnd:
     def test_r2_with_saved_group_means(self, production_model, df, cfg, edu_order, region_map):
         """End-to-end R² with saved training group means must exceed 0.05."""
         from pathlib import Path
+
         gm = load_group_means(str(Path(__file__).parent.parent / cfg["model"]["group_means_path"]))
-        df_eng = engineer_features(df, edu_order, region_map,
-                                   occ_means=gm["occ_means"],
-                                   state_means=gm["state_means"])
+        df_eng = engineer_features(df, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"])
         X = df_eng[FEATURES_FULL]
         y = df_eng["Annual Income"]
         _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
@@ -143,7 +144,9 @@ class TestProductionModelEndToEnd:
     def test_prediction_interval_ordered(self, production_model, df, cfg, edu_order, region_map):
         """pi_offset_10 < 0 and pi_offset_90 > 0 so PI always contains prediction."""
         from pathlib import Path
+
         from pipeline import load_metrics
+
         metrics = load_metrics(str(Path(__file__).parent.parent / cfg["model"]["metrics_path"]))
         assert metrics["pi_offset_10"] < 0, "Lower PI offset must be negative (residual below prediction)"
         assert metrics["pi_offset_90"] > 0, "Upper PI offset must be positive (residual above prediction)"
