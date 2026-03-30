@@ -85,7 +85,7 @@ pycparser==3.0
 pydantic==2.12.5
 pydantic_core==2.42.0
 pydeck==0.9.1
-Pygments==2.19.2
+Pygments==2.20.0
 PyGObject==3.48.2
 PyJWT==2.7.0
 pyparsing==3.3.2
