@@ -1,0 +1,10 @@
+# pip-audit ignore list
+# ---------------------
+# Add vulnerability IDs here (one per line) ONLY when:
+#   1. No upstream patch exists yet
+#   2. The risk is mitigated by other controls
+#   3. A tracking issue is linked
+#
+# Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN
+#
+# As of 2026-04-03: no known vulnerabilities — this file is empty.
