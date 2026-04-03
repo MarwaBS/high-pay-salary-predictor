@@ -52,7 +52,6 @@ from __future__ import annotations
 import argparse
 import datetime
 import logging
-import sys
 import time
 from pathlib import Path
 
@@ -67,10 +66,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from xgboost import XGBRegressor
 
-ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
-
-from pipeline import (  # noqa: E402
+from pipeline import (
     FEATURES_FULL,
     compute_group_means,
     engineer_features,
@@ -79,6 +75,8 @@ from pipeline import (  # noqa: E402
     save_metrics,
     save_model,
 )
+
+ROOT = Path(__file__).resolve().parent.parent
 
 logging.basicConfig(
     level=logging.INFO,
