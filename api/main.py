@@ -7,6 +7,7 @@ Endpoints:
   GET  /            — API info
   GET  /health      — liveness probe
   GET  /meta        — valid states, occupations, education levels
+  GET  /metrics     — Prometheus metrics (auto-instrumented)
   POST /predict     — salary prediction with contextual benchmarks and PI
 
 Run locally:
@@ -17,21 +18,34 @@ Docker (via docker-compose):
 
 Environment variables:
   CORS_ORIGINS   Comma-separated list of allowed origins.
-                 Defaults to "*" (open) — restrict in production.
+                 Defaults to empty (rejects cross-origin requests).
+                 Set to "*" for local dev or an explicit allow-list for production.
                  Example: CORS_ORIGINS=https://myapp.com,https://staging.myapp.com
+  API_KEY        If set, all /predict requests require X-API-Key header.
+                 Unset = dev mode (no auth required).
+  RATE_LIMIT     Per-IP rate limit for /predict (default: "60/minute").
 """
 
+import json
 import logging
 import os
 import sys
+import time
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi.security import APIKeyHeader
+from prometheus_fastapi_instrumentator import Instrumentator
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 # Allow running from repo root without installing the package
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -40,20 +54,57 @@ from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictRes
 from pipeline import (
     REGION_CODES,
     build_feature_row,
+    compute_fallback_means,
     engineer_features,
+    get_bls_defaults,
     load_group_means,
     load_metrics,
     load_model,
 )
 
-# ── Logging ───────────────────────────────────────────────────────────────────
+# ── Structured JSON Logging ──────────────────────────────────────────────────
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
-    datefmt="%Y-%m-%dT%H:%M:%S",
-)
+
+class _JSONFormatter(logging.Formatter):
+    """Emit logs as single-line JSON for machine parsing and log aggregation."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry = {
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S"),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[0]:
+            entry["exception"] = self.formatException(record.exc_info)
+        return json.dumps(entry)
+
+
+_handler = logging.StreamHandler()
+_handler.setFormatter(_JSONFormatter())
+logging.root.handlers = [_handler]
+logging.root.setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
+
+# ── API Key Auth ─────────────────────────────────────────────────────────────
+
+API_KEY = os.getenv("API_KEY", "")
+_api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
+
+
+async def verify_api_key(key: str | None = Security(_api_key_header)) -> str | None:
+    """Validate API key if API_KEY is configured; skip in dev mode (unset)."""
+    if not API_KEY:
+        return None  # dev mode: no auth required
+    if key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    return key
+
+
+# ── Rate Limiting ────────────────────────────────────────────────────────────
+
+RATE_LIMIT = os.getenv("RATE_LIMIT", "60/minute")
+limiter = Limiter(key_func=get_remote_address, default_limits=[RATE_LIMIT])
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
@@ -135,10 +186,12 @@ async def lifespan(app: FastAPI):
 
 # ── App ───────────────────────────────────────────────────────────────────────
 
-# Allow CORS origins to be configured via environment variable so the same
-# Docker image works in dev ("*") and production (explicit allow-list).
-_raw_origins = os.getenv("CORS_ORIGINS", "*")
-CORS_ORIGINS = [o.strip() for o in _raw_origins.split(",")] if _raw_origins != "*" else ["*"]
+# CORS: default to closed (empty). Set CORS_ORIGINS="*" for local dev or an
+# explicit comma-separated list for production.
+_raw_origins = os.getenv("CORS_ORIGINS", "")
+CORS_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()] if _raw_origins else []
+if not CORS_ORIGINS:
+    logger.warning("CORS_ORIGINS not set — cross-origin requests will be rejected")
 
 app = FastAPI(
     title="US High-Pay Salary Predictor",
@@ -150,12 +203,54 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiter state
+app.state.limiter = limiter
+
+
+def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    return JSONResponse(
+        status_code=429,
+        content={"detail": f"Rate limit exceeded: {exc.detail}"},
+    )
+
+
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"],
+    allow_headers=["*", "X-API-Key"],
 )
+
+
+# ── Request ID + Logging Middleware ──────────────────────────────────────────
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    """Attach a unique request ID to every request for tracing."""
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    start = time.perf_counter()
+    response = await call_next(request)
+    elapsed = time.perf_counter() - start
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": round(elapsed * 1000, 1),
+        },
+    )
+    return response
+
+
+# ── Prometheus Metrics ───────────────────────────────────────────────────────
+
+Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -193,7 +288,8 @@ async def meta():
 
 
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
-def predict(req: PredictRequest):
+@limiter.limit(RATE_LIMIT)
+def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):
     """
     Predict annual income for a given demographic + occupational profile.
 
@@ -235,15 +331,11 @@ def predict(req: PredictRequest):
         )
 
     # ── Derive BLS context defaults from dataset medians ─────────────────────
-    mask = (df["State Abbreviation"] == req.state) & (df["Occupation"] == req.occupation)
-    subset = df[mask] if mask.sum() > 0 else df[df["State Abbreviation"] == req.state]
-    if len(subset) == 0:
-        subset = df  # final fallback: global medians
-
-    employment = req.employment if req.employment is not None else float(subset["Employment"].median())
-    lq = req.location_quotient if req.location_quotient is not None else float(subset["Location Quotient"].median())
-    jobs_k = req.jobs_per_1000 if req.jobs_per_1000 is not None else float(subset["Jobs per 1000"].median())
-    hourly_mean = req.hourly_mean if req.hourly_mean is not None else float(subset["Hourly Mean"].median())
+    bls = get_bls_defaults(df, req.state, req.occupation)
+    employment = req.employment if req.employment is not None else bls["employment"]
+    lq = req.location_quotient if req.location_quotient is not None else bls["location_quotient"]
+    jobs_k = req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"]
+    hourly_mean = req.hourly_mean if req.hourly_mean is not None else bls["hourly_mean"]
 
     # ── Encode categorical inputs ─────────────────────────────────────────────
     edu_ord = EDU_ORDER[req.education_level]
@@ -252,10 +344,11 @@ def predict(req: PredictRequest):
     region_code = state.region_codes.get(region, 0)
 
     # Use training-set group means for consistent encoding with training
-    fallback_occ_mean = float(np.mean(list(state.occ_means.values())))
-    fallback_state_mean = float(np.mean(list(state.state_means.values())))
-    occ_mean = state.occ_means.get(req.occupation, fallback_occ_mean)
-    state_mean = state.state_means.get(req.state, fallback_state_mean)
+    occ_fallback, state_fallback = compute_fallback_means(
+        {"occ_means": state.occ_means, "state_means": state.state_means}
+    )
+    occ_mean = state.occ_means.get(req.occupation, occ_fallback)
+    state_mean_income = state.state_means.get(req.state, state_fallback)
 
     # ── Predict (model trained on log1p scale — back-transform with expm1) ───
     row = build_feature_row(
@@ -268,7 +361,7 @@ def predict(req: PredictRequest):
         jobs_k=jobs_k,
         hourly_mean=hourly_mean,
         occ_mean_income=occ_mean,
-        state_mean_income=state_mean,
+        state_mean_income=state_mean_income,
     )
     predicted = float(np.expm1(state.model.predict(row)[0]))
     logger.debug(
