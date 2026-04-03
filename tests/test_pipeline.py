@@ -8,6 +8,7 @@ Run: pytest tests/ -v
 """
 
 import numpy as np
+import pytest
 
 from pipeline import FEATURES_FULL, REGION_CODES
 
@@ -226,3 +227,54 @@ class TestModelPrediction:
 
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)
+
+
+# ── Config Schema Validation ─────────────────────────────────────────────────
+
+
+class TestConfigSchema:
+    """Verify that config_schema.py catches invalid configurations."""
+
+    def test_valid_config_passes(self, cfg):
+        """The production config.yaml should pass Pydantic validation."""
+        from config_schema import ProjectConfig
+
+        config = ProjectConfig(**cfg)
+        assert config.thresholds.min_annual_income == 100_000
+        assert len(config.education_order) == 4
+
+    def test_missing_section_raises(self, cfg):
+        """Missing a required top-level key should fail validation."""
+        from pydantic import ValidationError
+
+        from config_schema import ProjectConfig
+
+        broken = {k: v for k, v in cfg.items() if k != "thresholds"}
+        with pytest.raises(ValidationError):
+            ProjectConfig(**broken)
+
+    def test_duplicate_state_raises(self, cfg):
+        """A state appearing in two regions should fail the 50-state check."""
+        import copy
+
+        from pydantic import ValidationError
+
+        from config_schema import ProjectConfig
+
+        broken = copy.deepcopy(cfg)
+        broken["regions"]["West"].append("CA")  # CA already in West — now 51 entries
+        with pytest.raises(ValidationError):
+            ProjectConfig(**broken)
+
+    def test_non_ordinal_education_raises(self, cfg):
+        """Education values that aren't 1..N should fail validation."""
+        import copy
+
+        from pydantic import ValidationError
+
+        from config_schema import ProjectConfig
+
+        broken = copy.deepcopy(cfg)
+        broken["education_order"] = {"Bachelor's degree": 1, "Master's degree": 5}
+        with pytest.raises(ValidationError):
+            ProjectConfig(**broken)

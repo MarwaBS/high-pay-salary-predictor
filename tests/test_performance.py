@@ -7,14 +7,9 @@ limiter.reset() to avoid false failures from the 60/minute cap.
 Run: pytest tests/test_performance.py -v
 """
 
-import sys
 import time
-from pathlib import Path
 
 import pytest
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from fastapi.testclient import TestClient
 
 from api.main import app, limiter

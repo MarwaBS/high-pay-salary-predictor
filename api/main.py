@@ -29,7 +29,6 @@ Environment variables:
 import json
 import logging
 import os
-import sys
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -46,9 +45,6 @@ from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
-
-# Allow running from repo root without installing the package
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from api.drift import DriftMonitor
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
