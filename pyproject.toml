@@ -1,6 +1,6 @@
 [build-system]
 requires = ["setuptools>=68"]
-build-backend = "setuptools.backends.legacy:build"
+build-backend = "setuptools.build_meta"
 
 # ── Project metadata ──────────────────────────────────────────────────────────
 [project]
@@ -10,6 +10,14 @@ description     = "End-to-end data science pipeline for US high-paying jobs ($10
 readme          = "README.md"
 license         = {file = "LICENSE"}
 requires-python = ">=3.10"
+
+# ── Package discovery ────────────────────────────────────────────────────────
+# Allows `pip install -e .` so imports work without sys.path hacks.
+[tool.setuptools]
+py-modules = ["pipeline", "config_schema"]
+
+[tool.setuptools.packages.find]
+include = ["api*", "scripts*"]
 
 # ── Ruff (linter + formatter, replaces flake8 + black + isort) ───────────────
 [tool.ruff]
