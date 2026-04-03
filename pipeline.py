@@ -39,6 +39,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from xgboost import XGBRegressor
 
@@ -221,6 +222,48 @@ def build_feature_row(
         ],
         columns=FEATURES_FULL,
     )
+
+
+# ---------------------------------------------------------------------------
+# Shared fallback helpers — eliminates duplication between API and dashboard
+# ---------------------------------------------------------------------------
+
+
+def compute_fallback_means(
+    group_means: dict[str, dict[str, float]],
+) -> tuple[float, float]:
+    """Return (occ_fallback, state_fallback) as averages of all group means.
+
+    Used when a specific occupation or state has no entry in the training-set
+    group means (e.g. unseen at training time).
+    """
+    occ_fallback = float(np.mean(list(group_means["occ_means"].values())))
+    state_fallback = float(np.mean(list(group_means["state_means"].values())))
+    return occ_fallback, state_fallback
+
+
+def get_bls_defaults(
+    df: pd.DataFrame,
+    state: str,
+    occupation: str,
+    state_col: str = "State Abbreviation",
+) -> dict[str, float]:
+    """Return median BLS context for a state+occupation pair with progressive fallback.
+
+    Lookup order: (state AND occupation) → (state only) → (global).
+    Returns dict with keys: employment, location_quotient, jobs_per_1000, hourly_mean.
+    """
+    mask_both = (df[state_col] == state) & (df["Occupation"] == occupation)
+    subset = df[mask_both] if mask_both.sum() > 0 else df[df[state_col] == state]
+    if len(subset) == 0:
+        subset = df  # final fallback: global medians
+
+    return {
+        "employment": float(subset["Employment"].median()),
+        "location_quotient": float(subset["Location Quotient"].median()),
+        "jobs_per_1000": float(subset["Jobs per 1000"].median()),
+        "hourly_mean": float(subset["Hourly Mean"].median()),
+    }
 
 
 # ---------------------------------------------------------------------------
