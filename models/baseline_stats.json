@@ -1,0 +1,62 @@
+{
+  "Age": {
+    "mean": 41.3217,
+    "std": 10.9458,
+    "min": 19.0,
+    "max": 94.0
+  },
+  "Education_Ord": {
+    "mean": 1.609,
+    "std": 0.809,
+    "min": 1.0,
+    "max": 4.0
+  },
+  "Gender_Bin": {
+    "mean": 0.5985,
+    "std": 0.4902,
+    "min": 0.0,
+    "max": 1.0
+  },
+  "Region_Code": {
+    "mean": 1.8534,
+    "std": 1.0284,
+    "min": 0.0,
+    "max": 3.0
+  },
+  "Employment": {
+    "mean": 63029.449,
+    "std": 90941.8599,
+    "min": 50.0,
+    "max": 448530.0
+  },
+  "Location Quotient": {
+    "mean": 1.1621,
+    "std": 0.5392,
+    "min": 0.08,
+    "max": 8.96
+  },
+  "Jobs per 1000": {
+    "mean": 6.9762,
+    "std": 7.213,
+    "min": 0.018,
+    "max": 33.81
+  },
+  "Hourly Mean": {
+    "mean": 65.7769,
+    "std": 13.8075,
+    "min": 48.08,
+    "max": 123.15
+  },
+  "Occ_Mean_Income": {
+    "mean": 168086.812,
+    "std": 26481.3875,
+    "min": 101983.0,
+    "max": 367912.25
+  },
+  "State_Mean_Income": {
+    "mean": 168089.2161,
+    "std": 8417.3084,
+    "min": 115411.0,
+    "max": 202377.3333
+  }
+}
