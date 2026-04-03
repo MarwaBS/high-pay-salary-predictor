@@ -48,7 +48,7 @@ help:
 	@echo "  install     Create .venv and install all dependencies"
 	@echo "  data        Regenerate cleaned dataset from raw sources"
 	@echo "  model       Train XGBoost model → models/xgb_salary_model.ubj"
-	@echo "  test        Run full pytest suite (67 tests)"
+	@echo "  test        Run full pytest suite (98 tests)"
 	@echo "  coverage    Run tests with HTML coverage report"
 	@echo "  lint        Ruff linter (fast, replaces flake8)"
 	@echo "  format      Ruff auto-formatter (Black-compatible)"
@@ -99,7 +99,7 @@ model: install
 # ── Testing ───────────────────────────────────────────────────────────────────
 .PHONY: test
 test: install
-	@echo ">>> Running test suite..."
+	@echo ">>> Running 96-test suite (unit + integration + drift + performance)..."
 	$(PYTEST) tests/ -v --tb=short
 
 .PHONY: test-fast

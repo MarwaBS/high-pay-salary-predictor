@@ -201,3 +201,22 @@ class TestValidation:
     def test_missing_required_field_422(self, client):
         r = client.post("/predict", json={"state": "CA"})
         assert r.status_code == 422
+
+
+# ── Drift Endpoint ───────────────────────────────────────────────────────────
+
+
+class TestDriftEndpoint:
+    def test_drift_200(self, client):
+        """GET /drift should return 200 regardless of observation count."""
+        r = client.get("/drift")
+        assert r.status_code == 200
+
+    def test_drift_reports_after_predictions(self, client, base_payload):
+        """After making predictions, /drift should report observations."""
+        for _ in range(35):
+            client.post("/predict", json=base_payload)
+        r = client.get("/drift")
+        data = r.json()
+        assert data.get("observations", 0) >= 35
+        assert "features" in data
