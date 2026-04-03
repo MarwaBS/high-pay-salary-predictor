@@ -48,6 +48,7 @@ from slowapi.util import get_remote_address
 
 from api.drift import DriftMonitor
 from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
+from config_schema import ProjectConfig
 from pipeline import (
     REGION_CODES,
     build_feature_row,
@@ -109,6 +110,9 @@ ROOT = Path(__file__).parent.parent
 
 with open(ROOT / "config.yaml") as f:
     CFG = yaml.safe_load(f)
+
+# Validate config at import time — fail fast on typos or invalid values
+ProjectConfig(**CFG)
 
 EDU_ORDER = CFG["education_order"]
 REGION_MAP = {s: r for r, states in CFG["regions"].items() for s in states}

@@ -9,7 +9,7 @@
 [![MLflow](https://img.shields.io/badge/Tracking-MLflow-0194E2?logo=mlflow&logoColor=white)](04_salary_prediction_model.ipynb)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
-[![Tests](https://img.shields.io/badge/Tests-83%2B%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-96%20passing-brightgreen)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-75%25%2B-green)](pyproject.toml)
 
 ## Key Findings
@@ -212,7 +212,7 @@ pre-commit install                 # install git quality hooks
 - **No pickle:** model stored as XGBoost native binary (`.ubj`); all other artefacts as plain JSON — portable, auditable, language-agnostic.
 - **Full CI/CD stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI/CD (lint + test + **blocking** pip-audit + Docker build + GHCR push + smoke test), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
 - **Performance SLOs:** latency benchmarks enforce `/predict` p99 < 200ms and throughput baselines in CI — not just correctness, but speed contracts.
-- **82+ tests** across unit (config, data schema, feature engineering, model prediction), integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check), and performance (latency, throughput).
+- **96 tests** across unit (config, data schema, feature engineering, model prediction, config schema validation), integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check), drift detection (z-score, window eviction, persistence), and performance (latency, throughput).
 
 ---
 
@@ -501,7 +501,7 @@ High_pay_Analysis_us/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **83+ tests:** unit (config, data schema, feature engineering, model prediction) + integration (leakage proof, group-means round-trip, end-to-end R², PI sign check) + performance (latency SLOs, throughput benchmarks).
+- **96 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + drift detection + performance (latency SLOs, throughput benchmarks).
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as a **blocking** CVE gate. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
