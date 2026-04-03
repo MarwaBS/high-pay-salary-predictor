@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salary-dashboard
+  labels:
+    app: salary-dashboard
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: salary-dashboard
+  template:
+    metadata:
+      labels:
+        app: salary-dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: ghcr.io/marwabs/high_pay_analysis_us/dashboard:latest
+          ports:
+            - containerPort: 8501
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 1000m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - name: model-volume
+              mountPath: /app/models
+              readOnly: true
+            - name: data-volume
+              mountPath: /app/Data
+              readOnly: true
+      volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: model-pvc
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: data-pvc

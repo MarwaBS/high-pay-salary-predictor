@@ -38,6 +38,9 @@ slowapi>=0.1.9                 # rate limiting for FastAPI
 limits>=3.6.0                  # storage backend for slowapi
 prometheus-fastapi-instrumentator>=7.0.0  # /metrics endpoint + auto HTTP metrics
 
+# ── Data Versioning ──────────────────────────────────────────────────────────
+dvc>=3.0.0                     # data versioning and ML pipeline reproducibility
+
 # ── Configuration & Utilities ─────────────────────────────────────────────────
 pyyaml>=6.0              # config.yaml loading
 

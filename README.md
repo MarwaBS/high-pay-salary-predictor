@@ -206,6 +206,9 @@ pre-commit install                 # install git quality hooks
 - **Interactive dashboard:** Streamlit with 4 tabs — Overview, Geographic choropleth, Salary Predictor, and Model Insights (gain importance, permutation importance, subgroup R² charts, residual + actual-vs-predicted plots). Fully typed with docstrings.
 - **Shared pipeline module:** `pipeline.py` is the single source of truth — consumed by API, dashboard, training script, and all tests. Zero duplication (BLS fallback logic and group-mean computation extracted as shared helpers).
 - **Config validation:** Pydantic schema (`config_schema.py`) validates all `config.yaml` fields at startup — typos and invalid values fail fast.
+- **Drift detection:** Online drift monitor (`/drift` endpoint) tracks incoming prediction features in a rolling window, compares z-score deviation against training-time baseline (`models/baseline_stats.json`), and flags drifted features.
+- **Data versioning:** DVC pipeline (`dvc.yaml`) tracks data lineage from cleaned CSV through model training — `dvc repro` re-trains only when data or code changes. Full reproducibility beyond `random_state=42`.
+- **Kubernetes-ready:** Production K8s manifests in `k8s/` — Deployment (2 replicas, liveness/readiness probes, resource limits), Service (ClusterIP), HPA (auto-scale 2-10 pods at 70% CPU). Prometheus scrape annotations included.
 - **No pickle:** model stored as XGBoost native binary (`.ubj`); all other artefacts as plain JSON — portable, auditable, language-agnostic.
 - **Full CI/CD stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI/CD (lint + test + **blocking** pip-audit + Docker build + GHCR push + smoke test), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
 - **Performance SLOs:** latency benchmarks enforce `/predict` p99 < 200ms and throughput baselines in CI — not just correctness, but speed contracts.
@@ -294,6 +297,7 @@ uvicorn api.main:app --reload --port 8000
 | `GET` | `/meta` | Valid states, occupations, education levels |
 | `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
 | `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) |
+| `GET` | `/drift` | Feature drift report (z-score vs training baseline) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 **Example request:**
@@ -444,8 +448,9 @@ High_pay_Analysis_us/
 ├── .pre-commit-config.yaml                    # ★ ruff, nbstripout, file hygiene hooks
 │
 ├── api/
-│   ├── main.py                                # ★ FastAPI app: /health /meta /predict (logging, env CORS)
-│   └── schemas.py                             # ★ Pydantic v2 request/response models
+│   ├── main.py                                # ★ FastAPI app: /health /meta /predict /drift /metrics
+│   ├── schemas.py                             # ★ Pydantic v2 request/response models
+│   └── drift.py                               # ★ Online drift monitor (z-score vs training baseline)
 │
 ├── scripts/
 │   └── train_model.py                         # ★ Standalone model training script (replaces Makefile one-liner)
@@ -476,6 +481,10 @@ High_pay_Analysis_us/
 │
 ├── reports/
 │   └── data_science_report.md                 # Analyst-oriented narrative and findings
+│
+├── k8s/                                       # ★ Kubernetes manifests (deployment, service, HPA)
+│
+├── dvc.yaml                                   # ★ DVC pipeline: data → train → model artefacts
 │
 ├── .github/workflows/
 │   └── ci.yml                                 # ★ GitHub Actions CI/CD: lint + test + audit + Docker build/push

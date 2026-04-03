@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salary-api
+  labels:
+    app: salary-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: salary-api
+  template:
+    metadata:
+      labels:
+        app: salary-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+        - name: api
+          image: ghcr.io/marwabs/high_pay_analysis_us/api:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: salary-api-secrets
+                  key: api-key
+            - name: CORS_ORIGINS
+              value: "https://dashboard.example.com"
+            - name: RATE_LIMIT
+              value: "60/minute"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: model-volume
+              mountPath: /app/models
+              readOnly: true
+            - name: data-volume
+              mountPath: /app/Data
+              readOnly: true
+      volumes:
+        - name: model-volume
+          persistentVolumeClaim:
+            claimName: model-pvc
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: data-pvc
