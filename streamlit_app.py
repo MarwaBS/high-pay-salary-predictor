@@ -5,8 +5,11 @@ Streamlit app: EDA explorer + ML salary predictor.
 Run: streamlit run streamlit_app.py
 """
 
+from __future__ import annotations
+
 import warnings
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -14,6 +17,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import yaml
+from sklearn.model_selection import train_test_split
+from xgboost import XGBRegressor
 
 from pipeline import (
     FEATURES_FULL,
@@ -62,8 +67,13 @@ def load_data() -> pd.DataFrame:
 
 
 @st.cache_resource(show_spinner="Loading model...")
-def get_model():
-    return load_model(str(ROOT / CFG["model"]["model_path"]))
+def get_model() -> XGBRegressor:
+    try:
+        return load_model(str(ROOT / CFG["model"]["model_path"]))
+    except FileNotFoundError:
+        st.error("Model not found. Run `make model` or `python scripts/train_model.py` first.")
+        st.stop()
+        raise  # unreachable, keeps mypy happy
 
 
 @st.cache_data(show_spinner=False)
@@ -111,7 +121,10 @@ def sidebar(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def tab_overview(df: pd.DataFrame) -> None:
+    """Render the Overview EDA tab: key metrics, top occupations, distributions."""
     st.header("Overview")
+
+    top_occ = df["Occupation"].value_counts().idxmax()
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Records", f"{len(df):,}")
@@ -122,7 +135,7 @@ def tab_overview(df: pd.DataFrame) -> None:
     )
     col4.metric(
         "Top Occupation (Volume)",
-        df["Occupation"].value_counts().idxmax().split()[0] + "...",
+        top_occ[:30] + ("..." if len(top_occ) > 30 else ""),
     )
 
     st.markdown("---")
@@ -210,6 +223,7 @@ def tab_overview(df: pd.DataFrame) -> None:
 
 
 def tab_geographic(df: pd.DataFrame) -> None:
+    """Render the Geographic Analysis tab: state-level choropleths and rankings."""
     st.header("Geographic Analysis")
 
     metric = st.selectbox(
@@ -288,7 +302,8 @@ def tab_geographic(df: pd.DataFrame) -> None:
 # ── Tab: Salary Predictor ─────────────────────────────────────────────────────
 
 
-def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
+def tab_predictor(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) -> None:
+    """Render the Salary Predictor form and display prediction with PI."""
     st.header("Salary Predictor")
     st.markdown("Enter individual profile details to estimate annual income using the trained XGBoost model.")
 
@@ -360,7 +375,8 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
 # ── Tab: Model Insights ───────────────────────────────────────────────────────
 
 
-def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
+def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) -> None:
+    """Render Model Insights tab: feature importance, residuals, subgroup analysis."""
     st.header("Model Performance & Feature Importance")
 
     # ── Key metric tiles ──────────────────────────────────────────────────────
@@ -408,8 +424,6 @@ def tab_model(df: pd.DataFrame, model, metrics: dict) -> None:
         st.plotly_chart(fig, use_container_width=True)
 
     with col_right:
-        from sklearn.model_selection import train_test_split
-
         X = df[FEATURES_FULL]
         y = df["Annual Income"]
         _, X_test, _, y_test = train_test_split(
