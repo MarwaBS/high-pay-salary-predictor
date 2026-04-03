@@ -200,13 +200,16 @@ pre-commit install                 # install git quality hooks
 - **Subgroup fairness analysis:** R² and MAE computed for Gender (Male/Female) and Region (4 US Census regions) on the held-out test set. Male R²=0.071 vs Female R²=0.023; Northeast R²=0.097 vs South R²=0.067 — disparities documented and visualized.
 - **Statistical rigor:** ANOVA (education × income), Welch t-test (gender pay gap Cohen's *d*=0.27, *p*<0.001), and Tukey HSD post-hoc tests validate EDA findings.
 - **MLflow experiment tracking:** params, metrics (R², RMSE, MAE, CV, subgroup), and model artefact logged per run. Compare runs with `make mlflow`.
-- **Production API:** FastAPI + Pydantic v2 with `/health`, `/meta`, `/predict` (returns salary + 80% PI + percentile + group benchmarks). Saved group means loaded at startup for consistent inference encoding. Sync route — no event-loop blocking.
-- **Interactive dashboard:** Streamlit with 4 tabs — Overview, Geographic choropleth, Salary Predictor, and Model Insights (gain importance, permutation importance, subgroup R² charts, residual + actual-vs-predicted plots).
-- **Shared pipeline module:** `pipeline.py` is the single source of truth — consumed by API, dashboard, training script, and all 77 tests. Zero duplication.
+- **Production API:** FastAPI + Pydantic v2 with `/health`, `/meta`, `/predict`, `/metrics` (Prometheus). Returns salary + 80% PI + percentile + group benchmarks. API key auth (`X-API-Key`), per-IP rate limiting (slowapi), structured JSON logging with request IDs.
+- **Observability:** Prometheus auto-instrumentation (`/metrics` endpoint), structured JSON logging with `X-Request-ID` correlation, request duration tracking on every response.
+- **Security:** API key authentication (optional via `API_KEY` env var), per-IP rate limiting (`RATE_LIMIT` env var, default 60/min), CORS locked down by default (empty, not `*`), blocking `pip-audit` CVE gate in CI.
+- **Interactive dashboard:** Streamlit with 4 tabs — Overview, Geographic choropleth, Salary Predictor, and Model Insights (gain importance, permutation importance, subgroup R² charts, residual + actual-vs-predicted plots). Fully typed with docstrings.
+- **Shared pipeline module:** `pipeline.py` is the single source of truth — consumed by API, dashboard, training script, and all tests. Zero duplication (BLS fallback logic and group-mean computation extracted as shared helpers).
+- **Config validation:** Pydantic schema (`config_schema.py`) validates all `config.yaml` fields at startup — typos and invalid values fail fast.
 - **No pickle:** model stored as XGBoost native binary (`.ubj`); all other artefacts as plain JSON — portable, auditable, language-agnostic.
-- **Full DevOps stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11 + **blocking** pip-audit CVE gate), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
+- **Full CI/CD stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI/CD (lint + test + **blocking** pip-audit + Docker build + GHCR push + smoke test), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
 - **Performance SLOs:** latency benchmarks enforce `/predict` p99 < 200ms and throughput baselines in CI — not just correctness, but speed contracts.
-- **83+ tests** across unit (config, data schema, feature engineering, model prediction), integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check), and performance (latency, throughput).
+- **82+ tests** across unit (config, data schema, feature engineering, model prediction), integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check), and performance (latency, throughput).
 
 ---
 
@@ -289,7 +292,8 @@ uvicorn api.main:app --reload --port 8000
 |--------|------|-------------|
 | `GET` | `/health` | Liveness probe — model loaded, dataset rows |
 | `GET` | `/meta` | Valid states, occupations, education levels |
-| `POST` | `/predict` | Salary prediction + percentile + group benchmarks |
+| `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
+| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 **Example request:**
@@ -422,7 +426,8 @@ See `reports/data_science_report.md` for the full analyst-oriented narrative.
 ```
 High_pay_Analysis_us/
 │
-├── pipeline.py                                # ★ Single source of truth: FEATURES + engineer_features
+├── pipeline.py                                # ★ Single source of truth: FEATURES + engineer_features + shared helpers
+├── config_schema.py                           # ★ Pydantic validation for config.yaml (fail-fast on typos)
 │
 ├── Notebooks
 │   ├── high_pay_jobs_data_cleaning.ipynb      # Pipeline: BLS + Census → cleaned CSV
@@ -473,7 +478,7 @@ High_pay_Analysis_us/
 │   └── data_science_report.md                 # Analyst-oriented narrative and findings
 │
 ├── .github/workflows/
-│   └── ci.yml                                 # ★ GitHub Actions: lint + test on Python 3.10 & 3.11
+│   └── ci.yml                                 # ★ GitHub Actions CI/CD: lint + test + audit + Docker build/push
 │
 ├── requirements.txt                           # Pinned runtime + dev dependencies
 ├── requirements-lock.txt                      # pip freeze — exact transitive deps for full reproducibility
@@ -488,7 +493,7 @@ High_pay_Analysis_us/
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
 - **83+ tests:** unit (config, data schema, feature engineering, model prediction) + integration (leakage proof, group-means round-trip, end-to-end R², PI sign check) + performance (latency SLOs, throughput benchmarks).
-- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as a **blocking** CVE gate — known-acceptable vulnerabilities are individually suppressed with documented justification in `.pip-audit-ignore.txt`.
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as a **blocking** CVE gate. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
