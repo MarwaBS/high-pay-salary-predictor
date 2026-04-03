@@ -19,7 +19,9 @@ from pipeline import (
     FEATURES_FULL,
     REGION_CODES,
     build_feature_row,
+    compute_fallback_means,
     engineer_features,
+    get_bls_defaults,
     load_group_means,
     load_metrics,
     load_model,
@@ -306,14 +308,11 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
             jobs_k = st.number_input("Jobs per 1,000", value=2.0, min_value=0.0, step=0.1)
             hourly_mean = st.number_input("BLS Hourly Mean Wage ($)", value=60.0, min_value=0.0, step=1.0)
         else:
-            mask = (df["State Abbreviation"] == state) & (df["Occupation"] == occupation)
-            subset = df[mask] if mask.sum() > 0 else df[df["State Abbreviation"] == state]
-            if len(subset) == 0:
-                subset = df
-            employment = float(subset["Employment"].median())
-            lq = float(subset["Location Quotient"].median())
-            jobs_k = float(subset["Jobs per 1000"].median())
-            hourly_mean = float(subset["Hourly Mean"].median())
+            bls = get_bls_defaults(df, state, occupation)
+            employment = bls["employment"]
+            lq = bls["location_quotient"]
+            jobs_k = bls["jobs_per_1000"]
+            hourly_mean = bls["hourly_mean"]
 
     if st.button("Predict Salary", type="primary"):
         edu_ord = EDU_ORDER[education]
@@ -321,10 +320,9 @@ def tab_predictor(df: pd.DataFrame, model, metrics: dict) -> None:
         region = REGION_MAP.get(state, "South")
         region_code = REGION_CODES.get(region, 0)
         gm = get_group_means()
-        _occ_fallback = float(np.mean(list(gm["occ_means"].values())))
-        _state_fallback = float(np.mean(list(gm["state_means"].values())))
-        occ_mean = gm["occ_means"].get(occupation, _occ_fallback)
-        state_mean_val = gm["state_means"].get(state, _state_fallback)
+        occ_fallback, state_fallback = compute_fallback_means(gm)
+        occ_mean = gm["occ_means"].get(occupation, occ_fallback)
+        state_mean_val = gm["state_means"].get(state, state_fallback)
 
         row = build_feature_row(
             age=age,
