@@ -9,7 +9,7 @@
 [![MLflow](https://img.shields.io/badge/Tracking-MLflow-0194E2?logo=mlflow&logoColor=white)](04_salary_prediction_model.ipynb)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
-[![Tests](https://img.shields.io/badge/Tests-77%20passing-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/Tests-83%2B%20passing-brightgreen)](tests/)
 [![Coverage](https://img.shields.io/badge/Coverage-75%25%2B-green)](pyproject.toml)
 
 ## Key Findings
@@ -57,6 +57,61 @@ A **production-grade, end-to-end data science pipeline** analyzing high-paying j
 
 ---
 
+## Architecture
+
+```mermaid
+graph LR
+    subgraph Data Sources
+        BLS["BLS OEWS<br/>(state-level wages)"]
+        Census["US Census<br/>(microdata)"]
+    end
+
+    subgraph Pipeline
+        NB1["01 Data Cleaning"]
+        NB2["02 EDA & Viz"]
+        NB3["03 Geospatial"]
+        Train["train_model.py<br/>(Optuna HPO + MLflow)"]
+    end
+
+    subgraph Artifacts
+        CSV[("cleaned_data.csv<br/>10,255 rows")]
+        Model[("xgb_model.ubj")]
+        Means[("group_means.json")]
+        Metrics[("model_metrics.json")]
+    end
+
+    subgraph Serving
+        API["FastAPI :8000<br/>/health /meta /predict"]
+        Dash["Streamlit :8501<br/>4-tab dashboard"]
+    end
+
+    subgraph Infrastructure
+        Docker["Docker Compose"]
+        CI["GitHub Actions CI"]
+    end
+
+    BLS --> NB1
+    Census --> NB1
+    NB1 --> CSV
+    CSV --> NB2
+    CSV --> NB3
+    CSV --> Train
+    Train --> Model
+    Train --> Means
+    Train --> Metrics
+    Model --> API
+    Model --> Dash
+    Means --> API
+    Means --> Dash
+    API --> Docker
+    Dash --> Docker
+    Docker --> CI
+```
+
+**Core design principle:** `pipeline.py` is the single source of truth — all feature definitions, engineering logic, and model I/O are shared across the API, dashboard, training script, and tests. No duplication.
+
+---
+
 ## Pipeline overview
 
 The project is organized across four notebooks and two deployable services:
@@ -76,7 +131,7 @@ All figures are saved automatically to `Images/` at 300 DPI.
 
 ```bash
 make install      # create .venv and install all dependencies
-make test         # run the full 77-test suite (unit + integration)
+make test         # run the full test suite (unit + integration + performance)
 make dashboard    # Streamlit dashboard → http://localhost:8501
 make api          # FastAPI server    → http://localhost:8000
 make docker       # build + start both services via Docker Compose
@@ -90,7 +145,7 @@ make mlflow       # MLflow tracking UI → http://localhost:5000
 | `make install` | Create `.venv`, install `requirements.txt` |
 | `make data` | Re-run cleaning notebook → `Data/cleaned_high_pay_data.csv` |
 | `make model` | Train XGBoost model via `scripts/train_model.py` → `models/` |
-| `make test` | Run all 77 pytest tests with `-v` (unit + integration) |
+| `make test` | Run all pytest tests with `-v` (unit + integration + performance) |
 | `make test-fast` | Same, quiet output |
 | `make coverage` | Tests + HTML coverage report in `htmlcov/` |
 | `make lint` | `ruff check` (fast linter, replaces flake8) |
@@ -149,8 +204,9 @@ pre-commit install                 # install git quality hooks
 - **Interactive dashboard:** Streamlit with 4 tabs — Overview, Geographic choropleth, Salary Predictor, and Model Insights (gain importance, permutation importance, subgroup R² charts, residual + actual-vs-predicted plots).
 - **Shared pipeline module:** `pipeline.py` is the single source of truth — consumed by API, dashboard, training script, and all 77 tests. Zero duplication.
 - **No pickle:** model stored as XGBoost native binary (`.ubj`); all other artefacts as plain JSON — portable, auditable, language-agnostic.
-- **Full DevOps stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11 + advisory pip-audit CVE logging), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
-- **77 tests** across unit (config, data schema, feature engineering, model prediction) and integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check).
+- **Full DevOps stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI (lint + test on Python 3.10 and 3.11 + **blocking** pip-audit CVE gate), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
+- **Performance SLOs:** latency benchmarks enforce `/predict` p99 < 200ms and throughput baselines in CI — not just correctness, but speed contracts.
+- **83+ tests** across unit (config, data schema, feature engineering, model prediction), integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check), and performance (latency, throughput).
 
 ---
 
@@ -393,7 +449,8 @@ High_pay_Analysis_us/
 │   ├── conftest.py                            # ★ Shared session-scope fixtures (cfg, df, group_means, df_engineered)
 │   ├── test_pipeline.py                       # ★ Config, schema, feature engineering, model prediction (45 tests)
 │   ├── test_api.py                            # ★ API endpoints, validation, prediction (22 tests)
-│   └── test_integration.py                    # ★ Full pipeline path: split → group_means → engineer → predict (10 tests)
+│   ├── test_integration.py                    # ★ Full pipeline path: split → group_means → engineer → predict (10 tests)
+│   └── test_performance.py                    # ★ Latency SLOs, throughput benchmarks (6 tests)
 │
 ├── Data/                                      # Processed datasets (single source of truth)
 │   ├── cleaned_high_pay_data.csv              #   10,255 rows × 15 cols
@@ -430,8 +487,8 @@ High_pay_Analysis_us/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **77 tests:** unit (config, data schema, feature engineering, model prediction) + integration (leakage proof, group-means round-trip, end-to-end R², PI sign check).
-- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as an advisory CVE scan (non-blocking — data-science dependency chains produce unavoidable false positives; results are logged for review).
+- **83+ tests:** unit (config, data schema, feature engineering, model prediction) + integration (leakage proof, group-means round-trip, end-to-end R², PI sign check) + performance (latency SLOs, throughput benchmarks).
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as a **blocking** CVE gate — known-acceptable vulnerabilities are individually suppressed with documented justification in `.pip-audit-ignore.txt`.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.

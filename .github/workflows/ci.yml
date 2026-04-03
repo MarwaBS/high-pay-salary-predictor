@@ -33,7 +33,7 @@ jobs:
 
       - name: Security — audit dependencies for known CVEs
         run: |
-          pip-audit --requirement requirements.txt --skip-editable || true
+          pip-audit --requirement requirements.txt --skip-editable
 
       - name: Lint with ruff
         run: |
@@ -68,9 +68,6 @@ jobs:
           import nbformat, glob, os, sys
           errors = []
           for path in glob.glob("*.ipynb"):
-              if os.path.getsize(path) == 0:
-                  print(f" SKIP {path}: empty file")
-                  continue
               try:
                   nb = nbformat.read(path, as_version=4)
                   nbformat.validate(nb)
