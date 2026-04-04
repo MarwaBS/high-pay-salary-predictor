@@ -335,8 +335,9 @@ def main() -> None:
         logger.info("  subgroup  %-30s  n=%4d  R²=%.4f  MAE=$%d", key, vals["n"], vals["r2"], int(vals["mae"]))
 
     # ── MLflow tracking ───────────────────────────────────────────────────────
+    # Use SQLite backend (file store deprecated since Feb 2026).
+    mlflow.set_tracking_uri(f"sqlite:///{ROOT / 'mlruns.db'}")
     mlflow.set_experiment("high_pay_salary")
-    mlflow.set_tracking_uri(str(ROOT / "mlruns"))
 
     with mlflow.start_run(run_name=f"xgb_log_{datetime.date.today()}") as run:
         mlflow.log_params(
