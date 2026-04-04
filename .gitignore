@@ -169,3 +169,4 @@ models/*.pkl
 
 # MLflow experiment tracking data (auto-generated)
 mlruns/
+mlruns.db
