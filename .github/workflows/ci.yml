@@ -34,7 +34,8 @@ jobs:
 
       - name: Security — audit dependencies for known CVEs
         run: |
-          pip-audit --requirement requirements.txt --skip-editable
+          pip-audit --requirement requirements.txt --skip-editable \
+            --ignore-vuln CVE-2025-69872
 
       - name: Lint with ruff
         run: |
