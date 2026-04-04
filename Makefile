@@ -170,7 +170,7 @@ docker-down:
 mlflow: install
 	@echo ">>> Launching MLflow UI on http://localhost:5000 ..."
 	@echo ">>> Run notebook 4 first to populate experiment runs."
-	$(VENV)/bin/mlflow ui --backend-store-uri mlruns --host 0.0.0.0 --port 5000
+	$(VENV)/bin/mlflow ui --backend-store-uri sqlite:///mlruns.db --host 0.0.0.0 --port 5000
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 .PHONY: clean
