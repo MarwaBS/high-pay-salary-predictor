@@ -5,6 +5,10 @@
 #   2. The risk is mitigated by other controls
 #   3. A tracking issue is linked
 #
-# Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN
-#
-# As of 2026-04-03: no known vulnerabilities — this file is empty.
+# Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN   or   CVE-YYYY-NNNNN
+
+# diskcache 5.6.3 (transitive dep via dvc-data → dvc)
+# No fix version available upstream. diskcache is used only by DVC for
+# local artifact caching — not exposed to API users or network traffic.
+# Risk: LOW — local-only, no untrusted input reaches diskcache.
+CVE-2025-69872
