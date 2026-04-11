@@ -59,10 +59,6 @@ COPY --chown=user:user pyproject.toml  /home/user/app/
 COPY --chown=user:user models/         /home/user/app/models/
 COPY --chown=user:user Data/           /home/user/app/Data/
 
-# Dashboard tries to load the us_state shapefile for the choropleth tab.
-# If the directory is missing the dashboard falls back gracefully — but
-# including it is cheap and keeps the map tab working.
-COPY --chown=user:user us_state/       /home/user/app/us_state/
 
 # Startup script (launches uvicorn + streamlit via bash)
 COPY --chown=user:user deploy/huggingface/start.sh /home/user/app/start.sh
