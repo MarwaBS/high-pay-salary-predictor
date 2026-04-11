@@ -223,6 +223,8 @@ def build_response(
     p50: float,
     p90: float,
     group_stats: GroupStats,
+    p_above_premium_threshold: float | None = None,
+    premium_threshold: int | None = None,
 ) -> PredictResponse:
     """Assemble the final PredictResponse from the model's quantile trio.
 
@@ -230,6 +232,10 @@ def build_response(
     ``(group < predicted).mean() * 100`` — but computed via a binary
     search on the precomputed sorted array instead of a per-request
     DataFrame mask. Both methods count strictly-less-than values.
+
+    ``p_above_premium_threshold`` and ``premium_threshold`` come from the
+    binary classifier head (Gap 1 Phase 1). Both default to ``None`` so
+    pre-Phase-1 deployments keep a stable response shape.
     """
     # Defensive quantile ordering — XGBoost occasionally emits tiny
     # crossings near decision boundaries. Force non-decreasing.
@@ -260,6 +266,10 @@ def build_response(
         education_level=req.education_level,
         gender=req.gender,
         age=req.age,
+        p_above_premium_threshold=(
+            round(float(p_above_premium_threshold), 4) if p_above_premium_threshold is not None else None
+        ),
+        premium_threshold=premium_threshold,
     )
 
 

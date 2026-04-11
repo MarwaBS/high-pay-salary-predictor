@@ -1,5 +1,5 @@
 {
-  "model_version": "2.0.0+cd1037dac48a.e927845864e2",
+  "model_version": "2.0.0+16be5ced612b.e927845864e2",
   "service_version": "2.0.0",
   "r2": 0.0261,
   "rmse": 108113.03,
@@ -41,5 +41,23 @@
   },
   "log_transform": true,
   "fixed_group_means": true,
-  "objective": "reg:quantileerror"
+  "objective": "reg:quantileerror",
+  "classifier_objective": "binary:logistic",
+  "classifier_threshold": 150000,
+  "classifier_positive_rate_train": 0.3974,
+  "classifier_positive_rate_test": 0.3852,
+  "classifier_roc_auc": 0.6727,
+  "classifier_pr_auc": 0.5527,
+  "classifier_accuracy": 0.6212,
+  "classifier_precision": 0.5066,
+  "classifier_recall": 0.6342,
+  "classifier_f1": 0.5632,
+  "classifier_subgroup_roc_auc": {
+    "Gender=Female": 0.6411,
+    "Gender=Male": 0.6595,
+    "Region=Midwest": 0.7063,
+    "Region=Northeast": 0.6732,
+    "Region=South": 0.6765,
+    "Region=West": 0.6502
+  }
 }
