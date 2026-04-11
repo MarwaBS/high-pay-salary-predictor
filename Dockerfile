@@ -44,7 +44,8 @@ RUN pip install --no-cache-dir --prefix=/install \
         "plotly>=5.10.0" \
         "streamlit>=1.20.0" \
         "pyyaml>=6.0" \
-        "matplotlib>=3.5.0"
+        "matplotlib>=3.5.0" \
+        "httpx>=0.27.0"
 
 
 # ── Stage 2: Streamlit dashboard ──────────────────────────────────────────────
