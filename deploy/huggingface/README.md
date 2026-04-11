@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 pinned: false
 license: mit
-short_description: Quantile regression salary predictor (P10/P50/P90) for high-paying US jobs
+short_description: Quantile XGBoost salary predictor (P10/P50/P90)
 ---
 
 # High-Paying Jobs in the US — Salary Quantile Predictor
