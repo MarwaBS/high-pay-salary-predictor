@@ -45,9 +45,14 @@ jobs:
         run: |
           ruff format --check .
 
-      - name: Train model (required by API + TestModelPrediction)
+      - name: Train quantile model (required by API + TestModelPrediction)
         run: |
-          python scripts/train_model.py
+          # Produces models/xgb_salary_model.ubj as a multi-quantile XGBoost
+          # model. Tests expect the quantile output shape (n, 3) — see
+          # tests/test_pipeline.py::test_model_outputs_quantile_triple.
+          # The old point-estimate trainer lives at scripts/train_model.py
+          # and is kept only for historical HPO + MLflow comparison.
+          python -m scripts.train_quantile
 
       - name: Run pytest
         run: |
@@ -132,11 +137,11 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Train model for smoke test
+      - name: Train quantile model for smoke test
         run: |
           pip install -r requirements.txt
           pip install -e .
-          python scripts/train_model.py
+          python -m scripts.train_quantile
 
       - name: Smoke test API image
         run: |

@@ -1,3 +1,11 @@
+# ── Streamlit dashboard Deployment ──────────────────────────────────────────
+# Design points:
+#   - SHA-pinned image tag placeholder (CI substitutes IMAGE_TAG_PLACEHOLDER)
+#   - initContainer pulls artefacts from object storage (no PVC)
+#   - securityContext enforces non-root
+#
+# Single replica: acceptable for a portfolio dashboard. For multi-replica
+# production, add session affinity or externalise Streamlit state.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -14,11 +22,62 @@ spec:
       labels:
         app: salary-dashboard
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: fetch-artefacts
+          image: curlimages/curl:8.11.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: MODEL_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: salary-api-config
+                  key: model-url
+            - name: DATA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: salary-api-config
+                  key: data-url
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              curl -fsSL --retry 3 --retry-delay 2 "$MODEL_URL" -o /shared-models/xgb_salary_model.ubj
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}feature_names.json" -o /shared-models/feature_names.json
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}group_means.json" -o /shared-models/group_means.json
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}model_metrics.json" -o /shared-models/model_metrics.json
+              curl -fsSL --retry 3 --retry-delay 2 "$DATA_URL" -o /shared-data/cleaned_high_pay_data.csv
+          volumeMounts:
+            - name: model-volume
+              mountPath: /shared-models
+            - name: data-volume
+              mountPath: /shared-data
       containers:
         - name: dashboard
-          image: ghcr.io/marwabs/high_pay_analysis_us/dashboard:latest
+          image: ghcr.io/marwabs/high_pay_analysis_us/dashboard:IMAGE_TAG_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8501
+              name: http
           resources:
             requests:
               cpu: 100m
@@ -29,13 +88,13 @@ spec:
           livenessProbe:
             httpGet:
               path: /_stcore/health
-              port: 8501
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
           readinessProbe:
             httpGet:
               path: /_stcore/health
-              port: 8501
+              port: http
             initialDelaySeconds: 10
             periodSeconds: 5
           volumeMounts:
@@ -47,8 +106,8 @@ spec:
               readOnly: true
       volumes:
         - name: model-volume
-          persistentVolumeClaim:
-            claimName: model-pvc
+          emptyDir:
+            sizeLimit: 64Mi
         - name: data-volume
-          persistentVolumeClaim:
-            claimName: data-pvc
+          emptyDir:
+            sizeLimit: 256Mi

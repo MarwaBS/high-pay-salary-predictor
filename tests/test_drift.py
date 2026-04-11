@@ -105,6 +105,112 @@ class TestDriftEdgeCases:
 # ── Persistence ──────────────────────────────────────────────────────────────
 
 
+class _FakeRedisPipeline:
+    """Minimal fake Redis pipeline recording lpush/ltrim/incr calls."""
+
+    def __init__(self, store: dict):
+        self._store = store
+        self._ops: list = []
+
+    def lpush(self, key, value):
+        self._ops.append(("lpush", key, value))
+        return self
+
+    def ltrim(self, key, start, end):
+        self._ops.append(("ltrim", key, start, end))
+        return self
+
+    def incr(self, key):
+        self._ops.append(("incr", key))
+        return self
+
+    def execute(self):
+        for op in self._ops:
+            if op[0] == "lpush":
+                _, key, value = op
+                self._store.setdefault(key, []).insert(0, value)
+            elif op[0] == "ltrim":
+                _, key, start, end = op
+                self._store[key] = self._store.get(key, [])[start : end + 1]
+            elif op[0] == "incr":
+                _, key = op
+                self._store[key] = str(int(self._store.get(key, "0")) + 1)
+        self._ops = []
+
+
+class _FakeRedis:
+    """Minimal fake Redis client with just the methods DriftMonitor uses."""
+
+    def __init__(self):
+        self._store: dict = {}
+
+    def ping(self):
+        return True
+
+    def pipeline(self):
+        return _FakeRedisPipeline(self._store)
+
+    def lrange(self, key, start, end):
+        data = self._store.get(key, [])
+        if end == -1:
+            return data[start:]
+        return data[start : end + 1]
+
+    def get(self, key):
+        return self._store.get(key)
+
+
+class TestDriftMonitorRedisBackend:
+    """Verify the Redis-backed path uses the shared list and aggregates
+    across multiple monitor instances (simulating multi-replica pods)."""
+
+    def test_redis_backend_is_selected_when_client_supplied(self, baseline_stats):
+        fake = _FakeRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake)
+        mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        report = mon.check_drift()
+        assert report["backend"] == "redis"
+        assert report["observations"] == 1
+
+    def test_two_replicas_share_window(self, baseline_stats):
+        """Two DriftMonitor instances pointed at the same fake Redis should
+        aggregate their observations into a single cluster-wide window."""
+        fake = _FakeRedis()  # shared backend
+        pod_a = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake)
+        pod_b = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake)
+
+        for _ in range(20):
+            pod_a.observe({"Age": 40.0, "Education_Ord": 2.0})
+        for _ in range(20):
+            pod_b.observe({"Age": 40.0, "Education_Ord": 2.0})
+
+        # Either pod should see all 40 observations from the shared list.
+        report_a = pod_a.check_drift()
+        report_b = pod_b.check_drift()
+        assert report_a["window_size"] == 40
+        assert report_b["window_size"] == 40
+        assert report_a["observations"] == 40
+        assert report_b["observations"] == 40
+
+    def test_redis_window_is_trimmed_to_cap(self, baseline_stats):
+        fake = _FakeRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=50, redis_client=fake)
+        for _ in range(200):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        report = mon.check_drift()
+        assert report["window_size"] == 50  # trimmed
+        assert report["observations"] == 200  # counter not trimmed
+
+    def test_redis_drift_detection_still_works(self, baseline_stats):
+        fake = _FakeRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake, alert_threshold=2.0)
+        for _ in range(50):
+            mon.observe({"Age": 70.0, "Education_Ord": 2.0})  # 3-sigma shift
+        report = mon.check_drift()
+        assert report["any_drifted"]
+        assert report["features"]["Age"]["drifted"] is True
+
+
 class TestBaselinePersistence:
     def test_save_and_load_round_trip(self, tmp_path):
         """save_baseline_stats() output should be loadable by DriftMonitor."""

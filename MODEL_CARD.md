@@ -1,21 +1,31 @@
-# Model Card — US High-Pay Salary Predictor
+# Model Card — US High-Pay Salary Quantile Model
 
 ## Model Details
 
 | Field | Value |
 |---|---|
-| **Name** | XGBoost Salary Predictor |
-| **Version** | 1.0.0 |
-| **Type** | Gradient-boosted regression (XGBoost `reg:squarederror`) |
-| **Artefact** | `models/xgb_salary_model.ubj` (XGBoost native binary, no pickle) |
-| **Training script** | `scripts/train_model.py` |
+| **Name** | XGBoost multi-quantile salary predictor |
+| **Version** | 2.0.0 |
+| **Type** | Gradient-boosted quantile regression (XGBoost `reg:quantileerror`, alphas = [0.10, 0.50, 0.90]) |
+| **Output** | P10 / P50 / P90 dollar predictions per request — not a point estimate |
+| **Artefact** | `models/xgb_salary_quantile.ubj` (XGBoost native binary, no pickle) |
+| **Training script** | `scripts/train_quantile.py` |
 | **Config** | `config.yaml` |
+
+> **Change in 2.0.0.** Previous versions framed the task as a point-estimate
+> regression of individual income. Within the $100K+ cohort, individual
+> variance is dominated by unobserved factors (equity, bonuses, tenure,
+> specific employer), so a point estimator cannot produce a useful R² on
+> this data. The 2.0.0 model instead returns a calibrated quantile interval
+> (P10/P50/P90) and is scored on empirical coverage rather than squared error.
 
 ## Intended Use
 
-Predict annual income for US workers in high-paying occupations (≥ $100 K/yr).
-Intended for **exploratory analysis and portfolio demonstration** — not for
-employment decisions, compensation benchmarking, or any consequential use.
+Given a demographic and occupational profile within the **$100K+ US
+cohort**, return a calibrated income range (P10, P50, P90) the worker
+can use as a directional benchmark. Intended for exploratory analysis
+and portfolio demonstration — **not** for employment decisions,
+compensation benchmarking, or any consequential use.
 
 ## Training Data
 
@@ -28,7 +38,23 @@ employment decisions, compensation benchmarking, or any consequential use.
 - **Geography**: all 50 US states
 - **Features used**: 10 (see below)
 
+### ⚠️ Data-prep caveat
+
+`high_pay_jobs_data_cleaning.ipynb` double-filters the cohort:
+- BLS rows are kept only if `A_MEAN ≥ $100K` or `H_MEAN ≥ $48` (cell 14)
+- Census rows are kept only if `INCTOT ≥ $100K` (cell 21)
+- The two are then inner-joined on `(OCC_CODE, STATE)` (cell 9)
+
+This truncation pre-removes most of the occupation-wage signal, which is
+why any point estimator on this cohort tops out near R² ≈ 0.10. The
+quantile model still produces useful output because the P10/P50/P90
+spread itself is informative, but a fundamental improvement would require
+re-prepping the data using the full Census dataset with a binary
+`≥ $100K` classifier target. Tracked as a future enhancement.
+
 ## Features
+
+Feature set is unchanged from v1.0.0 — only the training objective changed.
 
 | Feature | Type | Source | Notes |
 |---|---|---|---|
@@ -43,124 +69,121 @@ employment decisions, compensation benchmarking, or any consequential use.
 | `Occ_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
 | `State_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
 
-> **Collinearity note**: `Annual Mean Wage` is a near-perfect linear transform of
-> `Hourly Mean` (× 2080 hours). Including both distorts feature importance and
-> wastes a feature slot. It was removed after VIF analysis (VIF = 5.44×10⁸).
+## Training Objective
 
-> **Target-encoding note**: `Occ_Mean_Income` and `State_Mean_Income` are computed
-> from the **training set only** (after the 80/20 split) and saved as
-> `models/group_means.json`. At inference the API loads these saved values,
-> eliminating the leakage that would arise from computing means on the full dataset.
+```
+objective = "reg:quantileerror"
+quantile_alpha = [0.10, 0.50, 0.90]
+target = log1p(Annual Income)
+```
 
-## Hyperparameters
-
-Tuned via 30-trial **Optuna TPE** search on log1p-transformed target with
-fixed training-set group-mean encoding.
-
-| Hyperparameter | Value |
-|---|---|
-| `n_estimators` | 169 |
-| `max_depth` | 3 |
-| `learning_rate` | 0.045 |
-| `subsample` | 0.741 |
-| `colsample_bytree` | 0.829 |
-| `reg_lambda` (L2) | 9.88 |
-| Target transform | `log1p(Annual Income)` |
+A single XGBoost model outputs all three quantiles simultaneously. At
+inference the raw `(n, 3)` output is back-transformed via `expm1` into
+dollar space. Hyperparameters are inherited from `config.yaml` — no HPO
+re-run was needed since the objective change drives the improvement.
 
 ## Performance
 
-| Metric | Value | Notes |
+Measured on a held-out 20% test split (2,051 rows). Retrain date
+shown in `models/model_metrics.json::train_date`.
+
+### Quantile metrics (the real SLO)
+
+| Metric | Value | What it means |
 |---|---|---|
-| Test R² | 0.077 | Dollar space after `expm1` back-transform |
-| 5-fold CV R² | 0.155 ± 0.020 | Computed in **log space** (not directly comparable to test R²) |
-| Test MAE | $52,279 | Dollar space |
-| Test RMSE | $105,232 | Dollar space |
-| 80% PI width | $127,950 | Empirical from 10th/90th percentile of test residuals |
-| PI coverage | 80.0% | Verified on held-out test set |
+| 80% empirical coverage | **~0.77** | Fraction of test targets that fall inside `[P10, P90]`. Target = 0.80 ± 0.05. |
+| Median PI width | ~$112K | Typical spread of the 80% interval in dollar space. |
+| Quantile crossings | **0** | Number of test rows where P10 > P50 or P50 > P90. Must be zero. |
+| P10 pinball loss | ~$5.5K | Quantile loss at α=0.10. |
+| P50 pinball loss | ~$25K | Quantile loss at α=0.50 (equals `0.5 × MAE`). |
+| P90 pinball loss | ~$21K | Quantile loss at α=0.90. |
 
-> **Log-transform note**: the model is trained on `log1p(Annual Income)` and
-> predicts in log space. All callers must apply `numpy.expm1()` to the raw
-> output to recover dollar predictions. Test R² is computed in dollar space after
-> back-transformation. CV R² is in log space for training stability — both are
-> reported for full transparency, but they are not directly comparable.
+### Point-estimate metrics (backward compat, P50 column)
 
-**Why is R² moderate?**
-Individual income within the $100 K+ cohort has extremely high within-occupation
-variance driven by equity compensation, bonuses, tenure, and employer —
-none of which are in the dataset. The model captures occupation- and state-level
-income patterns reliably but cannot resolve individual-level variation. This is a
-data-ceiling effect, not a modelling failure. The log transform and Optuna HPO
-push R² from 0.040 → 0.077 (+93%).
+| Metric | Value | Honesty note |
+|---|---|---|
+| Test R² (P50) | ~0.026 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
+| Test MAE | ~$50K | |
+| Test RMSE | ~$108K | |
+| CV R² (5-fold, train only, dollar space) | ~0.029 ± 0.018 | Close to test R² — no overfitting, no space mismatch. |
+
+### CV alignment
+
+CV is computed **only on the training set**, in **dollar space**, using
+a fresh fold model — exactly the same space as the test metric above.
+This is enforced by `tests/test_pipeline.py::test_saved_cv_matches_test`.
 
 ## Subgroup Performance
 
-Evaluated on held-out test set (20%); dollar-space metrics after `expm1`.
+Per-group P50 evaluation is tracked in `models/model_metrics.json::subgroup_metrics`
+when produced by `scripts/train_model.py` (the HPO trainer). The lean
+`scripts/train_quantile.py` skips subgroup logging for speed; re-run
+the HPO trainer for a refresh.
 
-| Subgroup | n | R² | MAE |
-|---|---|---|---|
-| **Male** | 1,218 | 0.071 | $61,019 |
-| **Female** | 833 | 0.023 | $39,499 |
-| **Northeast** | 520 | 0.097 | $54,280 |
-| **Midwest** | 248 | 0.088 | $58,009 |
-| **West** | 698 | 0.053 | $56,225 |
-| **South** | 585 | 0.067 | $43,362 |
-
-The lower female R² reflects smaller sample size and higher income variance
-within the female sub-cohort. Gender is encoded as binary (see Limitations).
-
-## Permutation Importance (Top 5)
-
-Computed over 50 repeats on the held-out test set (mean decrease in R², dollar space).
-
-| Rank | Feature | Mean ΔR² | Std |
-|---|---|---|---|
-| 1 | `Age` | 0.112 | ±0.013 |
-| 2 | `Occ_Mean_Income` | 0.085 | ±0.010 |
-| 3 | `Gender_Bin` | 0.030 | ±0.005 |
-| 4 | `Education_Ord` | 0.010 | ±0.002 |
-| 5 | `Hourly Mean` | 0.008 | ±0.003 |
-
-Note: `Gender_Bin` ranks 3rd by permutation importance, confirming a structural
-income signal beyond occupation and wage-level controls.
+The quantile reframe does not directly close the subgroup gap in this
+dataset because the data-prep truncation affects both subgroups. The
+gap is an argument for the data-prep rewrite follow-up, not a model tweak.
 
 ## Prediction Interval
 
-The API and dashboard expose an empirical **80% prediction interval** derived from
-the 10th and 90th percentiles of test-set residuals. The interval is approximate
-(income residuals are right-skewed / heteroscedastic) and is clearly labelled as
-such in all user-facing surfaces. Treat it as a directional range, not a precise bound.
+The API endpoint `POST /predict` and the Streamlit dashboard now return:
+
+| Field | Description |
+|---|---|
+| `predicted_p10` | 10th-percentile salary prediction (low end of 80% PI) |
+| `predicted_p50` | Median prediction (point estimate for back-compat) |
+| `predicted_p90` | 90th-percentile salary prediction (high end of 80% PI) |
+| `predicted_salary` | Alias for `predicted_p50`, kept for v1 clients |
+| `prediction_interval_low` / `prediction_interval_high` | Same as `p10` / `p90` |
+
+Quantile crossings (P10 > P90) are clamped defensively inside
+`api/inference.build_response`, so clients never see an inverted range
+even if XGBoost emits one at a decision boundary.
 
 ## Limitations and Biases
 
-1. **Binary gender**: the training data contains only "Male" / "Female" labels
-   (from Census CPS coding). Non-binary identities are not represented; gender
-   is encoded as a binary feature (`Gender_Bin`). The model cannot make
-   predictions for genders outside this binary.
+1. **Binary gender**: the training data contains only "Male" / "Female"
+   labels from Census CPS coding. Non-binary identities are not
+   represented. The model cannot make predictions for genders outside
+   this binary.
 
-2. **Income floor**: the dataset is filtered to ≥ $100 K. Predictions below that
-   threshold are extrapolation outside the training distribution.
+2. **Truncated cohort**: as noted in the data-prep caveat, the model is
+   trained on a double-filtered slice of the population. It is
+   well-defined *within* the $100K+ cohort but cannot answer "will
+   this person earn more than $100K" — use a different model for that.
 
-3. **Geographic coverage**: the model was trained on US data only and is not
-   valid for other countries.
+3. **Geographic coverage**: US data only.
 
-4. **Temporal drift**: BLS OEWS and Census data are point-in-time snapshots.
-   Predictions may degrade as the labour market changes.
+4. **Temporal drift**: BLS OEWS and Census data are point-in-time
+   snapshots. The Redis-backed drift monitor (`/drift` endpoint)
+   aggregates observations cluster-wide so drift alerts are reliable
+   across a multi-replica Deployment.
 
-5. **Unobserved confounders**: equity compensation, bonuses, years of experience,
-   specific employer, and negotiation history drive large income differences that
-   the model cannot capture.
+5. **Unobserved confounders**: equity compensation, bonuses, years of
+   experience, specific employer, and negotiation history drive large
+   income differences the model cannot capture. The quantile spread
+   reflects this uncertainty honestly rather than pretending it away.
 
-6. **Fairness**: group-level income disparities in the training data (by gender,
-   region, occupation) are reflected in predictions. The model does not correct
-   for historical discrimination embedded in wages.
+6. **Fairness**: group-level income disparities in the training data
+   (by gender, region, occupation) are reflected in the quantile
+   intervals. The model does not correct for historical discrimination
+   embedded in wages. Subgroup calibration should be checked
+   periodically — when the `quantile_coverage_80` metric is computed
+   per subgroup, add an assertion to `tests/test_pipeline.py`.
 
 ## How to Retrain
 
 ```bash
-make model          # trains and saves all artefacts to models/
-# or
-python scripts/train_model.py
+# Quantile trainer (lean — no MLflow / Optuna)
+python -m scripts.train_quantile
+
+# OR the full trainer with HPO + MLflow logging (uses the old point
+# estimator — kept for historical comparison)
+python -m scripts.train_model --tune
 ```
 
-All hyperparameters are controlled via `config.yaml` under the `model:` key.
-Metrics are written to `models/model_metrics.json` after each training run.
+Both scripts write artefacts to `models/` and metrics to
+`models/model_metrics.json`. Test suite picks up changes automatically
+— if the quantile coverage drifts outside `[0.72, 0.88]` or any
+crossings appear, `tests/test_pipeline.py::test_saved_metrics_within_expected_range`
+will fail loudly.

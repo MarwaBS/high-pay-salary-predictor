@@ -43,6 +43,14 @@ services:
     container_name: high_pay_api
     ports:
       - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      # Enables the PredictionCache in api/cache.py. Unset this (or remove
+      # the redis service) to run the API with a no-op cache.
+      - REDIS_URL=redis://redis:6379/0
+      - CACHE_TTL=3600
     volumes:
       # Share the same model artefact with the dashboard service
       - ./models:/app/models
@@ -60,3 +68,25 @@ services:
       timeout: 10s
       start_period: 60s
       retries: 3
+
+  # ── Redis — prediction cache backend ───────────────────────────────────────
+  # Deterministic-prediction cache used by /predict. The API degrades to a
+  # no-op cache if this service is removed or REDIS_URL is unset.
+  redis:
+    image: redis:7-alpine
+    container_name: high_pay_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 192M
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s

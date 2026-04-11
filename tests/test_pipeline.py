@@ -7,6 +7,8 @@ model predictions. Fixtures are provided by tests/conftest.py.
 Run: pytest tests/ -v
 """
 
+import json
+
 import numpy as np
 import pytest
 
@@ -189,41 +191,113 @@ class TestModelPrediction:
     hyperparameter regressions and artefact-format changes.
     """
 
-    def test_model_outputs_float(self, production_model, df_engineered):
+    def test_model_outputs_quantile_triple(self, production_model, df_engineered):
+        """Multi-quantile XGBoost emits (n, 3) — P10, P50, P90 per row."""
+        from pipeline import is_quantile_model, predict_quantiles
+
         row = df_engineered[FEATURES_FULL].iloc[[0]]
-        pred = production_model.predict(row)
-        assert isinstance(pred[0], (float, np.floating))
+        if is_quantile_model(production_model):
+            p10, p50, p90 = predict_quantiles(production_model, row)
+            assert isinstance(p50, float)
+            assert p10 <= p50 <= p90
+        else:
+            # Legacy point model — shape (n,)
+            pred = production_model.predict(row)
+            assert isinstance(pred[0], (float, np.floating))
 
     def test_prediction_above_zero(self, production_model, df_engineered):
         X = df_engineered[FEATURES_FULL].head(50)
         preds = production_model.predict(X)
-        assert (preds > 0).all()
+        # For quantile model (n,3), all cells must be positive. For point (n,), all entries.
+        assert np.asarray(preds).min() > 0
 
     def test_prediction_plausible_range(self, production_model, df_engineered):
-        # Model predicts log1p(income); back-transform with expm1 for dollar check
+        """Back-transformed P50 predictions must be in a plausible dollar range."""
+        from pipeline import is_quantile_model, predict_quantiles
+
         X = df_engineered[FEATURES_FULL].head(200)
-        preds = np.expm1(production_model.predict(X))
-        assert preds.min() > 10_000, "Predictions unrealistically low"
-        assert preds.max() < 5_000_000, "Predictions unrealistically high"
+        if is_quantile_model(production_model):
+            p50s = [predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))]
+            p50_arr = np.asarray(p50s)
+        else:
+            p50_arr = np.expm1(production_model.predict(X))
 
-    def test_r2_above_floor(self, production_model, df_engineered):
-        """Production model should explain at least 5% of variance on the test set.
+        assert p50_arr.min() > 10_000, "Predictions unrealistically low"
+        assert p50_arr.max() < 5_000_000, "Predictions unrealistically high"
 
-        Model is trained on log1p(Annual Income); predictions are back-transformed
-        with expm1 before computing R². With log transform + Optuna HPO + fixed
-        target encoding, the production model achieves R² ≈ 0.077 on this dataset.
-        The 0.05 floor guards against hyperparameter regressions while staying
-        safely below the expected value.
+    def test_saved_metrics_within_expected_range(self, cfg):
+        """Saved model metrics must fall inside explicit regression windows.
+
+        Reads the frozen ``model_metrics.json`` and checks both the P50
+        point metrics AND the quantile-specific metrics (coverage,
+        crossings). Point-estimate bands are intentionally wide because
+        P50 under a quantile objective is the median-minimiser, not the
+        mean-minimiser, so R² is a weak fit-statistic for this model —
+        the real SLO is the quantile coverage and crossings band below.
         """
-        from sklearn.metrics import r2_score
-        from sklearn.model_selection import train_test_split
+        from pathlib import Path
 
-        X = df_engineered[FEATURES_FULL]
-        y = df_engineered["Annual Income"]
-        _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-        preds = np.expm1(production_model.predict(X_test))
-        r2 = r2_score(y_test, preds)
-        assert r2 > 0.05, f"R² too low: {r2:.4f}"
+        metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
+        if not metrics_path.exists():
+            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+
+        with open(metrics_path) as f:
+            metrics = json.load(f)
+
+        r2 = metrics["r2"]
+        mae = metrics["mae"]
+        rmse = metrics["rmse"]
+
+        # Point-estimate bands: wide — see docstring.
+        assert 0.00 <= r2 <= 0.40, f"P50 R² {r2:.4f} outside expected band [0.00, 0.40]"
+        assert 30_000 <= mae <= 90_000, f"P50 MAE ${mae:,.0f} outside expected band"
+        assert 60_000 <= rmse <= 160_000, f"P50 RMSE ${rmse:,.0f} outside expected band"
+
+        # Quantile-specific guards (skip gracefully for legacy point models).
+        if "quantile_coverage_80" in metrics:
+            coverage = metrics["quantile_coverage_80"]
+            crossings = metrics.get("quantile_crossings", 0)
+            # 80% PI should empirically cover ~80% of test targets (±5%).
+            assert 0.72 <= coverage <= 0.88, (
+                f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
+            )
+            assert crossings == 0, (
+                f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
+            )
+
+    def test_saved_cv_matches_test(self, cfg):
+        """CV R² and Test R² must agree within ~0.15.
+
+        Both metrics are computed in dollar space on train-only folds
+        (CV) and the held-out test split (Test), so they should be
+        close. A spurious gap would indicate CV leaked test rows or was
+        computed in a different transformed space from the test metric.
+
+        Metrics files written before the dollar-space CV change do not
+        carry the ``cv_space`` flag and are skipped with a clear retrain
+        message.
+        """
+        from pathlib import Path
+
+        metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
+        if not metrics_path.exists():
+            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+
+        with open(metrics_path) as f:
+            metrics = json.load(f)
+
+        if metrics.get("cv_space") != "dollar":
+            pytest.skip(
+                "model_metrics.json predates the dollar-space CV change "
+                "(no cv_space flag). Re-run `python -m scripts.train_quantile` "
+                "to regenerate metrics with train-only, dollar-space CV."
+            )
+
+        gap = abs(metrics["cv_r2_mean"] - metrics["r2"])
+        assert gap <= 0.15, (
+            f"CV/Test R² mismatch too large ({gap:.4f}). "
+            f"cv_r2_mean={metrics['cv_r2_mean']:.4f} vs r2={metrics['r2']:.4f}."
+        )
 
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)

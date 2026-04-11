@@ -1,0 +1,19 @@
+# ── Config for the salary-api Deployment ───────────────────────────────────
+# Points the initContainer at object-storage URLs for the model + dataset.
+# Update these per environment (dev / staging / prod) via kustomize or helm.
+#
+# In real deployments, replace the example URLs with signed URLs from:
+#   - MLflow Model Registry (download artifact endpoint)
+#   - S3 / GCS / Azure Blob presigned URL
+#   - Your internal artifact store
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: salary-api-config
+data:
+  # URL must point to xgb_salary_model.ubj — the initContainer strips the
+  # filename to derive sibling URLs for feature_names/group_means/metrics.
+  model-url: "https://artifacts.example.com/salary-api/v1.0.0/xgb_salary_model.ubj"
+  data-url: "https://artifacts.example.com/salary-api/v1.0.0/cleaned_high_pay_data.csv"
+  # Redis service URL within the cluster. Omit for no-op cache.
+  redis-url: "redis://redis.default.svc.cluster.local:6379/0"

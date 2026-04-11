@@ -5,7 +5,8 @@
 #   make              — show this help
 #   make install      — create .venv and install all dependencies
 #   make data         — regenerate cleaned dataset from raw sources
-#   make model        — train XGBoost model (via scripts/train_model.py)
+#   make model        — train quantile XGBoost model (scripts/train_quantile.py)
+#   make hpo          — run legacy HPO trainer with MLflow + Optuna
 #   make test         — run full pytest suite
 #   make coverage     — run tests with coverage report
 #   make lint         — ruff check (fast linter)
@@ -47,8 +48,9 @@ help:
 	@echo "  ------------------------------------------------"
 	@echo "  install     Create .venv and install all dependencies"
 	@echo "  data        Regenerate cleaned dataset from raw sources"
-	@echo "  model       Train XGBoost model → models/xgb_salary_model.ubj"
-	@echo "  test        Run full pytest suite (98 tests)"
+	@echo "  model       Train quantile XGBoost → models/xgb_salary_model.ubj"
+	@echo "  hpo         Legacy HPO trainer (MLflow + Optuna, point estimator)"
+	@echo "  test        Run full pytest suite"
 	@echo "  coverage    Run tests with HTML coverage report"
 	@echo "  lint        Ruff linter (fast, replaces flake8)"
 	@echo "  format      Ruff auto-formatter (Black-compatible)"
@@ -88,18 +90,27 @@ data: install
 	@echo ">>> Cleaned dataset saved to Data/cleaned_high_pay_data.csv"
 
 # ── Model training ────────────────────────────────────────────────────────────
-# Uses scripts/train_model.py — no more fragile inline Python one-liners.
+# The primary trainer is the quantile reframe (scripts/train_quantile.py).
+# The legacy HPO + MLflow trainer lives at scripts/train_model.py and is
+# exposed via `make hpo` for historical comparison only.
 .PHONY: model
 model: install
-	@echo ">>> Training XGBoost salary prediction model..."
+	@echo ">>> Training multi-quantile XGBoost salary prediction model..."
 	@mkdir -p models
-	$(VENV)/bin/python scripts/train_model.py
+	$(VENV)/bin/python -m scripts.train_quantile
 	@echo ">>> Model artefacts saved to models/"
+
+.PHONY: hpo
+hpo: install
+	@echo ">>> Running legacy HPO trainer (MLflow + Optuna, point estimator)..."
+	@mkdir -p models
+	$(VENV)/bin/python -m scripts.train_model --tune
+	@echo ">>> HPO results logged to MLflow; artefacts saved to models/"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 .PHONY: test
 test: install
-	@echo ">>> Running 96-test suite (unit + integration + drift + performance)..."
+	@echo ">>> Running full pytest suite (unit + integration + drift + inference + performance)..."
 	$(PYTEST) tests/ -v --tb=short
 
 .PHONY: test-fast
