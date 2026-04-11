@@ -197,6 +197,24 @@ def main() -> None:
     )
     logger.info("Point (P50 back-compat): R²=%.4f RMSE=$%d MAE=$%d", r2, int(rmse), int(mae))
 
+    # ── Subgroup quantile calibration ───────────────────────────────────────
+    # Coverage is computed per Gender and per Region so fairness drift is
+    # surfaced as a first-class metric. A sudden collapse in one subgroup's
+    # coverage (e.g. women dropping from 0.77 to 0.50) would indicate the
+    # model has stopped being calibrated for that population.
+    subgroup_coverage: dict[str, float] = {}
+    for col in ("Gender", "Region"):
+        if col not in df_test.columns:
+            continue
+        for val in sorted(df_test[col].dropna().unique()):
+            mask = (df_test[col] == val).to_numpy()
+            if mask.sum() < 30:
+                continue
+            subgroup_hit = (y_test.values[mask] >= p10_dollar[mask]) & (y_test.values[mask] <= p90_dollar[mask])
+            cov = float(subgroup_hit.mean())
+            subgroup_coverage[f"{col}={val}"] = round(cov, 4)
+            logger.info("  subgroup coverage_80 %-20s n=%4d cov=%.3f", f"{col}={val}", int(mask.sum()), cov)
+
     # ── 5-fold CV on training set only, dollar-space P50 R² ─────────────────
     # CV and test R² are computed in the same (dollar) space so the numbers
     # are directly comparable.
@@ -245,13 +263,8 @@ def main() -> None:
         "quantile_coverage_80": round(coverage_80, 4),
         "quantile_width_median": round(interval_width_median, 2),
         "quantile_crossings": crossings,
+        "subgroup_coverage_80": subgroup_coverage,
         **pinballs_dollar,
-        # PI offsets kept for backward compat with the old API path — now
-        # derived from actual quantile predictions rather than residuals,
-        # so the /predict response's prediction_interval_low/high stay
-        # populated with a meaningful range.
-        "pi_offset_10": round(float(np.mean(p10_dollar - p50_dollar)), 2),
-        "pi_offset_90": round(float(np.mean(p90_dollar - p50_dollar)), 2),
         "n_train": len(X_train),
         "n_test": len(X_test),
         "n_features": len(FEATURES_FULL),
@@ -260,20 +273,6 @@ def main() -> None:
         "log_transform": True,
         "fixed_group_means": True,
         "objective": "reg:quantileerror",
-        "framing": (
-            "Quantile regression (P10/P50/P90) within the $100K+ cohort. "
-            "The previous point-estimate framing was killed because the "
-            "cohort variance is dominated by unobserved factors — no point "
-            "estimator can exceed a ceiling of R² ≈ 0.10. The quantile "
-            "output is useful where the point estimate is not: it tells "
-            "a caller the realistic income range for their profile."
-        ),
-        "data_prep_caveat": (
-            "Training cohort is double-filtered by notebook 1: Census "
-            "rows with INCTOT >= 100K inner-joined against BLS cells "
-            "where A_MEAN >= 100K. A future gap should re-prep using "
-            "the full Census dataset with a binary >= $100K classifier."
-        ),
     }
     save_metrics(metrics, str(ROOT / cfg["model"]["metrics_path"]))
 

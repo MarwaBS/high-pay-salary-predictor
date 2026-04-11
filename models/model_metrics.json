@@ -14,11 +14,17 @@
   "quantile_coverage_80": 0.7689,
   "quantile_width_median": 111676.02,
   "quantile_crossings": 0,
+  "subgroup_coverage_80": {
+    "Gender=Female": 0.7791,
+    "Gender=Male": 0.7619,
+    "Region=Midwest": 0.7298,
+    "Region=Northeast": 0.7654,
+    "Region=South": 0.8034,
+    "Region=West": 0.7564
+  },
   "p10_pinball": 6566.07,
   "p50_pinball": 25051.21,
   "p90_pinball": 22397.19,
-  "pi_offset_10": -34039.1,
-  "pi_offset_90": 100207.56,
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
@@ -33,7 +39,5 @@
   },
   "log_transform": true,
   "fixed_group_means": true,
-  "objective": "reg:quantileerror",
-  "framing": "Quantile regression (P10/P50/P90) within the $100K+ cohort. The previous point-estimate framing was killed because the cohort variance is dominated by unobserved factors \u2014 no point estimator can exceed a ceiling of R\u00b2 \u2248 0.10. The quantile output is useful where the point estimate is not: it tells a caller the realistic income range for their profile.",
-  "data_prep_caveat": "Training cohort is double-filtered by notebook 1: Census rows with INCTOT >= 100K inner-joined against BLS cells where A_MEAN >= 100K. A future gap should re-prep using the full Census dataset with a binary >= $100K classifier."
+  "objective": "reg:quantileerror"
 }

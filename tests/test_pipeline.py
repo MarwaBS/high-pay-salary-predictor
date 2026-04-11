@@ -299,6 +299,37 @@ class TestModelPrediction:
             f"cv_r2_mean={metrics['cv_r2_mean']:.4f} vs r2={metrics['r2']:.4f}."
         )
 
+    def test_subgroup_coverage_within_band(self, cfg):
+        """Every per-gender / per-region subgroup must stay within a
+        calibration band around the cohort-wide target of 0.80.
+
+        The floor at 0.60 is generous but catches a catastrophic
+        subgroup collapse — e.g. the female cohort dropping from
+        ~0.77 to 0.50 — that would indicate the quantile model has
+        stopped being calibrated for that population.
+        """
+        from pathlib import Path
+
+        metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
+        if not metrics_path.exists():
+            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+
+        with open(metrics_path) as f:
+            metrics = json.load(f)
+
+        subgroup_coverage = metrics.get("subgroup_coverage_80")
+        if not subgroup_coverage:
+            pytest.skip(
+                "model_metrics.json predates the subgroup_coverage_80 field. "
+                "Re-run `python -m scripts.train_quantile` to regenerate metrics."
+            )
+
+        bad = {k: v for k, v in subgroup_coverage.items() if not (0.60 <= v <= 0.95)}
+        assert not bad, (
+            f"Subgroup coverage outside [0.60, 0.95]: {bad}. "
+            f"Quantile model calibration has drifted for these subgroups."
+        )
+
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)
 
