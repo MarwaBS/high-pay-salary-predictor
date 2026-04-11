@@ -1,0 +1,50 @@
+# Hugging Face Spaces .dockerignore — keeps the build context small.
+# This file applies when the Space builder treats the Space repo root
+# as the Docker build context. Listed paths are never COPY'd even if
+# the Dockerfile references them, so they also shouldn't be pushed to
+# the Space repo in the first place.
+
+# Version control + CI
+.git/
+.github/
+.gitignore
+.pre-commit-config.yaml
+
+# Private notes (MUST NEVER ship to the Space)
+private/
+
+# Tests, notebooks, and raw data — none of which the runtime needs
+tests/
+*.ipynb
+Resources/
+Images/
+reports/
+
+# Local env / caches
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+htmlcov/
+.coverage
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Local model caches (recomputed by training)
+mlruns/
+mlruns.db
+
+# Docs / licences not needed at runtime
+CONTRIBUTING.md
+LICENSE
+docker-compose.yml
+Makefile
+# NOTE: MODEL_CARD.md stays — the container can reference it via the
+#       GitHub link in the Space README, and it's cheap to include.
