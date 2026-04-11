@@ -1,0 +1,47 @@
+# ── API runtime dependencies — pinned for reproducible Docker builds ─────────
+#
+# This is the ONLY file consumed by the `api` Docker stage. It excludes
+# everything that the API does not need at inference time: jupyter, pytest,
+# ruff, mypy, optuna, mlflow, dvc, streamlit, shap, lightgbm, statsmodels,
+# geopandas, matplotlib, seaborn, plotly.
+#
+# Why pinned (==) instead of floors (>=):
+#   - Reproducible images. A rebuild in 6 months pulls the exact same wheels.
+#   - Protects against silent upstream breakage (e.g. a 2026-06 xgboost patch
+#     that invalidates the saved .ubj model format).
+#
+# How to regenerate:
+#   1. Make a clean venv: python -m venv .venv && .venv\Scripts\activate
+#   2. pip install -r requirements-api.txt
+#   3. python -m pytest tests/test_api.py -v   (must pass)
+#   4. Bump a version only when CI is green.
+#
+# Keep this file sorted alphabetically (by package name) so diffs are readable.
+
+# ── Core API framework ───────────────────────────────────────────────────────
+fastapi==0.135.2
+pydantic==2.12.5
+uvicorn[standard]==0.42.0
+
+# ── Data handling at inference time ──────────────────────────────────────────
+numpy==1.26.4
+pandas==2.2.2
+
+# ── Model runtime ────────────────────────────────────────────────────────────
+xgboost==3.2.0
+
+# ── Configuration ────────────────────────────────────────────────────────────
+pyyaml==6.0.1
+
+# ── Observability: Prometheus /metrics endpoint ──────────────────────────────
+prometheus-fastapi-instrumentator==7.1.0
+
+# ── Security: per-IP rate limiting ───────────────────────────────────────────
+limits==5.8.0
+slowapi==0.1.9
+
+# ── Caching: optional Redis-backed prediction cache ──────────────────────────
+# Imported lazily inside api/cache.py — the API degrades to a no-op cache
+# if REDIS_URL is unset, so this dep is required at build time but optional
+# at runtime.
+redis==7.1.1

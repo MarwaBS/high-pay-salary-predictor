@@ -27,9 +27,11 @@ from pipeline import (
     compute_fallback_means,
     engineer_features,
     get_bls_defaults,
+    is_quantile_model,
     load_group_means,
     load_metrics,
     load_model,
+    predict_quantiles,
 )
 
 warnings.filterwarnings("ignore")
@@ -351,22 +353,28 @@ def tab_predictor(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]
             occ_mean_income=occ_mean,
             state_mean_income=state_mean_val,
         )
-        prediction = float(np.expm1(model.predict(row)[0]))
+        # Quantile prediction: P10/P50/P90 directly from the model.
+        # Falls back to (point, point, point) for legacy models.
+        p10, p50, p90 = predict_quantiles(model, row)
 
-        # Empirical 80% prediction interval from training-time residual offsets
-        pi_low = prediction + metrics.get("pi_offset_10", 0.0)
-        pi_high = prediction + metrics.get("pi_offset_90", 0.0)
-
-        st.success(f"Estimated Annual Income: **${prediction:,.0f}**")
-        st.info(
-            f"**Empirical 80% prediction interval**: ${pi_low:,.0f} — ${pi_high:,.0f}  \n"
-            "_Interval is approximate (heteroscedastic income residuals); "
-            "treat as a directional range, not a precise bound._"
-        )
+        st.success(f"Median estimate (P50): **${p50:,.0f}**")
+        if is_quantile_model(model):
+            st.info(
+                f"**80% prediction interval**: ${p10:,.0f} — ${p90:,.0f}  \n"
+                "_Interval comes from a multi-quantile XGBoost model "
+                "(not from residuals). Calibrated to ~80% empirical coverage "
+                "on the held-out test set. See the Model Insights tab and "
+                "`MODEL_CARD.md` for details._"
+            )
+        else:
+            st.warning(
+                "Loaded model is a legacy point estimator — P10/P90 shown above "
+                "are degenerate. Run `python -m scripts.train_quantile` to retrain."
+            )
 
         comparable = df[(df["Education Level"] == education) & (df["State Abbreviation"] == state)]["Annual Income"]
         if len(comparable) > 0:
-            pct = (comparable < prediction).mean() * 100
+            pct = (comparable < p50).mean() * 100
             st.markdown(
                 f"This estimate is higher than **{pct:.1f}%** of {education} earners in {state} in the dataset."
             )
@@ -432,9 +440,14 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
             test_size=CFG["model"]["test_size"],
             random_state=CFG["model"]["random_state"],
         )
-        # Model predicts log1p(income) — back-transform to dollar space before
-        # computing residuals (dollar − log would be meaningless)
-        y_pred_dollar = np.expm1(model.predict(X_test))
+        # Multi-quantile model outputs (n, 3). For the residual plot we use
+        # the P50 column back-transformed to dollar space. Legacy point
+        # models fall through to a 1-D shape via predict_quantiles.
+        raw = np.asarray(model.predict(X_test))
+        if raw.ndim == 2 and raw.shape[1] == 3:
+            y_pred_dollar = np.expm1(raw[:, 1])  # P50 column
+        else:
+            y_pred_dollar = np.expm1(raw)
         residuals = y_test.values - y_pred_dollar
 
         fig = go.Figure()

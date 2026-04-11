@@ -1,0 +1,14 @@
+# ── PodDisruptionBudget ─────────────────────────────────────────────────────
+# Guarantees at least 1 salary-api pod is Ready during voluntary disruptions
+# (node drains, upgrades, cluster autoscaler evictions). Paired with
+# replicas=2 and RollingUpdate(maxUnavailable=0) this delivers zero-downtime
+# maintenance operations.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: salary-api-pdb
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: salary-api

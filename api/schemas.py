@@ -103,12 +103,39 @@ class PredictRequest(BaseModel):
 
 
 class PredictResponse(BaseModel):
-    """Salary prediction result with contextual benchmarks."""
+    """Salary prediction result — quantile trio + contextual benchmarks.
+
+    The model is a multi-quantile XGBoost regressor. ``predicted_p50`` is
+    the median prediction, ``predicted_p10``/``predicted_p90`` are the
+    lower/upper bounds of the 80% quantile interval. ``predicted_salary``
+    is an alias for ``predicted_p50`` kept for backward compatibility with
+    existing clients; new clients should prefer the explicit quantile
+    fields.
+    """
 
     predicted_salary: float = Field(
         ...,
-        description="Predicted annual income in USD.",
+        description=(
+            "Alias for ``predicted_p50`` — the median (P50) prediction. "
+            "Kept for backward compatibility. New clients should use the "
+            "explicit quantile fields."
+        ),
         examples=[175000.0],
+    )
+    predicted_p10: float = Field(
+        ...,
+        description="10th-percentile prediction from the quantile model ($).",
+        examples=[125000.0],
+    )
+    predicted_p50: float = Field(
+        ...,
+        description="Median (50th-percentile) prediction from the quantile model ($).",
+        examples=[175000.0],
+    )
+    predicted_p90: float = Field(
+        ...,
+        description="90th-percentile prediction from the quantile model ($).",
+        examples=[245000.0],
     )
     percentile_in_group: float = Field(
         ...,

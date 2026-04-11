@@ -4,9 +4,12 @@ Uses FastAPI's TestClient (synchronous, no server needed).
 Run: pytest tests/test_api.py -v
 """
 
+from unittest.mock import MagicMock
+
 import pytest
 from fastapi.testclient import TestClient
 
+import api.main as api_main
 from api.main import app
 
 
@@ -201,6 +204,85 @@ class TestValidation:
     def test_missing_required_field_422(self, client):
         r = client.post("/predict", json={"state": "CA"})
         assert r.status_code == 422
+
+
+# ── Prediction Cache ─────────────────────────────────────────────────────────
+
+
+class TestPredictionCache:
+    """Verify that /predict consults the cache before inference and writes
+    results back on a miss. Uses a MagicMock for ``api.main.cache`` so no
+    live Redis is required.
+    """
+
+    def test_cache_miss_then_hit(self, client, base_payload, monkeypatch):
+        """First request: cache miss → cache.set called. Second request:
+        cache hit → response comes from cache and cache.set is not called
+        again with the same key."""
+        fake_cache = MagicMock()
+        # First call: miss. Second call: hit with a canned response.
+        cached_response = {
+            "predicted_salary": 123456.78,
+            "predicted_p10": 90000.0,
+            "predicted_p50": 123456.78,
+            "predicted_p90": 200000.0,
+            "prediction_interval_low": 90000.0,
+            "prediction_interval_high": 200000.0,
+            "percentile_in_group": 55.0,
+            "group_median": 150000.0,
+            "group_mean": 160000.0,
+            "group_size": 42,
+            "state": base_payload["state"],
+            "occupation": base_payload["occupation"],
+            "education_level": base_payload["education_level"],
+            "gender": base_payload["gender"],
+            "age": base_payload["age"],
+        }
+        fake_cache.get.side_effect = [None, cached_response]
+        monkeypatch.setattr(api_main, "cache", fake_cache)
+
+        # Miss — model runs, cache.set called
+        r1 = client.post("/predict", json=base_payload)
+        assert r1.status_code == 200, r1.text
+        assert fake_cache.get.call_count == 1
+        assert fake_cache.set.call_count == 1
+
+        # Hit — response echoes cached payload, cache.set NOT called again
+        r2 = client.post("/predict", json=base_payload)
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["predicted_salary"] == 123456.78
+        assert r2.json()["group_size"] == 42
+        assert fake_cache.get.call_count == 2
+        assert fake_cache.set.call_count == 1  # unchanged — no set on hit
+
+    def test_cache_get_called_with_validated_payload(self, client, base_payload, monkeypatch):
+        """Cache key must be built from the Pydantic-normalised request, so
+        case-insensitive inputs ('ca' → 'CA', 'male' → 'Male') hit the same
+        cache entry. Proves the cache key is stable under input normalisation.
+        """
+        fake_cache = MagicMock()
+        fake_cache.get.return_value = None
+        monkeypatch.setattr(api_main, "cache", fake_cache)
+
+        payload_lower = {**base_payload, "state": "ca", "gender": "male"}
+        r = client.post("/predict", json=payload_lower)
+        assert r.status_code == 200
+
+        # The key passed to cache.get must contain the normalised values.
+        key_arg = fake_cache.get.call_args[0][0]
+        assert key_arg["state"] == "CA"
+        assert key_arg["gender"] == "Male"
+
+    def test_default_cache_is_disabled_noop(self):
+        """With REDIS_URL unset (default), the real cache instance is a
+        silent no-op and does not crash the app."""
+        # The module-level ``cache`` is a real PredictionCache; when
+        # REDIS_URL is empty it should report enabled=False and return
+        # None on all lookups.
+        assert api_main.cache.enabled is False
+        assert api_main.cache.get({"state": "CA"}) is None
+        # .set() must not raise even when disabled
+        api_main.cache.set({"state": "CA"}, {"predicted_salary": 1.0})
 
 
 # ── Drift Endpoint ───────────────────────────────────────────────────────────

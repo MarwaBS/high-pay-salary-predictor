@@ -1,6 +1,27 @@
-# ── Stage 1: dependency builder ───────────────────────────────────────────────
-# Builds all wheels into /install so runtime stages stay lean.
-FROM python:3.11-slim AS builder
+# ── Stage 1a: API dependency builder (lean, pinned) ─────────────────────────
+# Installs from requirements-api.txt with exact == pins for reproducible
+# builds. Includes ONLY what api/ needs — do NOT add jupyter / pytest /
+# streamlit / shap / lightgbm / statsmodels / geopandas here. Keeping the
+# API image lean also makes pip-audit scans faster and reduces the CVE
+# surface.
+FROM python:3.11-slim AS api-builder
+
+WORKDIR /build
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-api.txt .
+
+# Exact version pinning (==) so a rebuild in 6 months pulls the same wheels.
+RUN pip install --no-cache-dir --prefix=/install -r requirements-api.txt
+
+
+# ── Stage 1b: Dashboard dependency builder ──────────────────────────────────
+# Separate builder for Streamlit + viz stack so the api image does not pull
+# shap/plotly/matplotlib it never uses.
+FROM python:3.11-slim AS dashboard-builder
 
 WORKDIR /build
 
@@ -10,24 +31,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# Install only runtime packages (excludes jupyter / pytest / dev tools).
-# Pin to requirements.txt so Docker is consistent with the local environment.
+# Dashboard uses loose lower bounds for now (notebook/viz stack).
+# TODO: split into requirements-dashboard.txt with pinned versions when
+# the notebook stack is stabilised.
 RUN pip install --no-cache-dir --prefix=/install \
-        pandas \
-        numpy \
-        scikit-learn \
-        xgboost \
-        lightgbm \
-        shap \
-        plotly \
-        streamlit \
-        pyyaml \
-        scipy \
-        statsmodels \
-        matplotlib \
-        fastapi \
-        "uvicorn[standard]" \
-        pydantic
+        "pandas>=1.5.0" \
+        "numpy>=1.21.0" \
+        "scikit-learn>=1.1.0" \
+        "xgboost>=1.7.0" \
+        "lightgbm>=3.3.0" \
+        "shap>=0.41.0" \
+        "plotly>=5.10.0" \
+        "streamlit>=1.20.0" \
+        "pyyaml>=6.0" \
+        "matplotlib>=3.5.0"
 
 
 # ── Stage 2: Streamlit dashboard ──────────────────────────────────────────────
@@ -39,7 +56,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /install /usr/local
+COPY --from=dashboard-builder /install /usr/local
 
 COPY config.yaml      ./config.yaml
 COPY streamlit_app.py ./streamlit_app.py
@@ -76,7 +93,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /install /usr/local
+COPY --from=api-builder /install /usr/local
 
 COPY config.yaml ./config.yaml
 COPY pipeline.py ./pipeline.py

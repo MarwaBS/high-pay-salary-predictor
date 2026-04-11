@@ -62,7 +62,7 @@ import optuna
 import pandas as pd
 import yaml
 from sklearn.inspection import permutation_importance
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import make_scorer, mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score, train_test_split
 from xgboost import XGBRegressor
 
@@ -270,20 +270,29 @@ def main() -> None:
     rmse = float(mean_squared_error(y_test, y_pred_dollar) ** 0.5)
     logger.info("Test  R²=%.4f  RMSE=$%d  MAE=$%d", r2, int(rmse), int(mae))
 
-    # ── 5-fold CV on log-scale (stability check) ──────────────────────────────
+    # ── 5-fold CV on the TRAINING SET ONLY in DOLLAR space ───────────────────
+    # Fresh model fit per fold on train-only data, scored in dollar space
+    # via ``expm1`` so the CV number is directly comparable to the test
+    # R² reported above.
+
+    def _dollar_r2(y_true_log, y_pred_log):
+        return r2_score(np.expm1(y_true_log), np.expm1(y_pred_log))
+
     kf = KFold(n_splits=model_cfg.get("cv_folds", 5), shuffle=True, random_state=random_state)
-    # CV on the full dataset with fixed group means (log scale)
-    df_full = engineer_features(
-        df_raw,
-        edu_order,
-        region_map,
-        occ_means=group_means["occ_means"],
-        state_means=group_means["state_means"],
+    cv_scores = cross_val_score(
+        _build_model(best_params, random_state),
+        X_train,
+        y_train_log,
+        cv=kf,
+        scoring=make_scorer(_dollar_r2),
+        n_jobs=-1,
     )
-    X_full = df_full[FEATURES_FULL]
-    y_full_log = np.log1p(df_full["Annual Income"])
-    cv_scores = cross_val_score(model, X_full, y_full_log, cv=kf, scoring="r2")
-    logger.info("%d-fold CV R² (log scale) = %.4f ± %.4f", len(cv_scores), cv_scores.mean(), cv_scores.std())
+    logger.info(
+        "%d-fold CV R² (dollar space, train set only) = %.4f ± %.4f",
+        len(cv_scores),
+        cv_scores.mean(),
+        cv_scores.std(),
+    )
 
     # ── Empirical 80% prediction interval (dollar-space residuals) ───────────
     # Residuals computed in dollar space after back-transform so that the
@@ -388,6 +397,11 @@ def main() -> None:
         "mae": round(float(mae), 2),
         "cv_r2_mean": round(float(cv_scores.mean()), 4),
         "cv_r2_std": round(float(cv_scores.std()), 4),
+        # Flags telling consumers that CV was computed in dollar space on
+        # train-only folds (directly comparable to test R²). Regression
+        # tests read these to distinguish older metrics files.
+        "cv_space": "dollar",
+        "cv_train_only": True,
         "pi_offset_10": round(pi_offset_10, 2),
         "pi_offset_90": round(pi_offset_90, 2),
         "pi_coverage": round(pi_coverage, 4),
@@ -401,14 +415,9 @@ def main() -> None:
         "fixed_group_means": True,
         "permutation_importance": perm_importance,
         "subgroup_metrics": subgroup_metrics,
-        "r2_context": (
-            "R² is intentionally moderate (~0.08 on test set). "
-            "Census individual income within the $100K+ cohort has extremely high "
-            "within-occupation variance driven by unobserved factors (equity compensation, "
-            "bonuses, tenure, specific employer). The log-transform target and Optuna "
-            "hyper-parameter tuning meaningfully improve over a naïve baseline (0.04 → 0.08). "
-            "CV R² is stable (± 0.01), confirming no overfitting."
-        ),
+        # This trainer intentionally omits any point-estimate rationalisation
+        # field — the production model is quantile-based; see MODEL_CARD.md
+        # for how the model is scored on calibrated coverage rather than R².
     }
     save_metrics(metrics, str(metrics_path))
 

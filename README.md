@@ -1,33 +1,37 @@
-# High-Paying Jobs in the US — End-to-End Data Science Case Study
+# High-Paying Jobs in the US — Salary Quantile Predictor
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/MarwaBS/High_pay_Analysis_us/actions/workflows/ci.yml/badge.svg)](https://github.com/MarwaBS/High_pay_Analysis_us/actions/workflows/ci.yml)
-[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](streamlit_app.py)
-[![XGBoost](https://img.shields.io/badge/ML-XGBoost-orange)](04_salary_prediction_model.ipynb)
-[![SHAP](https://img.shields.io/badge/Explainability-SHAP-brightgreen)](04_salary_prediction_model.ipynb)
-[![MLflow](https://img.shields.io/badge/Tracking-MLflow-0194E2?logo=mlflow&logoColor=white)](04_salary_prediction_model.ipynb)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
+[![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](MODEL_CARD.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
-[![Tests](https://img.shields.io/badge/Tests-98%20passing-brightgreen)](tests/)
-[![Coverage](https://img.shields.io/badge/Coverage-75%25%2B-green)](pyproject.toml)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
+
+> **What this is**: a portfolio project that analyses high-paying US
+> jobs (≥ $100K/yr) and serves an XGBoost **quantile** model (P10/P50/P90)
+> through a FastAPI endpoint with a Streamlit dashboard on top.
+>
+> **What it is not**: a deployable salary predictor. The model operates
+> on a truncated `INCTOT ≥ $100K` cohort and returns an honest
+> uncertainty range, not a precise dollar estimate. See
+> [MODEL_CARD.md](MODEL_CARD.md) for the full framing, limitations, and
+> fairness discussion. The model is scored on calibrated quantile
+> coverage, not on R² — point-estimate R² is a weak fit-statistic under
+> a quantile loss.
 
 ## Key Findings
 
-> **For senior interviewers and reviewers — findings first.**
-
 | Finding | Detail |
 |---|---|
-| **Gender pay gap** | Male earners average ~$30K more than female peers within the same occupation and state (Cohen's *d* ≈ 0.27, statistically significant). Gap persists after controlling for education and region. |
-| **Age is the top predictor** | Permutation importance: Age accounts for the largest unique drop in R² (ΔR²=0.112), outranking occupation and BLS wage signals. |
-| **Education premium** | Each ordinal step in education (Bachelor's → Master's → Professional → Doctoral) yields a measurable income increment; the jump from Bachelor's to Doctoral is ~$45K in median terms. |
-| **Regional disparity** | Northeast workers earn the most (highest R²=0.097 predictability); model explains substantially less variance in the South and Midwest. |
-| **Log-transform unlocks model signal** | Switching the target to `log1p(Annual Income)` raised R² from 0.040 → 0.077 (+93%) by normalising the right-skewed income distribution. |
-| **Target-encoding leakage fixed** | `Occ_Mean_Income` and `State_Mean_Income` are now computed from the training split only, eliminating the leakage present in earlier versions. |
+| **Gender pay gap (EDA, not model)** | Welch t-test on the cleaned dataset gives Cohen's *d* ≈ 0.27 for the male/female income gap within the same occupation and state. Persists after controlling for education and region. |
+| **Age dominates what the model can learn** | Permutation importance on the v1 point estimator: Age had the largest unique ΔR². Quantile model unchanged on feature inputs. |
+| **Education premium** | Bachelor's → Doctoral ~$45K median jump in EDA. |
+| **Regional disparity** | Northeast workers earn the most (EDA); model has the narrowest P10–P90 spread there. |
+| **Data-prep ceiling** | The cleaning notebook double-filters the cohort (`INCTOT ≥ 100K` × `A_MEAN ≥ 100K`), which puts a hard upper bound on what a point estimator can achieve. The quantile reframe addresses the right question for the available data. |
 
 ---
 
-A **production-grade, end-to-end data science pipeline** analyzing high-paying jobs (≥ $100K/yr) across all 50 US states, integrating **Bureau of Labor Statistics (BLS) OEWS** and **US Census** microdata. The project covers the complete ML lifecycle: raw data ingestion → cleaning → EDA → geospatial mapping → XGBoost salary prediction with SHAP explainability → MLflow experiment tracking → FastAPI serving → interactive Streamlit dashboard → Docker deployment.
+An end-to-end data science pipeline analysing high-paying jobs (≥ $100K/yr) across all 50 US states, integrating **Bureau of Labor Statistics (BLS) OEWS** and **US Census** microdata. Covers data cleaning, EDA, geospatial mapping, an XGBoost **multi-quantile** model (P10/P50/P90), a FastAPI serving layer with Redis-backed caching and distributed drift detection, and a Streamlit dashboard.
 
 **Keywords:** salary prediction, XGBoost, SHAP, MLflow, FastAPI, Streamlit, BLS OEWS, US Census, data science portfolio, income inequality analysis, feature engineering, CI/CD
 
@@ -172,22 +176,27 @@ pre-commit install                 # install git quality hooks
 
 ---
 
-## Model performance
+## Model performance (v2.0.0 — quantile reframe)
+
+The primary SLO is **calibrated quantile coverage**, not R². See
+[MODEL_CARD.md](MODEL_CARD.md) for the full rationale.
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| Test R² | **0.077** | Dollar space after `expm1` back-transform; +93% vs. linear baseline (0.040) |
-| CV R² (5-fold, log space) | **0.155 ± 0.020** | Stable; confirms no overfitting |
-| RMSE | **$105,232** | On held-out 20% test set |
-| MAE | **$52,279** | Median absolute error |
-| 80% PI width | **~$128K** | Empirical from residual 10th/90th pct |
-| Train / test | 8,204 / 2,051 | random_state=42 |
+| 80% empirical coverage | **~0.77** | Fraction of test targets inside `[P10, P90]`. Target 0.80 ± 0.05. |
+| Median PI width | ~$112K | Typical 80% interval spread in dollar space. |
+| Quantile crossings | **0** | P10 > P50 or P50 > P90 — must stay zero. |
+| P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** — P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
+| CV R² (5-fold, train-only, dollar) | ~0.03 ± 0.02 | Same space as test R² — no overfitting, no space mismatch. |
+| Train / test | 8,204 / 2,051 | `random_state=42` |
 
-> **Why is R² moderate?** Census individual income within the $100K+ cohort has extremely high within-occupation variance driven by unobserved factors (equity compensation, bonuses, tenure, specific employer). The available BLS + demographic features explain occupation- and state-level income *patterns* reliably but cannot resolve individual-level variation. This is a data-ceiling effect, not a modelling failure. Switching to a `log1p` target (see below) and Optuna HPO pushed R² from 0.040 → 0.077 (+93%); 5-fold CV is stable (±0.020), confirming no overfitting.
+> **Why is the point-estimate R² so low?** Two reasons:
+> 1. The training cohort is double-filtered (Census `INCTOT ≥ 100K` × BLS `A_MEAN ≥ 100K`), pre-removing most of the occupation-wage signal — see [MODEL_CARD.md § Data-prep caveat](MODEL_CARD.md).
+> 2. Under a quantile objective, P50 minimises absolute error, not squared error, so R² (which rewards mean-minimisers) is the wrong scoring rule.
+>
+> The v1.0.0 value of R² = 0.077 (with MLflow + Optuna HPO) was not higher because of better modelling — it was higher because it was trained with squared-error loss and scored with a squared-error metric. That's a tautology, not progress.
 
-> **Note on CV vs test R²:** CV R² (0.155) is computed in **log space** for training stability; test R² (0.077) is computed in **dollar space** after `expm1` back-transformation. They measure different things and are not directly comparable — both are reported for full transparency.
-
-**Prediction intervals:** the `/predict` API endpoint and dashboard return an empirical 80% prediction interval derived from the 10th/90th percentiles of test-set residuals (dollar space). Offsets: −$49,920 (lower) / +$78,030 (upper). Intervals are wider than ±RMSE because income residuals are right-skewed.
+**Prediction intervals** are emitted directly by the multi-quantile XGBoost model. The API response includes explicit `predicted_p10`, `predicted_p50`, `predicted_p90` fields; `predicted_salary` is kept as an alias for `predicted_p50` for backward compatibility with v1 clients.
 
 ### API performance benchmarks
 
@@ -205,26 +214,48 @@ Measured with FastAPI TestClient (single process, no cache):
 
 ## Portfolio highlights
 
-- **Log-transform + Optuna HPO:** `log1p(Annual Income)` target with 30-trial TPE search (n_estimators=169, max_depth=3, lr=0.045, reg_lambda=9.88) pushed R² from 0.040 → 0.077 (+93%) and MAE from ~$59K → ~$52K.
-- **Target-encoding leakage eliminated:** `Occ_Mean_Income` and `State_Mean_Income` computed from the **training split only**, saved as `models/group_means.json`, loaded at API startup — confirmed leak-free by a dedicated integration test.
-- **Collinearity removal:** `Annual Mean Wage` dropped after VIF analysis (VIF = 5.44×10⁸, corr = 0.9999 with `Hourly Mean`). Feature set reduced 11 → 10 with cleaner importance scores.
-- **Permutation importance:** 50-repeat permutation importance reveals Age (ΔR²=0.112) and Occ_Mean_Income (ΔR²=0.085) dominate — more trustworthy than gain-based importance for correlated features.
-- **Subgroup fairness analysis:** R² and MAE computed for Gender (Male/Female) and Region (4 US Census regions) on the held-out test set. Male R²=0.071 vs Female R²=0.023; Northeast R²=0.097 vs South R²=0.067 — disparities documented and visualized.
-- **Statistical rigor:** ANOVA (education × income), Welch t-test (gender pay gap Cohen's *d*=0.27, *p*<0.001), and Tukey HSD post-hoc tests validate EDA findings.
-- **MLflow experiment tracking:** params, metrics (R², RMSE, MAE, CV, subgroup), and model artefact logged per run. Compare runs with `make mlflow`.
-- **Production API:** FastAPI + Pydantic v2 with `/health`, `/meta`, `/predict`, `/metrics` (Prometheus). Returns salary + 80% PI + percentile + group benchmarks. API key auth (`X-API-Key`), per-IP rate limiting (slowapi), structured JSON logging with request IDs.
-- **Observability:** Prometheus auto-instrumentation (`/metrics` endpoint), structured JSON logging with `X-Request-ID` correlation, request duration tracking on every response.
-- **Security:** API key authentication (optional via `API_KEY` env var), per-IP rate limiting (`RATE_LIMIT` env var, default 60/min), CORS locked down by default (empty, not `*`), blocking `pip-audit` CVE gate in CI.
-- **Interactive dashboard:** Streamlit with 4 tabs — Overview, Geographic choropleth, Salary Predictor, and Model Insights (gain importance, permutation importance, subgroup R² charts, residual + actual-vs-predicted plots). Fully typed with docstrings.
-- **Shared pipeline module:** `pipeline.py` is the single source of truth — consumed by API, dashboard, training script, and all tests. Zero duplication (BLS fallback logic and group-mean computation extracted as shared helpers).
-- **Config validation:** Pydantic schema (`config_schema.py`) validates all `config.yaml` fields at startup — typos and invalid values fail fast.
-- **Drift detection:** Online drift monitor (`/drift` endpoint) tracks incoming prediction features in a rolling window, compares z-score deviation against training-time baseline (`models/baseline_stats.json`), and flags drifted features.
-- **Data versioning:** DVC pipeline (`dvc.yaml`) tracks data lineage from cleaned CSV through model training — `dvc repro` re-trains only when data or code changes. Full reproducibility beyond `random_state=42`.
-- **Kubernetes-ready:** Production K8s manifests in `k8s/` — Deployment (2 replicas, liveness/readiness probes, resource limits), Service (ClusterIP), HPA (auto-scale 2-10 pods at 70% CPU). Prometheus scrape annotations included.
-- **No pickle:** model stored as XGBoost native binary (`.ubj`); all other artefacts as plain JSON — portable, auditable, language-agnostic.
-- **Full CI/CD stack:** multi-stage Docker build (non-root user, health checks, resource limits), Docker Compose, GitHub Actions CI/CD (lint + test + **blocking** pip-audit + Docker build + GHCR push + smoke test), Dependabot, Makefile, `pyproject.toml`, pre-commit hooks.
-- **Performance SLOs:** latency benchmarks enforce `/predict` p99 < 200ms and throughput baselines in CI — not just correctness, but speed contracts.
-- **98 tests** across unit (config, data schema, feature engineering, model prediction, config schema validation), integration (leakage proof, round-trip group-means persistence, end-to-end R², PI sign check), drift detection (z-score, window eviction, persistence), and performance (latency, throughput).
+Grouped by the engineering discipline they demonstrate.
+
+### Modelling
+
+- **Multi-quantile XGBoost.** `reg:quantileerror` with α=[0.10, 0.50, 0.90] in a single model. API returns `predicted_p10 / p50 / p90` directly. Honest uncertainty beats a rationalised point estimate — see [MODEL_CARD.md](MODEL_CARD.md) for the rationale.
+- **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::test_no_occ_mean_leakage`) locks this in.
+- **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF = 5.44×10⁸ against `Hourly Mean`). 10 features total.
+- **CV = Test space.** 5-fold CV runs on the training set only, scored in dollar space via `make_scorer(expm1)`, so `cv_r2_mean` and test `r2` are directly comparable.
+
+### API
+
+- **FastAPI + Pydantic v2** with `/health`, `/meta`, `/predict`, `/metrics`, `/drift`, `/docs`. Routes are thin: domain validation → cache lookup → encode → infer → build response. Business logic lives in `api/inference.py`, not the route handler.
+- **Redis-backed prediction cache.** `api/cache.py` is wired into `/predict` via `api.main.cache` with graceful no-op when `REDIS_URL` is unset. Tested with `MagicMock` — no live Redis required for CI.
+- **O(log n) benchmark lookup.** `(state, education)` benchmark stats are precomputed at startup into a dict of sorted arrays; `/predict` does a dict get + `np.searchsorted` instead of a per-request DataFrame mask.
+- **X-Forwarded-For-aware rate limiting.** `slowapi` key function reads the trusted-hop-adjusted client IP from `X-Forwarded-For`, configurable via `TRUSTED_PROXY_HOPS`. Without this, every caller behind an ingress shares one bucket.
+- **Explicit CORS header list** (`Content-Type`, `X-API-Key`, `X-Request-ID`) — no meaningless wildcard+explicit mix.
+- **API key auth** (optional via `API_KEY` env var), closed-by-default CORS origins, structured JSON logging with `X-Request-ID` correlation.
+
+### Observability
+
+- **Prometheus metrics** via `prometheus-fastapi-instrumentator`, exposed at `/metrics`.
+- **Distributed drift monitor.** `api/drift.DriftMonitor` uses a shared Redis list for the rolling window, so multi-replica Deployments aggregate cluster-wide. Falls back to an in-process deque when Redis is absent. Tested with a fake Redis shared between two monitor instances.
+- **Request tracing.** Every request carries an `X-Request-ID` (inbound or generated) through the logs.
+
+### Security & Reproducibility
+
+- **Blocking `pip-audit` CVE gate** in CI with documented suppressions in `.pip-audit-ignore.txt`.
+- **Pinned Docker builds.** `requirements-api.txt` holds exact versions for the API runtime. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull `shap` / `lightgbm` / `streamlit` / `statsmodels` it never uses.
+- **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
+- **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
+
+### Deployment
+
+- **Kubernetes manifests.** `k8s/api-deployment.yaml` uses a SHA-pinned image tag placeholder (`IMAGE_TAG_PLACEHOLDER`), an `initContainer` that pulls the model + dataset from object storage into an `emptyDir` (no RWX PVC dependency — works on EBS / GCE PD / Azure Disk), pod-level `securityContext` enforcing non-root, a `preStop` 15s graceful-drain hook, and a `PodDisruptionBudget` guaranteeing 1 pod Ready during voluntary disruptions. `hpa.yaml` autoscales 2–10 pods on CPU/memory.
+- **Multi-stage Dockerfile.** Non-root user, HEALTHCHECK, separate builders for API vs dashboard.
+- **Docker Compose** includes a Redis service with a healthcheck gate so `api` only starts when Redis is responsive.
+
+### Tests
+
+- **116 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), and performance (in-process latency, throughput).
+- **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
+- **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
 ---
 
@@ -494,9 +525,7 @@ High_pay_Analysis_us/
 ├── reports/
 │   └── data_science_report.md                 # Analyst-oriented narrative and findings
 │
-├── k8s/                                       # ★ Kubernetes manifests (deployment, service, HPA)
-│
-├── dvc.yaml                                   # ★ DVC pipeline: data → train → model artefacts
+├── k8s/                                       # ★ Kubernetes manifests (deployment, service, HPA, PDB, configmap)
 │
 ├── .github/workflows/
 │   └── ci.yml                                 # ★ GitHub Actions CI/CD: lint + test + audit + Docker build/push

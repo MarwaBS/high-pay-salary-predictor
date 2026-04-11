@@ -347,3 +347,41 @@ def load_group_means(path: str) -> dict[str, dict[str, float]]:
         )
     with open(p) as f:
         return json.load(f)
+
+
+# ---------------------------------------------------------------------------
+# Quantile prediction helpers
+# ---------------------------------------------------------------------------
+# The production model is trained with ``objective="reg:quantileerror"`` and
+# ``quantile_alpha=[0.1, 0.5, 0.9]`` by scripts/train_quantile.py. At inference
+# it returns a (n, 3) array where columns are P10, P50, P90 in log1p space.
+#
+# If a legacy point-estimate model is loaded (1-D output), ``predict_quantiles``
+# gracefully falls back to returning the same value for all three quantiles
+# so callers never crash — the API additionally surfaces a flag indicating
+# whether the range is real or a degenerate fallback.
+
+
+def predict_quantiles(model: XGBRegressor, row: pd.DataFrame) -> tuple[float, float, float]:
+    """Return (p10, p50, p90) dollar predictions for a single-row input.
+
+    Works with both the new multi-quantile model (preferred) and the legacy
+    point estimator (fallback — returns the point value for all three).
+    """
+    raw = np.asarray(model.predict(row))
+    if raw.ndim == 2 and raw.shape[1] == 3:
+        p10, p50, p90 = raw[0]
+    elif raw.ndim == 1:
+        # Legacy point model — degenerate interval
+        p50 = float(raw[0])
+        p10, p90 = p50, p50
+    else:
+        raise ValueError(f"Unexpected model.predict() shape: {raw.shape}")
+
+    return float(np.expm1(p10)), float(np.expm1(p50)), float(np.expm1(p90))
+
+
+def is_quantile_model(model: XGBRegressor) -> bool:
+    """True if the model was trained with the multi-quantile objective."""
+    params = model.get_params()
+    return params.get("objective") == "reg:quantileerror"

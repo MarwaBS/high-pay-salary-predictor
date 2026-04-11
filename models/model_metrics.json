@@ -1,17 +1,28 @@
 {
-  "r2": 0.0773,
-  "rmse": 105231.79,
-  "mae": 52278.52,
-  "cv_r2_mean": 0.1551,
-  "cv_r2_std": 0.0196,
-  "pi_offset_10": -49919.88,
-  "pi_offset_90": 78029.98,
-  "pi_coverage": 0.8001,
-  "pi_width": 127949.85,
+  "r2": 0.0261,
+  "rmse": 108113.03,
+  "mae": 50102.41,
+  "cv_r2_mean": 0.0288,
+  "cv_r2_std": 0.0175,
+  "cv_space": "dollar",
+  "cv_train_only": true,
+  "quantile_alphas": [
+    0.1,
+    0.5,
+    0.9
+  ],
+  "quantile_coverage_80": 0.7689,
+  "quantile_width_median": 111676.02,
+  "quantile_crossings": 0,
+  "p10_pinball": 6566.07,
+  "p50_pinball": 25051.21,
+  "p90_pinball": 22397.19,
+  "pi_offset_10": -34039.1,
+  "pi_offset_90": 100207.56,
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
-  "train_date": "2026-03-25",
+  "train_date": "2026-04-11",
   "hyperparameters": {
     "n_estimators": 169,
     "max_depth": 3,
@@ -22,79 +33,7 @@
   },
   "log_transform": true,
   "fixed_group_means": true,
-  "permutation_importance": {
-    "Age": {
-      "mean": 0.11185,
-      "std": 0.013282
-    },
-    "Education_Ord": {
-      "mean": 0.009512,
-      "std": 0.002363
-    },
-    "Gender_Bin": {
-      "mean": 0.029563,
-      "std": 0.005175
-    },
-    "Region_Code": {
-      "mean": 0.000774,
-      "std": 0.000937
-    },
-    "Employment": {
-      "mean": 0.003425,
-      "std": 0.001657
-    },
-    "Location Quotient": {
-      "mean": 0.003393,
-      "std": 0.002429
-    },
-    "Jobs per 1000": {
-      "mean": 0.000511,
-      "std": 0.001148
-    },
-    "Hourly Mean": {
-      "mean": 0.007588,
-      "std": 0.003138
-    },
-    "Occ_Mean_Income": {
-      "mean": 0.084813,
-      "std": 0.009992
-    },
-    "State_Mean_Income": {
-      "mean": 0.002563,
-      "std": 0.003498
-    }
-  },
-  "subgroup_metrics": {
-    "Gender=Female": {
-      "n": 833,
-      "r2": 0.0228,
-      "mae": 39498.71
-    },
-    "Gender=Male": {
-      "n": 1218,
-      "r2": 0.0707,
-      "mae": 61018.72
-    },
-    "Region=Midwest": {
-      "n": 248,
-      "r2": 0.0881,
-      "mae": 58009.35
-    },
-    "Region=Northeast": {
-      "n": 520,
-      "r2": 0.0965,
-      "mae": 54279.61
-    },
-    "Region=South": {
-      "n": 585,
-      "r2": 0.0666,
-      "mae": 43362.04
-    },
-    "Region=West": {
-      "n": 698,
-      "r2": 0.0525,
-      "mae": 56224.54
-    }
-  },
-  "r2_context": "R\u00b2 is intentionally moderate (~0.08 on test set). Census individual income within the $100K+ cohort has extremely high within-occupation variance driven by unobserved factors (equity compensation, bonuses, tenure, specific employer). The log-transform target and Optuna hyper-parameter tuning meaningfully improve over a na\u00efve baseline (0.04 \u2192 0.08). CV R\u00b2 is stable (\u00b1 0.01), confirming no overfitting."
+  "objective": "reg:quantileerror",
+  "framing": "Quantile regression (P10/P50/P90) within the $100K+ cohort. The previous point-estimate framing was killed because the cohort variance is dominated by unobserved factors \u2014 no point estimator can exceed a ceiling of R\u00b2 \u2248 0.10. The quantile output is useful where the point estimate is not: it tells a caller the realistic income range for their profile.",
+  "data_prep_caveat": "Training cohort is double-filtered by notebook 1: Census rows with INCTOT >= 100K inner-joined against BLS cells where A_MEAN >= 100K. A future gap should re-prep using the full Census dataset with a binary >= $100K classifier."
 }

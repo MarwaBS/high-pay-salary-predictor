@@ -5,8 +5,12 @@ build-backend = "setuptools.build_meta"
 # ── Project metadata ──────────────────────────────────────────────────────────
 [project]
 name            = "high-pay-analysis-us"
-version         = "1.0.0"
-description     = "End-to-end data science pipeline for US high-paying jobs ($100K+)"
+# 2.0.0 — quantile reframe. The API returns P10/P50/P90 from a
+# multi-quantile XGBoost model instead of a single point estimate.
+# ``predicted_salary`` is retained as an alias for P50 so v1 clients
+# keep working, but the framing change is a breaking semantic upgrade.
+version         = "2.0.0"
+description     = "End-to-end data science pipeline for US high-paying jobs ($100K+) — salary quantile predictor"
 readme          = "README.md"
 license         = {file = "LICENSE"}
 requires-python = ">=3.10"

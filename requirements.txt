@@ -38,8 +38,10 @@ slowapi>=0.1.9                 # rate limiting for FastAPI
 limits>=3.6.0                  # storage backend for slowapi
 prometheus-fastapi-instrumentator>=7.0.0  # /metrics endpoint + auto HTTP metrics
 
-# ── Data Versioning ──────────────────────────────────────────────────────────
-dvc>=3.0.0                     # data versioning and ML pipeline reproducibility
+# ── API Caching ───────────────────────────────────────────────────────────────
+# Optional: only connects if REDIS_URL env var is set. The API degrades
+# gracefully to a no-op cache if Redis is unavailable (see api/cache.py).
+redis>=5.0.0
 
 # ── Configuration & Utilities ─────────────────────────────────────────────────
 pyyaml>=6.0              # config.yaml loading
@@ -48,11 +50,12 @@ pyyaml>=6.0              # config.yaml loading
 jupyter>=1.0.0
 pytest>=7.2.0
 pytest-cov>=4.0.0            # coverage reporting (make coverage)
-flake8>=6.0.0                # legacy linter (kept for CI compatibility)
 ruff>=0.3.0                  # fast linter + formatter (replaces flake8 + black + isort)
 mypy>=1.8.0                  # static type checker (make type-check)
 pre-commit>=3.6.0            # git pre-commit hooks (pre-commit install)
 
-# ── Exact versions for full reproducibility (generated with pip freeze) ─────────
-# Run: pip freeze > requirements-lock.txt
-# Install locked env: pip install -r requirements-lock.txt
+# ── API-only runtime pins ─────────────────────────────────────────────────────
+# requirements-api.txt holds a lean, exact-version list for the API Docker
+# image. This requirements.txt remains the loose dev/notebook environment.
+# Regenerate requirements-api.txt with `uv pip compile` when updating
+# fastapi / pydantic / xgboost / prometheus-fastapi-instrumentator.

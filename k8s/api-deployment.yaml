@@ -1,3 +1,21 @@
+# ── FastAPI salary predictor Deployment ──────────────────────────────────────
+#
+# Design points:
+#   1. Image tag is an explicit placeholder — the CD pipeline substitutes
+#      IMAGE_TAG_PLACEHOLDER with the git SHA before applying. Never
+#      deploy `:latest` — it breaks rollback and auditability.
+#   2. Model + data volumes are `emptyDir` populated by an initContainer
+#      that downloads from object storage. This avoids requiring RWX PVCs
+#      (EBS / GCE PD / Azure Disk only support RWO, so a shared PVC across
+#      multiple replicas would not schedule).
+#   3. Pod-level securityContext enforces non-root execution and drops all
+#      Linux capabilities.
+#   4. ``imagePullPolicy: IfNotPresent`` — deterministic with SHA-pinned tags.
+#
+# How the CD pipeline substitutes the tag (GitHub Actions example):
+#   sed -i "s|IMAGE_TAG_PLACEHOLDER|${GITHUB_SHA}|g" k8s/api-deployment.yaml
+#   kubectl apply -f k8s/
+
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -9,6 +27,11 @@ spec:
   selector:
     matchLabels:
       app: salary-api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # zero-downtime rollouts
   template:
     metadata:
       labels:
@@ -18,11 +41,71 @@ spec:
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
     spec:
+      # Pod-level security: enforce non-root execution regardless of what
+      # the image says. Defence in depth — the Dockerfile already runs as
+      # `appuser` (uid 1000), but k8s should not rely on that.
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Download model + dataset from object storage BEFORE the API starts.
+      # Replaces the old shared-PVC pattern which required ReadWriteMany.
+      initContainers:
+        - name: fetch-artefacts
+          image: curlimages/curl:8.11.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: MODEL_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: salary-api-config
+                  key: model-url
+            - name: DATA_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: salary-api-config
+                  key: data-url
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -eu
+              echo "Fetching model from $MODEL_URL"
+              curl -fsSL --retry 3 --retry-delay 2 "$MODEL_URL" -o /shared-models/xgb_salary_model.ubj
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}feature_names.json" -o /shared-models/feature_names.json
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}group_means.json" -o /shared-models/group_means.json
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}model_metrics.json" -o /shared-models/model_metrics.json
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}baseline_stats.json" -o /shared-models/baseline_stats.json
+              echo "Fetching dataset from $DATA_URL"
+              curl -fsSL --retry 3 --retry-delay 2 "$DATA_URL" -o /shared-data/cleaned_high_pay_data.csv
+              echo "Artefacts staged."
+          volumeMounts:
+            - name: model-volume
+              mountPath: /shared-models
+            - name: data-volume
+              mountPath: /shared-data
       containers:
         - name: api
-          image: ghcr.io/marwabs/high_pay_analysis_us/api:latest
+          image: ghcr.io/marwabs/high_pay_analysis_us/api:IMAGE_TAG_PLACEHOLDER
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - containerPort: 8000
+              name: http
           env:
             - name: API_KEY
               valueFrom:
@@ -33,6 +116,14 @@ spec:
               value: "https://dashboard.example.com"
             - name: RATE_LIMIT
               value: "60/minute"
+            - name: TRUSTED_PROXY_HOPS
+              value: "1"  # one ingress hop in front of the pod
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: salary-api-config
+                  key: redis-url
+                  optional: true
           resources:
             requests:
               cpu: 100m
@@ -43,7 +134,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 8000
+              port: http
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -51,10 +142,15 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 8000
+              port: http
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
+          # Graceful shutdown: give in-flight requests 15s to drain
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 15"]
           volumeMounts:
             - name: model-volume
               mountPath: /app/models
@@ -62,10 +158,13 @@ spec:
             - name: data-volume
               mountPath: /app/Data
               readOnly: true
+      terminationGracePeriodSeconds: 30
       volumes:
+        # emptyDir is per-pod — no RWX dependency, no PVC. Populated by the
+        # initContainer on every pod start. Small footprint (<10 MB total).
         - name: model-volume
-          persistentVolumeClaim:
-            claimName: model-pvc
+          emptyDir:
+            sizeLimit: 64Mi
         - name: data-volume
-          persistentVolumeClaim:
-            claimName: data-pvc
+          emptyDir:
+            sizeLimit: 256Mi
