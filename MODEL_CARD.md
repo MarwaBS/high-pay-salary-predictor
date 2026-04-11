@@ -115,10 +115,11 @@ This is enforced by `tests/test_pipeline.py::test_saved_cv_matches_test`.
 
 ## Subgroup Performance
 
-Per-group P50 evaluation is tracked in `models/model_metrics.json::subgroup_metrics`
-when produced by `scripts/train_model.py` (the HPO trainer). The lean
-`scripts/train_quantile.py` skips subgroup logging for speed; re-run
-the HPO trainer for a refresh.
+Per-group empirical 80% coverage is tracked in
+`models/model_metrics.json::subgroup_coverage_80` and locked in by
+`tests/test_pipeline.py::test_subgroup_coverage_within_band`. At HEAD
+the spread is 0.73–0.80 across `Gender` and `Region` — narrower than
+the v1 point-estimator R² gap.
 
 The quantile reframe does not directly close the subgroup gap in this
 dataset because the data-prep truncation affects both subgroups. The
@@ -174,16 +175,12 @@ even if XGBoost emits one at a decision boundary.
 ## How to Retrain
 
 ```bash
-# Quantile trainer (lean — no MLflow / Optuna)
+# The only trainer — multi-quantile XGBoost, no MLflow / Optuna.
 python -m scripts.train_quantile
-
-# OR the full trainer with HPO + MLflow logging (uses the old point
-# estimator — kept for historical comparison)
-python -m scripts.train_model --tune
 ```
 
-Both scripts write artefacts to `models/` and metrics to
-`models/model_metrics.json`. Test suite picks up changes automatically
-— if the quantile coverage drifts outside `[0.72, 0.88]` or any
-crossings appear, `tests/test_pipeline.py::test_saved_metrics_within_expected_range`
-will fail loudly.
+Writes artefacts to `models/` and metrics to `models/model_metrics.json`.
+The test suite picks up changes automatically — if the quantile coverage
+drifts outside `[0.72, 0.88]` or any crossings appear,
+`tests/test_pipeline.py::test_saved_metrics_within_expected_range` will
+fail loudly.

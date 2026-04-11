@@ -40,7 +40,7 @@
 
 An end-to-end data science pipeline analysing high-paying jobs (≥ $100K/yr) across all 50 US states, integrating **Bureau of Labor Statistics (BLS) OEWS** and **US Census** microdata. Covers data cleaning, EDA, geospatial mapping, an XGBoost **multi-quantile** model (P10/P50/P90), a FastAPI serving layer with Redis-backed caching and distributed drift detection, and a Streamlit dashboard.
 
-**Keywords:** salary prediction, XGBoost, SHAP, MLflow, FastAPI, Streamlit, BLS OEWS, US Census, data science portfolio, income inequality analysis, feature engineering, CI/CD
+**Keywords:** salary prediction, XGBoost quantile regression, FastAPI, Streamlit, BLS OEWS, US Census, data science portfolio, income inequality analysis, feature engineering, CI/CD
 
 ---
 
@@ -81,7 +81,7 @@ graph LR
         NB1["01 Data Cleaning"]
         NB2["02 EDA & Viz"]
         NB3["03 Geospatial"]
-        Train["train_model.py<br/>(Optuna HPO + MLflow)"]
+        Train["scripts/train_quantile.py<br/>(multi-quantile XGBoost)"]
     end
 
     subgraph Artifacts
@@ -132,7 +132,7 @@ The project is organized across four notebooks and two deployable services:
 | `high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
 | `high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
 | `us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
-| `04_salary_prediction_model.ipynb` | **ML: XGBoost + LightGBM + SHAP + statistical tests + MLflow** |
+| `04_salary_prediction_model.ipynb` | **ML: historical v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
 
 All figures are saved automatically to `Images/` at 300 DPI.
 
@@ -146,7 +146,6 @@ make test         # run the full test suite (unit + integration + performance)
 make dashboard    # Streamlit dashboard → http://localhost:8501
 make api          # FastAPI server    → http://localhost:8000
 make docker       # build + start both services via Docker Compose
-make mlflow       # MLflow tracking UI → http://localhost:5000
 ```
 
 **All `make` targets:**
@@ -155,7 +154,7 @@ make mlflow       # MLflow tracking UI → http://localhost:5000
 |--------|-------------|
 | `make install` | Create `.venv`, install `requirements.txt` |
 | `make data` | Re-run cleaning notebook → `Data/cleaned_high_pay_data.csv` |
-| `make model` | Train XGBoost model via `scripts/train_model.py` → `models/` |
+| `make model` | Train multi-quantile XGBoost via `scripts/train_quantile.py` → `models/` |
 | `make test` | Run all pytest tests with `-v` (unit + integration + performance) |
 | `make test-fast` | Same, quiet output |
 | `make coverage` | Tests + HTML coverage report in `htmlcov/` |
@@ -165,7 +164,6 @@ make mlflow       # MLflow tracking UI → http://localhost:5000
 | `make dashboard` | Streamlit on port 8501 |
 | `make api` | FastAPI + uvicorn on port 8000 |
 | `make docker` | `docker compose up --build` |
-| `make mlflow` | MLflow tracking UI on port 5000 |
 | `make clean` | Remove `models/`, `__pycache__`, `.pytest_cache`, `htmlcov/` |
 | `make clean-all` | `clean` + delete `.venv` |
 
@@ -260,7 +258,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **116 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), and performance (in-process latency, throughput).
+- **127 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), and Docker image sanity (guards that every top-level import in `api/main.py` is COPY'd into the API stage).
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -315,7 +313,7 @@ pre-commit install
 jupyter notebook
 
 # 4. Train the model
-python scripts/train_model.py
+python -m scripts.train_quantile
 
 # 5. Launch the interactive dashboard
 streamlit run streamlit_app.py
@@ -356,14 +354,6 @@ curl -X POST http://localhost:8000/predict \
   -H "Content-Type: application/json" \
   -d '{"state":"CA","occupation":"Software Developers","education_level":"Bachelor'\''s degree","gender":"Female","age":32}'
 ```
-
-### MLflow experiment tracking
-
-After running notebook 4, compare all model runs:
-```bash
-make mlflow   # open http://localhost:5000
-```
-Logged per run: model type, hyperparameters, R², RMSE, MAE, CV R² mean ± std, and model artefact.
 
 ---
 

@@ -68,7 +68,7 @@ def get_model() -> XGBRegressor:
     try:
         return load_model(str(ROOT / CFG["model"]["model_path"]))
     except FileNotFoundError:
-        st.error("Model not found. Run `make model` or `python scripts/train_model.py` first.")
+        st.error("Model not found. Run `make model` (or `python -m scripts.train_quantile`) first.")
         st.stop()
         raise  # unreachable, keeps mypy happy
 

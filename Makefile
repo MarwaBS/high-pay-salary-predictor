@@ -6,7 +6,6 @@
 #   make install      — create .venv and install all dependencies
 #   make data         — regenerate cleaned dataset from raw sources
 #   make model        — train quantile XGBoost model (scripts/train_quantile.py)
-#   make hpo          — run legacy HPO trainer with MLflow + Optuna
 #   make test         — run full pytest suite
 #   make coverage     — run tests with coverage report
 #   make lint         — ruff check (fast linter)
@@ -15,7 +14,6 @@
 #   make dashboard    — launch Streamlit on http://localhost:8501
 #   make api          — launch FastAPI on http://localhost:8000
 #   make docker       — build and start both services with Docker Compose
-#   make mlflow       — launch MLflow tracking UI on http://localhost:5000
 #   make clean        — remove generated artefacts (models, cache, .pyc)
 #   make clean-all    — clean + remove the virtual environment
 # ============================================================
@@ -49,7 +47,6 @@ help:
 	@echo "  install     Create .venv and install all dependencies"
 	@echo "  data        Regenerate cleaned dataset from raw sources"
 	@echo "  model       Train quantile XGBoost → models/xgb_salary_model.ubj"
-	@echo "  hpo         Legacy HPO trainer (MLflow + Optuna, point estimator)"
 	@echo "  test        Run full pytest suite"
 	@echo "  coverage    Run tests with HTML coverage report"
 	@echo "  lint        Ruff linter (fast, replaces flake8)"
@@ -58,7 +55,6 @@ help:
 	@echo "  dashboard   Streamlit dashboard (port 8501)"
 	@echo "  api         FastAPI server (port 8000)"
 	@echo "  docker      Build and start both services with Docker Compose"
-	@echo "  mlflow      Launch MLflow tracking UI (port 5000)"
 	@echo "  clean       Remove generated artefacts (models, cache, .pyc)"
 	@echo "  clean-all   clean + remove .venv"
 	@echo ""
@@ -90,22 +86,15 @@ data: install
 	@echo ">>> Cleaned dataset saved to Data/cleaned_high_pay_data.csv"
 
 # ── Model training ────────────────────────────────────────────────────────────
-# The primary trainer is the quantile reframe (scripts/train_quantile.py).
-# The legacy HPO + MLflow trainer lives at scripts/train_model.py and is
-# exposed via `make hpo` for historical comparison only.
+# The only trainer is the multi-quantile reframe (scripts/train_quantile.py).
+# It writes models/xgb_salary_model.ubj as a (n, 3) P10/P50/P90 model in a
+# single ``reg:quantileerror`` pass with ``quantile_alpha=[0.1, 0.5, 0.9]``.
 .PHONY: model
 model: install
 	@echo ">>> Training multi-quantile XGBoost salary prediction model..."
 	@mkdir -p models
 	$(VENV)/bin/python -m scripts.train_quantile
 	@echo ">>> Model artefacts saved to models/"
-
-.PHONY: hpo
-hpo: install
-	@echo ">>> Running legacy HPO trainer (MLflow + Optuna, point estimator)..."
-	@mkdir -p models
-	$(VENV)/bin/python -m scripts.train_model --tune
-	@echo ">>> HPO results logged to MLflow; artefacts saved to models/"
 
 # ── Testing ───────────────────────────────────────────────────────────────────
 .PHONY: test
@@ -175,13 +164,6 @@ docker:
 .PHONY: docker-down
 docker-down:
 	docker compose down
-
-# ── MLflow UI ────────────────────────────────────────────────────────────────
-.PHONY: mlflow
-mlflow: install
-	@echo ">>> Launching MLflow UI on http://localhost:5000 ..."
-	@echo ">>> Run notebook 4 first to populate experiment runs."
-	$(VENV)/bin/mlflow ui --backend-store-uri sqlite:///mlruns.db --host 0.0.0.0 --port 5000
 
 # ── Clean ─────────────────────────────────────────────────────────────────────
 .PHONY: clean

@@ -21,8 +21,11 @@ full Census dataset with a binary ``>= $100K`` classifier is the right
 structural fix and is intentionally out of scope for this trainer.
 
 No MLflow / Optuna dependencies — this trainer is deliberately lean so
-it can run on a CI worker or a dev machine without pulling the full
-experiment-tracking stack. For HPO + tracking use ``scripts/train_model.py``.
+it can run on a CI worker or a dev machine without pulling an
+experiment-tracking stack. Hyper-parameters are pinned in ``config.yaml``
+and were selected by a prior offline Optuna search against the
+``reg:squarederror`` baseline; re-tuning against the quantile objective
+is out of scope for this trainer.
 
 Artefacts saved
 ---------------

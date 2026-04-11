@@ -27,7 +27,7 @@ include = ["api*", "scripts*"]
 [tool.ruff]
 line-length    = 120
 target-version = "py310"
-exclude        = [".venv", "__pycache__", "*.ipynb", "mlruns", "build", "dist"]
+exclude        = [".venv", "__pycache__", "*.ipynb", "build", "dist"]
 
 [tool.ruff.lint]
 # E/W = pycodestyle  F = pyflakes  I = isort  UP = pyupgrade  B = flake8-bugbear
@@ -50,7 +50,7 @@ indent-style = "space"
 python_version      = "3.10"
 warn_return_any     = true
 warn_unused_configs = true
-exclude             = [".venv", "build", "mlruns"]
+exclude             = [".venv", "build"]
 
 # Third-party packages without bundled stubs — ignore missing imports only for these.
 [[tool.mypy.overrides]]
@@ -58,7 +58,6 @@ module = [
     "xgboost.*",
     "lightgbm.*",
     "sklearn.*",
-    "mlflow.*",
     "shap.*",
     "plotly.*",
     "streamlit.*",
@@ -81,7 +80,7 @@ filterwarnings = [
 # ── Coverage ──────────────────────────────────────────────────────────────────
 [tool.coverage.run]
 source  = ["api", "pipeline", "scripts"]
-omit    = ["tests/*", ".venv/*", "mlruns/*"]
+omit    = ["tests/*", ".venv/*"]
 
 [tool.coverage.report]
 show_missing = true

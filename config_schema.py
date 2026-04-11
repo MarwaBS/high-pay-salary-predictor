@@ -43,7 +43,6 @@ class ModelConfig(BaseModel):
     reg_lambda: float = Field(ge=0)
     log_transform_target: bool
     cv_folds: int = Field(ge=2, le=20)
-    optuna_n_trials: int = Field(ge=1)
     model_path: str
     features_path: str
     metrics_path: str

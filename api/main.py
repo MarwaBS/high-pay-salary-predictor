@@ -56,6 +56,7 @@ from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from api import __version__
 from api.cache import PredictionCache
 from api.drift import DriftMonitor
 from api.inference import (
@@ -283,7 +284,7 @@ app = FastAPI(
         "Predicts annual income for high-paying ($100K+) US jobs using an "
         "XGBoost model trained on integrated BLS OEWS + US Census microdata."
     ),
-    version="2.0.0",
+    version=__version__,
     lifespan=lifespan,
 )
 
@@ -407,7 +408,7 @@ def _validate_domain(req: PredictRequest) -> None:
 async def root():
     return {
         "name": "US High-Pay Salary Predictor API",
-        "version": "1.0.0",
+        "version": __version__,
         "docs": "/docs",
         "health": "/health",
         "predict": "POST /predict",
