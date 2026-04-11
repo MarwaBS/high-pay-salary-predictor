@@ -48,6 +48,14 @@ model:
   features_path: "models/feature_names.json"
   metrics_path: "models/model_metrics.json"
   group_means_path: "models/group_means.json"
+  # Premium-tier classifier head — trained alongside the quantile
+  # regressor on the same feature set. Predicts P(Annual Income >=
+  # premium_threshold) *within the existing high-pay cohort*. This is
+  # "Gap 1 Phase 1" — the next-best-layered task the filtered dataset
+  # supports. Phase 2 (unfiltered >= $100K membership classifier)
+  # requires raw IPUMS Census microdata that is not in the repo.
+  classifier_path: "models/xgb_premium_classifier.ubj"
+  premium_threshold: 150000
 
 # ── Visualization ──────────────────────────────────────────
 visualization:
