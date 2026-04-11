@@ -1,4 +1,6 @@
 {
+  "model_version": "2.0.0+cd1037dac48a.e927845864e2",
+  "service_version": "2.0.0",
   "r2": 0.0261,
   "rmse": 108113.03,
   "mae": 50102.41,

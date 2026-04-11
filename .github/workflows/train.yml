@@ -1,0 +1,144 @@
+name: Train & Release Model
+
+# Scheduled model-registry pipeline.
+#
+# The regular CI workflow (``ci.yml``) re-trains the model on every run
+# for smoke-test purposes but does not persist the artefacts anywhere
+# durable. This workflow is the durable path: on a weekly cron (and
+# on-demand via ``workflow_dispatch``) it trains the multi-quantile
+# XGBoost model, archives the exact artefacts, and publishes them as a
+# GitHub Release named ``model-{MODEL_VERSION}`` where MODEL_VERSION is
+# ``{service_version}+{git_sha}.{data_sha256}`` — the composite
+# provenance string produced by ``scripts/train_quantile.py``.
+#
+# This is the pragmatic "model registry" for a portfolio project:
+# free, versioned, rollback-able storage that does not require
+# standing up MLflow Registry or an S3 bucket. Any operator can
+# download a historical artefact from the releases page and redeploy.
+#
+# The release is idempotent — if a release with the same
+# ``MODEL_VERSION`` tag already exists the workflow uploads the new
+# artefacts to the existing release rather than failing, so retries
+# are safe.
+
+on:
+  schedule:
+    # Mondays at 03:00 UTC. The cron is the "refresh data source of
+    # truth" cadence — if the CSV upstream is updated, the model
+    # follows within a week without human intervention.
+    - cron: "0 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: "Reason for manual retraining (for audit trail)"
+        required: false
+        default: "manual dispatch"
+
+permissions:
+  contents: write  # needed to create / update GitHub Releases
+
+jobs:
+  train-and-release:
+    name: Train quantile model and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          # Full history so `git rev-parse` in the trainer resolves
+          # a real SHA rather than the shallow-checkout stub.
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Train quantile model
+        run: |
+          python -m scripts.train_quantile
+          # Surface the MODEL_VERSION the trainer produced so the
+          # release step can read it without re-parsing the JSON.
+          python - <<'EOF'
+          import json, os
+          with open("models/model_metrics.json") as f:
+              metrics = json.load(f)
+          version = metrics["model_version"]
+          print(f"MODEL_VERSION={version}")
+          with open(os.environ["GITHUB_ENV"], "a") as env:
+              env.write(f"MODEL_VERSION={version}\n")
+          EOF
+
+      - name: Build release notes
+        run: |
+          python - <<'EOF'
+          import json, os, textwrap
+          with open("models/model_metrics.json") as f:
+              m = json.load(f)
+          notes = textwrap.dedent(f"""
+          **Model version:** `{m['model_version']}`
+          **Service version:** `{m['service_version']}`
+          **Train date:** {m['train_date']}
+          **Objective:** `{m['objective']}`
+
+          ## Quantile metrics
+          - **80% empirical coverage:** {m['quantile_coverage_80']:.4f} (target: 0.80 ± 0.05)
+          - **Median interval width:** ${int(m['quantile_width_median']):,}
+          - **Quantile crossings:** {m['quantile_crossings']} / {m['n_test']}
+          - **P10 pinball loss:** {m['p10_pinball']:,.2f}
+          - **P50 pinball loss:** {m['p50_pinball']:,.2f}
+          - **P90 pinball loss:** {m['p90_pinball']:,.2f}
+
+          ## Point-estimate back-compat metrics (P50)
+          - **R²:** {m['r2']:.4f}
+          - **RMSE:** ${int(m['rmse']):,}
+          - **MAE:** ${int(m['mae']):,}
+          - **CV R² (train-only, dollar space):** {m['cv_r2_mean']:.4f} ± {m['cv_r2_std']:.4f}
+
+          ## Subgroup quantile coverage
+          """).strip() + "\n"
+          for k, v in sorted(m.get("subgroup_coverage_80", {}).items()):
+              notes += f"- **{k}:** {v:.4f}\n"
+          notes += textwrap.dedent("""
+          ## Reproducibility
+          The `model_version` string binds this release to the exact code
+          and data that produced it. To reproduce locally:
+
+          ```bash
+          git checkout <git_sha from model_version>
+          python -m scripts.train_quantile
+          # diff models/model_metrics.json against this release
+          ```
+          """)
+          with open("release_notes.md", "w") as f:
+              f.write(notes)
+          EOF
+          cat release_notes.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: model-${{ env.MODEL_VERSION }}
+          name: Model ${{ env.MODEL_VERSION }}
+          body_path: release_notes.md
+          # Keep the release as draft=false so the latest artefact is
+          # always one click away from the releases page.
+          draft: false
+          prerelease: false
+          # Fail quietly and update the existing release if the tag
+          # already exists — makes retry-on-flake safe.
+          fail_on_unmatched_files: true
+          files: |
+            models/xgb_salary_model.ubj
+            models/model_metrics.json
+            models/feature_names.json
+            models/group_means.json
+            models/baseline_stats.json
