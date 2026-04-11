@@ -24,9 +24,23 @@ from pipeline import (
     REGION_CODES,
     build_feature_row,
     compute_fallback_means,
-    get_bls_defaults,
     predict_quantiles,
 )
+
+
+class BlsDefaults(TypedDict):
+    """Precomputed BLS context defaults for one (state, occupation) cell.
+
+    These are the values ``encode_features`` falls back to when the
+    caller does not supply the optional BLS context fields on the
+    ``PredictRequest``. Precomputing them at startup removes the last
+    per-request DataFrame mask from the hot path.
+    """
+
+    employment: float
+    location_quotient: float
+    jobs_per_1000: float
+    hourly_mean: float
 
 
 class GroupStats(TypedDict):
@@ -96,19 +110,75 @@ def lookup_benchmarks(
     return lookup.get((state, education), lookup[_GLOBAL_KEY])
 
 
+def build_bls_defaults_lookup(df: pd.DataFrame) -> dict[tuple[str, str], BlsDefaults]:
+    """Precompute per-(state, occupation) BLS context default values.
+
+    Same idea as :func:`build_benchmark_lookup` but for the BLS context
+    fields (``Employment``, ``Location Quotient``, ``Jobs per 1000``,
+    ``Hourly Mean``). Called once at startup so ``encode_features`` does
+    a dict get instead of scanning the full DataFrame. Contains a
+    ``_GLOBAL_KEY`` entry with dataset-wide fallbacks for unseen pairs,
+    plus state-only fallbacks (keyed on ``(state, _GLOBAL_KEY[1])``).
+    """
+    lookup: dict[tuple[str, str], BlsDefaults] = {}
+
+    # Cell-level: (state, occupation) → medians within the cell
+    for (state, occupation), sub in df.groupby(["State Abbreviation", "Occupation"]):
+        lookup[(state, occupation)] = BlsDefaults(
+            employment=float(sub["Employment"].median()),
+            location_quotient=float(sub["Location Quotient"].median()),
+            jobs_per_1000=float(sub["Jobs per 1000"].median()),
+            hourly_mean=float(sub["Hourly Mean"].median()),
+        )
+
+    # State-level fallback: (state, "") → state medians
+    for state, sub in df.groupby("State Abbreviation"):
+        lookup[(state, "")] = BlsDefaults(
+            employment=float(sub["Employment"].median()),
+            location_quotient=float(sub["Location Quotient"].median()),
+            jobs_per_1000=float(sub["Jobs per 1000"].median()),
+            hourly_mean=float(sub["Hourly Mean"].median()),
+        )
+
+    # Global fallback
+    lookup[_GLOBAL_KEY] = BlsDefaults(
+        employment=float(df["Employment"].median()),
+        location_quotient=float(df["Location Quotient"].median()),
+        jobs_per_1000=float(df["Jobs per 1000"].median()),
+        hourly_mean=float(df["Hourly Mean"].median()),
+    )
+    return lookup
+
+
+def _lookup_bls(
+    lookup: dict[tuple[str, str], BlsDefaults],
+    state: str,
+    occupation: str,
+) -> BlsDefaults:
+    """Lookup with progressive fallback: (state, occupation) → (state, "") → global."""
+    if (state, occupation) in lookup:
+        return lookup[(state, occupation)]
+    if (state, "") in lookup:
+        return lookup[(state, "")]
+    return lookup[_GLOBAL_KEY]
+
+
 def encode_features(
     req: PredictRequest,
-    df: pd.DataFrame,
     *,
     edu_order: dict[str, int],
     region_map: dict[str, str],
     region_codes: dict[str, int],
     occ_means: dict[str, float],
     state_means: dict[str, float],
+    bls_defaults_lookup: dict[tuple[str, str], BlsDefaults],
 ) -> pd.DataFrame:
-    """Turn a validated request into a model-ready single-row DataFrame."""
-    # Optional BLS context defaults from dataset medians
-    bls = get_bls_defaults(df, req.state, req.occupation)
+    """Turn a validated request into a model-ready single-row DataFrame.
+
+    Reads BLS context defaults from the precomputed ``bls_defaults_lookup``
+    (O(1) dict get) instead of scanning the full DataFrame per request.
+    """
+    bls = _lookup_bls(bls_defaults_lookup, req.state, req.occupation)
     employment = req.employment if req.employment is not None else bls["employment"]
     lq = req.location_quotient if req.location_quotient is not None else bls["location_quotient"]
     jobs_k = req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"]
@@ -194,8 +264,10 @@ def build_response(
 
 
 __all__ = [
+    "BlsDefaults",
     "GroupStats",
     "build_benchmark_lookup",
+    "build_bls_defaults_lookup",
     "lookup_benchmarks",
     "encode_features",
     "run_model",

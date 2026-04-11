@@ -16,6 +16,7 @@ import pytest
 
 from api.inference import (
     build_benchmark_lookup,
+    build_bls_defaults_lookup,
     build_response,
     lookup_benchmarks,
 )
@@ -40,6 +41,53 @@ def sample_df() -> pd.DataFrame:
             "Annual Income": [100_000, 150_000, 200_000, 120_000, 180_000, 240_000, 300_000],
         }
     )
+
+
+@pytest.fixture
+def sample_bls_df() -> pd.DataFrame:
+    """A small frame with two (state, occupation) cells for BLS default lookup tests."""
+    return pd.DataFrame(
+        {
+            "State Abbreviation": ["CA", "CA", "CA", "NY", "NY"],
+            "Occupation": [
+                "Software Developers",
+                "Software Developers",
+                "Software Developers",
+                "Physicians",
+                "Physicians",
+            ],
+            "Employment": [5000, 6000, 7000, 2000, 2500],
+            "Location Quotient": [1.5, 1.6, 1.4, 0.8, 0.9],
+            "Jobs per 1000": [3.0, 3.1, 3.2, 1.5, 1.6],
+            "Hourly Mean": [75.0, 76.0, 74.0, 100.0, 105.0],
+        }
+    )
+
+
+class TestBlsDefaultsLookup:
+    """Verify the precomputed (state, occupation) BLS lookup table."""
+
+    def test_lookup_has_cell_entries(self, sample_bls_df):
+        lookup = build_bls_defaults_lookup(sample_bls_df)
+        assert ("CA", "Software Developers") in lookup
+        assert ("NY", "Physicians") in lookup
+
+    def test_cell_values_are_medians(self, sample_bls_df):
+        lookup = build_bls_defaults_lookup(sample_bls_df)
+        ca_sd = lookup[("CA", "Software Developers")]
+        assert ca_sd["employment"] == pytest.approx(6000.0)  # median of [5000, 6000, 7000]
+        assert ca_sd["hourly_mean"] == pytest.approx(75.0)  # median of [75, 76, 74]
+
+    def test_state_level_fallback_present(self, sample_bls_df):
+        lookup = build_bls_defaults_lookup(sample_bls_df)
+        # A state-level entry keyed on ("CA", "") should exist with CA-wide medians.
+        assert ("CA", "") in lookup
+
+    def test_global_fallback_present(self, sample_bls_df):
+        lookup = build_bls_defaults_lookup(sample_bls_df)
+        # The global fallback key (sentinel used by _lookup_bls).
+        fallback_keys = [k for k in lookup if k[0].startswith("__")]
+        assert len(fallback_keys) >= 1
 
 
 class TestBenchmarkLookup:

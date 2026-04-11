@@ -285,6 +285,47 @@ class TestPredictionCache:
         api_main.cache.set({"state": "CA"}, {"predicted_salary": 1.0})
 
 
+# ── Batch Prediction ─────────────────────────────────────────────────────────
+
+
+class TestPredictBatch:
+    """Verify /predict/batch happy path, ordering, validation errors, and limits."""
+
+    def test_batch_200(self, client, base_payload):
+        resp = client.post("/predict/batch", json={"items": [base_payload, base_payload]})
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        assert len(data["items"]) == 2
+
+    def test_batch_preserves_order(self, client, base_payload):
+        payload_a = {**base_payload, "age": 25}
+        payload_b = {**base_payload, "age": 55}
+        resp = client.post("/predict/batch", json={"items": [payload_a, payload_b]})
+        assert resp.status_code == 200
+        items = resp.json()["items"]
+        assert items[0]["age"] == 25
+        assert items[1]["age"] == 55
+
+    def test_batch_validation_error_on_bad_item(self, client, base_payload):
+        bad = {**base_payload, "state": "ZZ"}
+        resp = client.post("/predict/batch", json={"items": [base_payload, bad]})
+        assert resp.status_code == 422
+        # The error message should identify the offending index.
+        assert "Item 1" in resp.text
+
+    def test_batch_empty_list_rejected(self, client):
+        resp = client.post("/predict/batch", json={"items": []})
+        assert resp.status_code == 422
+
+    def test_batch_quantile_fields_present(self, client, base_payload):
+        resp = client.post("/predict/batch", json={"items": [base_payload]})
+        item = resp.json()["items"][0]
+        assert "predicted_p10" in item
+        assert "predicted_p50" in item
+        assert "predicted_p90" in item
+        assert item["predicted_p10"] <= item["predicted_p50"] <= item["predicted_p90"]
+
+
 # ── Drift Endpoint ───────────────────────────────────────────────────────────
 
 
