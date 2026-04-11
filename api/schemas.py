@@ -24,16 +24,21 @@ class PredictRequest(BaseModel):
     occupation: str = Field(
         ...,
         min_length=2,
+        max_length=200,
         description="Occupation title (must match a title in the dataset).",
         examples=["Software Developers"],
     )
     education_level: str = Field(
         ...,
+        min_length=2,
+        max_length=100,
         description="Highest education level attained.",
         examples=["Bachelor's degree"],
     )
     gender: str = Field(
         ...,
+        min_length=2,
+        max_length=10,
         description=(
             "Gender ('Male' or 'Female'). "
             "**Limitation**: the training data (US Census CPS) uses a binary "
@@ -179,11 +184,39 @@ class PredictResponse(BaseModel):
     age: int
 
 
+class PredictBatchRequest(BaseModel):
+    """Batch prediction request.
+
+    Bulk callers pass up to 1,000 ``PredictRequest`` items in a single
+    HTTP call. The API validates each item, consults the cache per-item,
+    and scores any un-cached rows in a single vectorised
+    ``model.predict`` call so per-request overhead is amortised across
+    the batch. Rate-limited more aggressively than ``/predict`` to
+    prevent a single caller from monopolising the model.
+    """
+
+    items: list[PredictRequest] = Field(
+        ...,
+        min_length=1,
+        max_length=1000,
+        description="List of 1–1000 prediction requests. Validation is all-or-nothing — if any item fails domain validation the whole batch returns 422.",
+    )
+
+
+class PredictBatchResponse(BaseModel):
+    """Batch prediction result, in the same order as the input items."""
+
+    items: list[PredictResponse] = Field(
+        ...,
+        description="Quantile predictions in input order. One result per input item.",
+    )
+
+
 class HealthResponse(BaseModel):
     status: str = "ok"
     model_loaded: bool
     dataset_rows: int
-    version: str = "1.0.0"
+    version: str = "2.0.0"
 
 
 class MetaResponse(BaseModel):

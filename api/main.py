@@ -41,7 +41,9 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import yaml
@@ -52,18 +54,28 @@ from fastapi.security import APIKeyHeader
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from api.cache import PredictionCache
 from api.drift import DriftMonitor
 from api.inference import (
+    BlsDefaults,
     GroupStats,
     build_benchmark_lookup,
+    build_bls_defaults_lookup,
     build_response,
     encode_features,
     lookup_benchmarks,
     run_model,
 )
-from api.schemas import HealthResponse, MetaResponse, PredictRequest, PredictResponse
+from api.schemas import (
+    HealthResponse,
+    MetaResponse,
+    PredictBatchRequest,
+    PredictBatchResponse,
+    PredictRequest,
+    PredictResponse,
+)
 from config_schema import ProjectConfig
 from pipeline import (
     REGION_CODES,
@@ -164,19 +176,25 @@ VALID_STATES = sorted({s for states in VALIDATED_CFG.regions.values() for s in s
 # ── Application state (loaded once at startup) ────────────────────────────────
 
 
+@dataclass
 class AppState:
-    """Module-global singleton holding state loaded at startup."""
+    """Module-global singleton holding state loaded at startup.
+
+    Uses ``@dataclass`` instead of class-level mutable defaults so fields
+    have a proper per-instance lifetime and mypy reasons about them
+    correctly.
+    """
 
     df: pd.DataFrame | None = None
-    model = None
-    pi_offset_10: float = 0.0
-    pi_offset_90: float = 0.0
-    occupations: list[str] = []
-    region_codes: dict[str, int] = {}
-    occ_means: dict[str, float] = {}
-    state_means: dict[str, float] = {}
+    model: Any = None
+    occupations: list[str] = field(default_factory=list)
+    region_codes: dict[str, int] = field(default_factory=dict)
+    occ_means: dict[str, float] = field(default_factory=dict)
+    state_means: dict[str, float] = field(default_factory=dict)
     drift_monitor: DriftMonitor | None = None
-    benchmark_lookup: dict[tuple[str, str], GroupStats] = {}
+    benchmark_lookup: dict[tuple[str, str], GroupStats] = field(default_factory=dict)
+    bls_defaults_lookup: dict[tuple[str, str], BlsDefaults] = field(default_factory=dict)
+    quantile_coverage_80: float = 0.0
 
 
 state = AppState()
@@ -216,12 +234,20 @@ async def lifespan(app: FastAPI):
     state.benchmark_lookup = build_benchmark_lookup(df_eng)
     logger.info("Benchmark lookup built with %d (state, education) cells", len(state.benchmark_lookup))
 
-    # Load empirical prediction-interval offsets from training artefacts
-    metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
-    state.pi_offset_10 = metrics.get("pi_offset_10", 0.0)
-    state.pi_offset_90 = metrics.get("pi_offset_90", 0.0)
+    # Precompute (state, occupation) BLS context defaults so encode_features
+    # becomes an O(1) dict lookup. Eliminates the last per-request
+    # DataFrame mask on the hot path.
+    state.bls_defaults_lookup = build_bls_defaults_lookup(df_eng)
+    logger.info("BLS defaults lookup built with %d (state, occupation) cells", len(state.bls_defaults_lookup))
 
-    # Load drift baseline (optional — created by train_model.py)
+    # Load model metrics — only the quantile coverage is surfaced at startup
+    # for a quick operator sanity check. The /predict route no longer
+    # reads residual-based PI offsets; intervals come from the model's
+    # quantile output directly.
+    metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
+    state.quantile_coverage_80 = float(metrics.get("quantile_coverage_80", 0.0))
+
+    # Load drift baseline (optional — produced by the training script)
     baseline_path = ROOT / "models" / "baseline_stats.json"
     if baseline_path.exists():
         state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path))
@@ -230,12 +256,11 @@ async def lifespan(app: FastAPI):
         logger.warning("No baseline_stats.json found — drift monitoring disabled")
 
     logger.info(
-        "Ready — dataset rows: %d, occupations: %d, model features: %d, 80%% PI offsets: [%d, %+d]",
+        "Ready — dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f",
         len(df_eng),
         len(state.occupations),
         state.model.n_features_in_,
-        int(state.pi_offset_10),
-        int(state.pi_offset_90),
+        state.quantile_coverage_80,
     )
 
     yield
@@ -258,12 +283,37 @@ app = FastAPI(
         "Predicts annual income for high-paying ($100K+) US jobs using an "
         "XGBoost model trained on integrated BLS OEWS + US Census microdata."
     ),
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
 # Rate limiter state
 app.state.limiter = limiter
+
+# ── Request body size limit ──────────────────────────────────────────────────
+# Reject requests with a body larger than MAX_BODY_BYTES. Batch endpoint
+# payloads are bounded by PredictBatchRequest.items max_length, but this
+# middleware is belt-and-braces against very large payloads that would
+# otherwise consume memory before Pydantic validation runs.
+MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", str(512 * 1024)))  # 512 KiB default
+
+
+class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        cl = request.headers.get("content-length")
+        if cl is not None:
+            try:
+                if int(cl) > MAX_BODY_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"detail": f"Request body exceeds {MAX_BODY_BYTES} bytes"},
+                    )
+            except ValueError:
+                pass
+        return await call_next(request)
+
+
+app.add_middleware(_BodySizeLimitMiddleware)
 
 
 def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
@@ -273,7 +323,21 @@ def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONRespons
     )
 
 
+async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Scrub unhandled exceptions: log the stack trace server-side, return a
+    generic 500 body with the request ID so operators can correlate without
+    leaking internal details to the caller.
+    """
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    logger.exception("Unhandled exception", extra={"request_id": request_id, "path": request.url.path})
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "Internal server error", "request_id": request_id},
+    )
+
+
 app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+app.add_exception_handler(Exception, _global_exception_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -402,12 +466,12 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     # ── Feature encoding → inference → response ─────────────────────────────
     row = encode_features(
         req,
-        state.df,
         edu_order=EDU_ORDER,
         region_map=REGION_MAP,
         region_codes=state.region_codes,
         occ_means=state.occ_means,
         state_means=state.state_means,
+        bls_defaults_lookup=state.bls_defaults_lookup,
     )
 
     if state.drift_monitor is not None:
@@ -426,6 +490,84 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     # Persist to cache for subsequent identical requests (no-op if disabled).
     cache.set(cache_key, response.model_dump())
     return response
+
+
+@app.post("/predict/batch", response_model=PredictBatchResponse, tags=["Prediction"])
+@limiter.limit("10/minute")
+def predict_batch(
+    request: Request,
+    req: PredictBatchRequest,
+    _key: str | None = Depends(verify_api_key),
+):
+    """Score a batch of profiles in a single request.
+
+    Bulk callers (e.g. a consumer scoring a CSV of candidates) should use
+    this endpoint instead of calling ``/predict`` in a loop: validation
+    runs once, the cache is consulted per-item, and XGBoost scores the
+    un-cached rows in a single ``model.predict`` call so per-request
+    overhead is amortised across the batch.
+
+    Items that fail domain validation raise 422 for the whole batch.
+    """
+    # 1. Validate every item up-front so a bad item at position N doesn't
+    #    waste inference work on items 0..N-1.
+    for idx, item in enumerate(req.items):
+        try:
+            _validate_domain(item)
+        except HTTPException as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Item {idx}: {exc.detail}",
+            ) from exc
+
+    responses: list[PredictResponse | None] = [None] * len(req.items)
+    rows_to_score: list[tuple[int, PredictRequest]] = []
+
+    # 2. Cache pass — return hits without touching the model.
+    for idx, item in enumerate(req.items):
+        cache_key = item.model_dump()
+        cached = cache.get(cache_key)
+        if cached is not None:
+            responses[idx] = PredictResponse(**cached)
+        else:
+            rows_to_score.append((idx, item))
+
+    # 3. Single vectorised model call for the un-cached items.
+    if rows_to_score:
+        encoded = [
+            encode_features(
+                item,
+                edu_order=EDU_ORDER,
+                region_map=REGION_MAP,
+                region_codes=state.region_codes,
+                occ_means=state.occ_means,
+                state_means=state.state_means,
+                bls_defaults_lookup=state.bls_defaults_lookup,
+            )
+            for _, item in rows_to_score
+        ]
+        batch_df = pd.concat(encoded, ignore_index=True)
+
+        if state.drift_monitor is not None:
+            for _, row in batch_df.iterrows():
+                state.drift_monitor.observe(row.to_dict())
+
+        import numpy as np  # local import to avoid a module-level re-add
+
+        raw = np.asarray(state.model.predict(batch_df))
+        if raw.ndim != 2 or raw.shape[1] != 3:
+            # Legacy point model fallback — degenerate (p, p, p) trio per row.
+            raw = np.column_stack([raw, raw, raw])
+        preds_dollar = np.expm1(raw)
+
+        for local_idx, (global_idx, item) in enumerate(rows_to_score):
+            p10, p50, p90 = (float(x) for x in preds_dollar[local_idx])
+            group_stats = lookup_benchmarks(state.benchmark_lookup, item.state, item.education_level)
+            resp = build_response(item, p10=p10, p50=p50, p90=p90, group_stats=group_stats)
+            cache.set(item.model_dump(), resp.model_dump())
+            responses[global_idx] = resp
+
+    return PredictBatchResponse(items=[r for r in responses if r is not None])
 
 
 @app.get("/drift", tags=["Monitoring"])
