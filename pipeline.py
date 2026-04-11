@@ -16,7 +16,7 @@ Design notes
   scores and wastes a feature slot with zero new information.
 
 * ``Occ_Mean_Income`` and ``State_Mean_Income`` are computed from the **training
-  set only** during model training (see scripts/train_model.py) and saved as
+  set only** during model training (see scripts/train_quantile.py) and saved as
   ``models/group_means.json``.  At inference time the API loads those saved
   means so the encoding is consistent with training. This eliminates the
   target-encoding leakage that arises from computing group means on the full
@@ -29,9 +29,9 @@ Shared across the entire project:
 
   - api/main.py
   - streamlit_app.py
-  - scripts/train_model.py
+  - scripts/train_quantile.py
   - tests/test_pipeline.py
-  - 04_salary_prediction_model.ipynb
+  - 04_salary_prediction_model.ipynb (historical v1 EDA)
 """
 
 from __future__ import annotations
@@ -290,7 +290,7 @@ def load_model(path: str) -> XGBRegressor:
     p = Path(path)
     if not p.exists():
         raise FileNotFoundError(
-            f"Model artefact not found: {p}. Run 'make model' (or 'python scripts/train_model.py') to generate it."
+            f"Model artefact not found: {p}. Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
         )
     m = XGBRegressor()
     m.load_model(str(p))
@@ -343,7 +343,7 @@ def load_group_means(path: str) -> dict[str, dict[str, float]]:
     if not p.exists():
         raise FileNotFoundError(
             f"Group means artefact not found: {p}. "
-            "Run 'make model' (or 'python scripts/train_model.py') to generate it."
+            "Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
         )
     with open(p) as f:
         return json.load(f)
