@@ -395,19 +395,22 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
     col4.metric("RMSE", f"${metrics.get('rmse', 0):,.0f}")
     col5.metric("Train / Test", f"{metrics.get('n_train', 0):,} / {metrics.get('n_test', 0):,}")
 
-    # ── Honest R² context ─────────────────────────────────────────────────────
-    r2_ctx = metrics.get("r2_context", "")
-    if r2_ctx:
-        st.info(f"**Why is R² low?**  {r2_ctx}")
+    # ── R² interpretation note ────────────────────────────────────────────────
+    st.info(
+        "**Note on R²**  \n"
+        "P50 under a multi-quantile objective is the median-minimiser, not "
+        "the mean-minimiser, so R² is a weak fit-statistic for this model. "
+        "The real SLO is empirical quantile coverage — see MODEL_CARD.md."
+    )
 
-    # ── PI info ───────────────────────────────────────────────────────────────
-    pi_w = metrics.get("pi_width", 0)
-    pi_cov = metrics.get("pi_coverage", 0)
+    # ── 80% prediction interval info ──────────────────────────────────────────
+    pi_w = metrics.get("quantile_width_median", metrics.get("pi_width", 0))
+    pi_cov = metrics.get("quantile_coverage_80", metrics.get("pi_coverage", 0))
     st.markdown(
-        f"**Empirical 80% prediction interval** — median width **${pi_w:,.0f}**, "
+        f"**80% prediction interval** — median width **${pi_w:,.0f}**, "
         f"empirical coverage **{pi_cov * 100:.1f}%** on the held-out test set.  \n"
-        "_Interval derived from the 10th/90th percentiles of test-set residuals; "
-        "broader than ±RMSE because income residuals are right-skewed._"
+        "_The interval comes directly from the multi-quantile model's P10 and "
+        "P90 outputs, not from residual offsets._"
     )
 
     st.markdown("---")
