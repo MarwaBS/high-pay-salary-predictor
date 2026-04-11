@@ -196,6 +196,7 @@ class AppState:
     benchmark_lookup: dict[tuple[str, str], GroupStats] = field(default_factory=dict)
     bls_defaults_lookup: dict[tuple[str, str], BlsDefaults] = field(default_factory=dict)
     quantile_coverage_80: float = 0.0
+    model_version: str = "unknown"
 
 
 state = AppState()
@@ -247,6 +248,10 @@ async def lifespan(app: FastAPI):
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
     state.quantile_coverage_80 = float(metrics.get("quantile_coverage_80", 0.0))
+    # Model provenance string (``{service_version}+{git_sha}.{data_sha}``)
+    # emitted by scripts/train_quantile.py. Falls back to "unknown" on
+    # pre-provenance artefacts so the API is backwards-compatible.
+    state.model_version = str(metrics.get("model_version", "unknown"))
 
     # Load drift baseline (optional — produced by the training script)
     baseline_path = ROOT / "models" / "baseline_stats.json"
@@ -257,11 +262,12 @@ async def lifespan(app: FastAPI):
         logger.warning("No baseline_stats.json found — drift monitoring disabled")
 
     logger.info(
-        "Ready — dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f",
+        "Ready — dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f, model_version: %s",
         len(df_eng),
         len(state.occupations),
         state.model.n_features_in_,
         state.quantile_coverage_80,
+        state.model_version,
     )
 
     yield
@@ -422,6 +428,7 @@ async def health():
         status="ok",
         model_loaded=state.model is not None,
         dataset_rows=len(state.df) if state.df is not None else 0,
+        model_version=state.model_version,
     )
 
 
