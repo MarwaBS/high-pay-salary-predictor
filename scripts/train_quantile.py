@@ -1,24 +1,41 @@
 """
 scripts/train_quantile.py
 -------------------------
-Train an XGBoost multi-quantile model predicting P10 / P50 / P90 of the
-``log1p(Annual Income)`` target in a single pass.
+Train two XGBoost heads in a single pass:
 
-Why a quantile model?
----------------------
+1. **Quantile regressor** — predicts P10 / P50 / P90 of ``log1p(Annual
+   Income)`` via ``reg:quantileerror`` with
+   ``quantile_alpha=[0.10, 0.50, 0.90]``. Answers the "what income
+   range should I expect?" question.
+2. **Premium-tier classifier** — predicts ``P(Annual Income >=
+   premium_threshold)`` via ``binary:logistic``. Answers the "how
+   likely is this profile to cross the premium threshold?" question.
+   Threshold lives in ``config.yaml::model.premium_threshold`` (default
+   $150,000). Trained on the same engineered feature matrix as the
+   regressor to keep the two heads comparable.
+
+Why two heads, not one?
+-----------------------
 Within the $100K+ cohort, individual income has extreme within-group
 variance driven by unobserved factors (equity, bonuses, tenure, specific
-employer). No point estimator can resolve that — so instead of pretending
-to, the model returns a calibrated interval. "Given this profile, what
-P10 / P50 / P90 income range should the caller expect?" is a useful
-answer even when an exact-dollar prediction would not be.
+employer). No point estimator can resolve that — the regressor returns
+a calibrated quantile interval instead. The classifier head answers a
+*different* product question: given this profile, is the premium tier
+(>= $150K) even plausible? A caller needs *both* — "will I likely clear
+the bar?" plus "if so, what's the range?".
 
-Data caveat: the cleaning notebook double-filters the cohort — Census
-rows with ``INCTOT >= 100_000`` inner-joined against BLS cells where
-``A_MEAN >= 100_000``. This truncates the training set and puts a hard
-ceiling on any point-estimator metric on this data. Re-prepping from the
-full Census dataset with a binary ``>= $100K`` classifier is the right
-structural fix and is intentionally out of scope for this trainer.
+Gap 1 framing — phases
+----------------------
+**Phase 1 (this file)**: premium-tier classifier trained *inside the
+existing high-pay cohort*. The label is ``Annual Income >= $150K`` —
+a well-defined, supportable binary task on the data that exists in the
+repo (roughly 40/60 class balance, see ``models/model_metrics.json``).
+
+**Phase 2 (deferred, blocked on raw data)**: a true "is this profile
+above the $100K line at all?" membership classifier would require the
+*unfiltered* IPUMS Census microdata — a separate fetch with an IPUMS
+API key, not just a file in ``Data/``. When that raw file is added,
+Phase 2 becomes a 2-hour follow-up to this trainer.
 
 No MLflow / Optuna dependencies — this trainer is deliberately lean so
 it can run on a CI worker or a dev machine without pulling an
@@ -29,15 +46,20 @@ is out of scope for this trainer.
 
 Artefacts saved
 ---------------
-  models/xgb_salary_model.ubj       multi-quantile XGBoost model
-                                    (primary path, loaded by the API and
-                                    dashboard via config.yaml::model.model_path)
-  models/model_metrics.json         quantile metrics (coverage, pinball
-                                    losses, crossings) + point-estimate
-                                    metrics (P50 R²/MAE/RMSE, back-compat)
-  models/baseline_stats.json        drift-monitor baseline
-  models/group_means.json           target-encoding lookup
-  models/feature_names.json         feature list
+  models/xgb_salary_model.ubj        multi-quantile XGBoost regressor
+                                     (primary path, loaded by the API
+                                     and dashboard via
+                                     config.yaml::model.model_path)
+  models/xgb_premium_classifier.ubj  binary XGBoost classifier head
+                                     (config.yaml::model.classifier_path)
+  models/model_metrics.json          quantile metrics (coverage, pinball
+                                     losses, crossings), point-estimate
+                                     metrics (P50 R²/MAE/RMSE), AND
+                                     classifier metrics (ROC-AUC,
+                                     PR-AUC, subgroup TPR, threshold)
+  models/baseline_stats.json         drift-monitor baseline
+  models/group_means.json            target-encoding lookup
+  models/feature_names.json          feature list
 
 Usage
 -----
@@ -58,9 +80,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import yaml
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.metrics import (
+    average_precision_score,
+    mean_absolute_error,
+    mean_squared_error,
+    r2_score,
+    roc_auc_score,
+)
 from sklearn.model_selection import KFold, train_test_split
-from xgboost import XGBRegressor
+from xgboost import XGBClassifier, XGBRegressor
 
 from api import __version__ as SERVICE_VERSION
 from api.drift import save_baseline_stats
@@ -68,6 +96,7 @@ from pipeline import (
     FEATURES_FULL,
     compute_group_means,
     engineer_features,
+    save_classifier,
     save_features,
     save_group_means,
     save_metrics,
@@ -305,6 +334,89 @@ def main() -> None:
     cv_r2_std = float(np.std(cv_scores))
     logger.info("CV R² (P50, dollar, train-only) = %.4f ± %.4f", cv_r2_mean, cv_r2_std)
 
+    # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
+    # Binary XGBoost classifier trained on the same engineered feature
+    # matrix as the quantile regressor. Label: Annual Income >= the
+    # premium threshold configured in config.yaml. Hyper-parameters are
+    # intentionally lighter than the regressor because the task is
+    # easier (binary, larger margin) and overfitting a 10K-row set on
+    # a 169-tree booster is a real risk.
+    premium_threshold = int(model_cfg.get("premium_threshold") or 150_000)
+    y_train_clf = (y_train >= premium_threshold).astype(int)
+    y_test_clf = (y_test >= premium_threshold).astype(int)
+    pos_rate_train = float(y_train_clf.mean())
+    pos_rate_test = float(y_test_clf.mean())
+    logger.info(
+        "Classifier label: Annual Income >= $%d  (positives: train=%.1f%% / test=%.1f%%)",
+        premium_threshold,
+        pos_rate_train * 100,
+        pos_rate_test * 100,
+    )
+    # scale_pos_weight balances the positive class without resampling —
+    # it is the ratio of negatives to positives on the training set and
+    # is the XGBoost-native way to handle moderate imbalance.
+    pos = int(y_train_clf.sum())
+    neg = int(len(y_train_clf) - pos)
+    scale_pos_weight = float(neg / pos) if pos > 0 else 1.0
+
+    classifier = XGBClassifier(
+        objective="binary:logistic",
+        eval_metric="logloss",
+        n_estimators=200,
+        max_depth=4,
+        learning_rate=0.05,
+        subsample=0.85,
+        colsample_bytree=0.85,
+        reg_lambda=1.0,
+        scale_pos_weight=scale_pos_weight,
+        tree_method="hist",
+        random_state=random_state,
+        n_jobs=-1,
+        verbosity=0,
+    )
+    classifier.fit(X_train, y_train_clf)
+
+    clf_proba_test = classifier.predict_proba(X_test)[:, 1]
+    clf_pred_test = (clf_proba_test >= 0.5).astype(int)
+    roc_auc = float(roc_auc_score(y_test_clf, clf_proba_test))
+    pr_auc = float(average_precision_score(y_test_clf, clf_proba_test))
+    accuracy = float((clf_pred_test == y_test_clf.values).mean())
+    # True positive rate, precision, recall at the default 0.5 threshold
+    tp = int(((clf_pred_test == 1) & (y_test_clf.values == 1)).sum())
+    fp = int(((clf_pred_test == 1) & (y_test_clf.values == 0)).sum())
+    fn = int(((clf_pred_test == 0) & (y_test_clf.values == 1)).sum())
+    precision = float(tp / (tp + fp)) if (tp + fp) > 0 else 0.0
+    recall = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+    f1 = float(2 * precision * recall / (precision + recall)) if (precision + recall) > 0 else 0.0
+    logger.info(
+        "Classifier metrics: ROC-AUC=%.4f  PR-AUC=%.4f  acc=%.4f  precision=%.4f  recall=%.4f  F1=%.4f",
+        roc_auc,
+        pr_auc,
+        accuracy,
+        precision,
+        recall,
+        f1,
+    )
+
+    # Subgroup ROC-AUC — fairness guardrail on the classifier head.
+    # A collapse in one subgroup's AUC (relative to the global AUC)
+    # is the drift signal the fairness test locks in.
+    clf_subgroup_roc_auc: dict[str, float] = {}
+    for col in ("Gender", "Region"):
+        if col not in df_test.columns:
+            continue
+        for val in sorted(df_test[col].dropna().unique()):
+            mask = (df_test[col] == val).to_numpy()
+            if mask.sum() < 30:
+                continue
+            y_sub = y_test_clf.values[mask]
+            # Skip degenerate slices (all pos or all neg) — AUC is undefined
+            if len(np.unique(y_sub)) < 2:
+                continue
+            sub_auc = float(roc_auc_score(y_sub, clf_proba_test[mask]))
+            clf_subgroup_roc_auc[f"{col}={val}"] = round(sub_auc, 4)
+            logger.info("  subgroup clf ROC-AUC %-20s n=%4d auc=%.3f", f"{col}={val}", int(mask.sum()), sub_auc)
+
     # ── Save artefacts ───────────────────────────────────────────────────────
     # Single write to the path declared in config.yaml::model.model_path.
     # The API, dashboard, and tests all load from that path and pick up
@@ -312,6 +424,9 @@ def main() -> None:
     # + ``is_quantile_model``.
     primary_model_path = ROOT / cfg["model"]["model_path"]
     save_model(model, str(primary_model_path))
+
+    classifier_path = ROOT / cfg["model"]["classifier_path"]
+    save_classifier(classifier, str(classifier_path))
 
     save_features(FEATURES_FULL, str(ROOT / cfg["model"]["features_path"]))
     save_group_means(group_means, str(ROOT / cfg["model"]["group_means_path"]))
@@ -349,6 +464,18 @@ def main() -> None:
         "log_transform": True,
         "fixed_group_means": True,
         "objective": "reg:quantileerror",
+        # Premium-tier classifier head (Gap 1 Phase 1)
+        "classifier_objective": "binary:logistic",
+        "classifier_threshold": premium_threshold,
+        "classifier_positive_rate_train": round(pos_rate_train, 4),
+        "classifier_positive_rate_test": round(pos_rate_test, 4),
+        "classifier_roc_auc": round(roc_auc, 4),
+        "classifier_pr_auc": round(pr_auc, 4),
+        "classifier_accuracy": round(accuracy, 4),
+        "classifier_precision": round(precision, 4),
+        "classifier_recall": round(recall, 4),
+        "classifier_f1": round(f1, 4),
+        "classifier_subgroup_roc_auc": clf_subgroup_roc_auc,
     }
     save_metrics(metrics, str(ROOT / cfg["model"]["metrics_path"]))
 
@@ -358,11 +485,17 @@ def main() -> None:
 
     logger.info("Artefacts saved:")
     logger.info("  Model       : %s", primary_model_path)
+    logger.info("  Classifier  : %s", classifier_path)
     logger.info("  Features    : %s", ROOT / cfg["model"]["features_path"])
     logger.info("  Group means : %s", ROOT / cfg["model"]["group_means_path"])
     logger.info("  Metrics     : %s", ROOT / cfg["model"]["metrics_path"])
     logger.info("  Drift base  : %s", ROOT / "models" / "baseline_stats.json")
-    logger.info("Done — Test P50 R²=%.4f  coverage_80=%.1f%%", r2, coverage_80 * 100)
+    logger.info(
+        "Done — Test P50 R²=%.4f  coverage_80=%.1f%%  clf ROC-AUC=%.4f",
+        r2,
+        coverage_80 * 100,
+        roc_auc,
+    )
 
 
 if __name__ == "__main__":

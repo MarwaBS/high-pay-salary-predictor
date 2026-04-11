@@ -47,6 +47,12 @@ class ModelConfig(BaseModel):
     features_path: str
     metrics_path: str
     group_means_path: str
+    # Premium-tier classifier head. Optional on purpose — pre-Phase-1
+    # artefacts (any model trained before the classifier was added)
+    # produced a config without these fields, and the API must stay
+    # backwards-compatible against old config files.
+    classifier_path: str | None = None
+    premium_threshold: int | None = Field(default=None, ge=100_000)
 
 
 class VisualizationColors(BaseModel):
