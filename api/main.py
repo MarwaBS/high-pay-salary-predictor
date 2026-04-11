@@ -81,6 +81,7 @@ from config_schema import ProjectConfig
 from pipeline import (
     REGION_CODES,
     engineer_features,
+    load_classifier,
     load_group_means,
     load_metrics,
     load_model,
@@ -188,6 +189,8 @@ class AppState:
 
     df: pd.DataFrame | None = None
     model: Any = None
+    classifier: Any = None
+    premium_threshold: int | None = None
     occupations: list[str] = field(default_factory=list)
     region_codes: dict[str, int] = field(default_factory=dict)
     occ_means: dict[str, float] = field(default_factory=dict)
@@ -229,6 +232,31 @@ async def lifespan(app: FastAPI):
     state.model = load_model(str(ROOT / VALIDATED_CFG.model.model_path))
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
     state.region_codes = REGION_CODES
+
+    # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
+    # Optional on purpose: pre-Phase-1 artefacts (any model trained before
+    # the classifier was added) do not ship a classifier, and the API must
+    # keep running against them. Missing artefact → ``p_above_premium_threshold``
+    # becomes ``None`` on every response, the rest of the pipeline is
+    # unaffected. Any *other* exception is a real fault and should crash
+    # the probe — do not silently swallow it.
+    classifier_cfg_path = VALIDATED_CFG.model.classifier_path
+    premium_threshold_cfg = VALIDATED_CFG.model.premium_threshold
+    if classifier_cfg_path and premium_threshold_cfg is not None:
+        try:
+            state.classifier = load_classifier(str(ROOT / classifier_cfg_path))
+            state.premium_threshold = int(premium_threshold_cfg)
+            logger.info(
+                "Premium-tier classifier loaded (threshold=$%d)",
+                state.premium_threshold,
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "No classifier artefact at %s — premium-tier probability will be None",
+                classifier_cfg_path,
+            )
+    else:
+        logger.info("Classifier not configured — premium-tier probability disabled")
 
     # Precompute (state, education) benchmark lookup so /predict becomes
     # an O(log n) dict get + binary search instead of a per-request
@@ -487,12 +515,22 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
 
     p10, p50, p90 = run_model(state.model, row)
     group_stats = lookup_benchmarks(state.benchmark_lookup, req.state, req.education_level)
+
+    # Premium-tier classifier probability (Gap 1 Phase 1). ``None`` when
+    # no classifier is loaded so older deployments keep returning the
+    # same payload shape.
+    p_premium: float | None = None
+    if state.classifier is not None:
+        p_premium = float(state.classifier.predict_proba(row)[0, 1])
+
     response = build_response(
         req,
         p10=p10,
         p50=p50,
         p90=p90,
         group_stats=group_stats,
+        p_above_premium_threshold=p_premium,
+        premium_threshold=state.premium_threshold,
     )
 
     # Persist to cache for subsequent identical requests (no-op if disabled).
@@ -568,10 +606,27 @@ def predict_batch(
             raw = np.column_stack([raw, raw, raw])
         preds_dollar = np.expm1(raw)
 
+        # Batched classifier call — one predict_proba for the whole batch
+        # keeps overhead amortised. ``None`` when the classifier isn't
+        # loaded, same graceful-degradation contract as /predict.
+        if state.classifier is not None:
+            clf_proba = state.classifier.predict_proba(batch_df)[:, 1]
+        else:
+            clf_proba = None
+
         for local_idx, (global_idx, item) in enumerate(rows_to_score):
             p10, p50, p90 = (float(x) for x in preds_dollar[local_idx])
             group_stats = lookup_benchmarks(state.benchmark_lookup, item.state, item.education_level)
-            resp = build_response(item, p10=p10, p50=p50, p90=p90, group_stats=group_stats)
+            p_premium = float(clf_proba[local_idx]) if clf_proba is not None else None
+            resp = build_response(
+                item,
+                p10=p10,
+                p50=p50,
+                p90=p90,
+                group_stats=group_stats,
+                p_above_premium_threshold=p_premium,
+                premium_threshold=state.premium_threshold,
+            )
             cache.set(item.model_dump(), resp.model_dump())
             responses[global_idx] = resp
 

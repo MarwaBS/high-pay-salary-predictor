@@ -41,7 +41,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from xgboost import XGBRegressor
+from xgboost import XGBClassifier, XGBRegressor
 
 # ---------------------------------------------------------------------------
 # Feature sets
@@ -293,6 +293,38 @@ def load_model(path: str) -> XGBRegressor:
             f"Model artefact not found: {p}. Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
         )
     m = XGBRegressor()
+    m.load_model(str(p))
+    return m
+
+
+def save_classifier(model: XGBClassifier, path: str) -> None:
+    """Save an XGBoost binary classifier using its native ``.ubj`` format.
+
+    Separate helper from ``save_model`` so the type annotation on the
+    caller side makes the intent clear — regressor artefacts and
+    classifier artefacts live at different paths and must not collide.
+    """
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    model.save_model(path)
+
+
+def load_classifier(path: str) -> XGBClassifier:
+    """Load an XGBoost binary classifier from ``.ubj``.
+
+    Raises
+    ------
+    FileNotFoundError  if *path* does not exist — meaning the classifier
+        head has not been trained yet. Callers that want backwards
+        compatibility with pre-Phase-1 artefacts should catch this
+        exception and degrade gracefully (the API does exactly that:
+        the ``p_above_premium_threshold`` field becomes ``None``).
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Classifier artefact not found: {p}. Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
+        )
+    m = XGBClassifier()
     m.load_model(str(p))
     return m
 

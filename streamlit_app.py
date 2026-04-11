@@ -418,6 +418,24 @@ def tab_predictor(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]
                 "(state, education) cell — percentile falls back to 50%."
             )
 
+        # ── Premium-tier probability (Gap 1 Phase 1 classifier head) ────
+        # The classifier is optional on the API side — older deployments
+        # return ``None`` and the dashboard silently skips the tile.
+        p_premium = result.get("p_above_premium_threshold")
+        premium_threshold_resp = result.get("premium_threshold")
+        if p_premium is not None and premium_threshold_resp is not None:
+            st.markdown("---")
+            st.metric(
+                f"Probability of earning ≥ ${premium_threshold_resp:,}",
+                f"{p_premium * 100:.1f}%",
+            )
+            st.caption(
+                "From a separate XGBoost binary classifier trained alongside "
+                "the quantile regressor on the same features. Answers a "
+                "different question than the quantile interval: _how likely "
+                "is this profile to cross the premium threshold at all?_"
+            )
+
 
 # ── Tab: Model Insights ───────────────────────────────────────────────────────
 
