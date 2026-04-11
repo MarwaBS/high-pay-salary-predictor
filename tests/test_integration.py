@@ -157,13 +157,24 @@ class TestProductionModelEndToEnd:
         r2 = r2_score(y_test, p50_preds)
         assert r2 > -0.05, f"End-to-end P50 R² {r2:.4f} is implausibly negative"
 
-    def test_prediction_interval_ordered(self, production_model, df, cfg, edu_order, region_map):
-        """pi_offset_10 < 0 and pi_offset_90 > 0 so PI always contains prediction."""
+    def test_quantile_metrics_shape(self, production_model, df, cfg, edu_order, region_map):
+        """Metrics file must expose the quantile calibration fields.
+
+        Asserts on the real SLO for the multi-quantile model: empirical
+        80% coverage within a reasonable band, zero quantile crossings,
+        and per-subgroup coverage present for at least one subgroup.
+        """
         from pathlib import Path
 
         from pipeline import load_metrics
 
         metrics = load_metrics(str(Path(__file__).parent.parent / cfg["model"]["metrics_path"]))
-        assert metrics["pi_offset_10"] < 0, "Lower PI offset must be negative (residual below prediction)"
-        assert metrics["pi_offset_90"] > 0, "Upper PI offset must be positive (residual above prediction)"
-        assert metrics["pi_offset_10"] < metrics["pi_offset_90"]
+        assert "quantile_coverage_80" in metrics, "metrics file must expose quantile_coverage_80"
+        assert 0.65 <= metrics["quantile_coverage_80"] <= 0.92, (
+            f"quantile_coverage_80 {metrics['quantile_coverage_80']:.3f} outside [0.65, 0.92]"
+        )
+        assert metrics.get("quantile_crossings", -1) == 0, (
+            f"quantile_crossings must be 0, got {metrics.get('quantile_crossings')}"
+        )
+        assert "subgroup_coverage_80" in metrics, "metrics file must expose subgroup_coverage_80 dict"
+        assert len(metrics["subgroup_coverage_80"]) > 0, "subgroup_coverage_80 must contain at least one subgroup"
