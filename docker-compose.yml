@@ -10,6 +10,9 @@ services:
     container_name: high_pay_dashboard
     ports:
       - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
     volumes:
       # Persist trained model so it survives container restarts
       - ./models:/app/models
@@ -21,6 +24,10 @@ services:
       - STREAMLIT_SERVER_ADDRESS=0.0.0.0
       - STREAMLIT_SERVER_HEADLESS=true
       - STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+      # The predictor tab calls POST /predict on the API instead of
+      # loading the model in-process, so both surfaces share one
+      # prediction path (cache, rate limits, drift monitor, benchmarks).
+      - API_BASE_URL=http://api:8000
     deploy:
       resources:
         limits:

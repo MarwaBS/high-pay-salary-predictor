@@ -7,6 +7,7 @@ Run: streamlit run streamlit_app.py
 
 from __future__ import annotations
 
+import os
 import warnings
 from pathlib import Path
 from typing import Any
@@ -22,16 +23,10 @@ from xgboost import XGBRegressor
 
 from pipeline import (
     FEATURES_FULL,
-    REGION_CODES,
-    build_feature_row,
-    compute_fallback_means,
     engineer_features,
-    get_bls_defaults,
-    is_quantile_model,
     load_group_means,
     load_metrics,
     load_model,
-    predict_quantiles,
 )
 
 warnings.filterwarnings("ignore")
@@ -304,10 +299,53 @@ def tab_geographic(df: pd.DataFrame) -> None:
 # ── Tab: Salary Predictor ─────────────────────────────────────────────────────
 
 
+#: Base URL for the FastAPI service. Set via ``API_BASE_URL`` env var so
+#: the dashboard talks to the correct API in local / docker-compose / k8s.
+#: Default assumes docker-compose where the API service is named ``api``.
+API_BASE_URL = os.getenv("API_BASE_URL", "http://api:8000")
+
+
+def _call_predict_api(payload: dict[str, Any]) -> dict[str, Any] | None:
+    """POST to the FastAPI /predict endpoint. Returns None on network failure."""
+    import httpx
+
+    try:
+        response = httpx.post(
+            f"{API_BASE_URL}/predict",
+            json=payload,
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.HTTPStatusError as exc:
+        st.error(f"API returned {exc.response.status_code}: {exc.response.text}")
+        return None
+    except httpx.RequestError as exc:
+        st.error(
+            f"Could not reach the API at {API_BASE_URL}: {exc}.  \n"
+            "Set the `API_BASE_URL` env var, or start the API with "
+            "`make api` / `docker compose up api`."
+        )
+        return None
+
+
 def tab_predictor(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) -> None:
-    """Render the Salary Predictor form and display prediction with PI."""
+    """Render the Salary Predictor form.
+
+    Delegates inference to the FastAPI ``/predict`` endpoint via ``httpx``
+    rather than calling the in-process model. This keeps the dashboard
+    and API on a single prediction path — cache hits, rate limiting,
+    drift monitoring, and benchmark lookups all flow through one code
+    path, so API changes never silently diverge from dashboard
+    behaviour.
+    """
     st.header("Salary Predictor")
-    st.markdown("Enter individual profile details to estimate annual income using the trained XGBoost model.")
+    st.markdown(
+        "Enter a profile and the dashboard will call the FastAPI "
+        f"`/predict` endpoint at `{API_BASE_URL}` to score it. The API "
+        "handles caching, rate limiting, drift tracking, and benchmark "
+        "lookups — one source of truth."
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -325,58 +363,59 @@ def tab_predictor(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]
             jobs_k = st.number_input("Jobs per 1,000", value=2.0, min_value=0.0, step=0.1)
             hourly_mean = st.number_input("BLS Hourly Mean Wage ($)", value=60.0, min_value=0.0, step=1.0)
         else:
-            bls = get_bls_defaults(df, state, occupation)
-            employment = bls["employment"]
-            lq = bls["location_quotient"]
-            jobs_k = bls["jobs_per_1000"]
-            hourly_mean = bls["hourly_mean"]
+            employment = None
+            lq = None
+            jobs_k = None
+            hourly_mean = None
 
     if st.button("Predict Salary", type="primary"):
-        edu_ord = EDU_ORDER[education]
-        gender_bin = 1 if gender == "Male" else 0
-        region = REGION_MAP.get(state, "South")
-        region_code = REGION_CODES.get(region, 0)
-        gm = get_group_means()
-        occ_fallback, state_fallback = compute_fallback_means(gm)
-        occ_mean = gm["occ_means"].get(occupation, occ_fallback)
-        state_mean_val = gm["state_means"].get(state, state_fallback)
+        payload: dict[str, Any] = {
+            "state": state,
+            "occupation": occupation,
+            "education_level": education,
+            "gender": gender,
+            "age": age,
+        }
+        # Only include BLS context fields if the user supplied them —
+        # otherwise let the API fill them from its precomputed defaults.
+        if show_adv:
+            payload.update(
+                {
+                    "employment": employment,
+                    "location_quotient": lq,
+                    "jobs_per_1000": jobs_k,
+                    "hourly_mean": hourly_mean,
+                }
+            )
 
-        row = build_feature_row(
-            age=age,
-            edu_ord=edu_ord,
-            gender_bin=gender_bin,
-            region_code=region_code,
-            employment=employment,
-            lq=lq,
-            jobs_k=jobs_k,
-            hourly_mean=hourly_mean,
-            occ_mean_income=occ_mean,
-            state_mean_income=state_mean_val,
-        )
-        # Quantile prediction: P10/P50/P90 directly from the model.
-        # Falls back to (point, point, point) for legacy models.
-        p10, p50, p90 = predict_quantiles(model, row)
+        result = _call_predict_api(payload)
+        if result is None:
+            return  # Error already surfaced by _call_predict_api
+
+        p10 = result["predicted_p10"]
+        p50 = result["predicted_p50"]
+        p90 = result["predicted_p90"]
+        pct = result["percentile_in_group"]
+        group_size = result["group_size"]
 
         st.success(f"Median estimate (P50): **${p50:,.0f}**")
-        if is_quantile_model(model):
-            st.info(
-                f"**80% prediction interval**: ${p10:,.0f} — ${p90:,.0f}  \n"
-                "_Interval comes from a multi-quantile XGBoost model "
-                "(not from residuals). Calibrated to ~80% empirical coverage "
-                "on the held-out test set. See the Model Insights tab and "
-                "`MODEL_CARD.md` for details._"
+        st.info(
+            f"**80% prediction interval**: ${p10:,.0f} — ${p90:,.0f}  \n"
+            "_Interval comes from a multi-quantile XGBoost model served "
+            "by the FastAPI `/predict` endpoint. Calibrated to ~80% "
+            "empirical coverage on the held-out test set. See the "
+            "Model Insights tab and `MODEL_CARD.md` for details._"
+        )
+
+        if group_size > 0:
+            st.markdown(
+                f"This estimate is higher than **{pct:.1f}%** of "
+                f"{education} earners in {state} ({group_size} comparable records)."
             )
         else:
-            st.warning(
-                "Loaded model is a legacy point estimator — P10/P90 shown above "
-                "are degenerate. Run `python -m scripts.train_quantile` to retrain."
-            )
-
-        comparable = df[(df["Education Level"] == education) & (df["State Abbreviation"] == state)]["Annual Income"]
-        if len(comparable) > 0:
-            pct = (comparable < p50).mean() * 100
-            st.markdown(
-                f"This estimate is higher than **{pct:.1f}%** of {education} earners in {state} in the dataset."
+            st.caption(
+                "No directly comparable records in the dataset for this "
+                "(state, education) cell — percentile falls back to 50%."
             )
 
 
@@ -443,9 +482,9 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
             test_size=CFG["model"]["test_size"],
             random_state=CFG["model"]["random_state"],
         )
-        # Multi-quantile model outputs (n, 3). For the residual plot we use
-        # the P50 column back-transformed to dollar space. Legacy point
-        # models fall through to a 1-D shape via predict_quantiles.
+        # Multi-quantile model outputs (n, 3). For the residual plot we
+        # use the P50 column back-transformed to dollar space. Legacy
+        # point models emit a 1-D shape and fall through the else branch.
         raw = np.asarray(model.predict(X_test))
         if raw.ndim == 2 and raw.shape[1] == 3:
             y_pred_dollar = np.expm1(raw[:, 1])  # P50 column
