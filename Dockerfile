@@ -96,9 +96,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
 
 COPY --from=api-builder /install /usr/local
 
-COPY config.yaml ./config.yaml
-COPY pipeline.py ./pipeline.py
-COPY api/        ./api/
+COPY config.yaml       ./config.yaml
+COPY config_schema.py  ./config_schema.py
+COPY pipeline.py       ./pipeline.py
+COPY api/              ./api/
 # Data/ is NOT baked into the image — mounted as a read-only volume.
 
 RUN mkdir -p models Data
