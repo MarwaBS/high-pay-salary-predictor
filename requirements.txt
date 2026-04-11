@@ -17,7 +17,6 @@ scikit-learn>=1.1.0
 xgboost>=1.7.0
 lightgbm>=3.3.0
 shap>=0.41.0
-optuna>=3.0.0               # hyperparameter optimization (notebook 4, §5.6)
 
 # ── Statistical Analysis ───────────────────────────────────────────────────────
 scipy>=1.9.0
@@ -30,9 +29,6 @@ httpx>=0.27.0            # HTTP client the dashboard uses to call /predict on th
 # ── API ───────────────────────────────────────────────────────────────────────
 fastapi>=0.100.0
 uvicorn[standard]>=0.22.0  # ASGI server for FastAPI
-
-# ── Experiment Tracking ───────────────────────────────────────────────────────
-mlflow>=2.10.0             # log params, metrics, artefacts; view with: mlflow ui
 
 # ── API Security & Observability ──────────────────────────────────────────────
 slowapi>=0.1.9                 # rate limiting for FastAPI

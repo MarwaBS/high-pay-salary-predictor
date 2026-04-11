@@ -50,8 +50,6 @@ jobs:
           # Produces models/xgb_salary_model.ubj as a multi-quantile XGBoost
           # model. Tests expect the quantile output shape (n, 3) — see
           # tests/test_pipeline.py::test_model_outputs_quantile_triple.
-          # The old point-estimate trainer lives at scripts/train_model.py
-          # and is kept only for historical HPO + MLflow comparison.
           python -m scripts.train_quantile
 
       - name: Run pytest
@@ -149,7 +147,18 @@ jobs:
             -v ${{ github.workspace }}/models:/app/models:ro \
             -v ${{ github.workspace }}/Data:/app/Data:ro \
             ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
-          sleep 8
-          curl -f http://localhost:8000/health || (docker logs smoke-api && exit 1)
-          echo "Smoke test passed — API healthy"
+          # Poll /health with a retry loop instead of a fixed sleep —
+          # cold-start loading of the CSV + XGBoost model on a GHA runner
+          # is variable and can exceed any fixed wait. 30 × 1s = 30s cap.
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8000/health > /dev/null; then
+              echo "Smoke test passed — API healthy after ${i}s"
+              docker stop smoke-api
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Smoke test failed — API never became healthy within 30s"
+          docker logs smoke-api
           docker stop smoke-api
+          exit 1
