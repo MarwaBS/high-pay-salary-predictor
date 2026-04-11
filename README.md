@@ -256,9 +256,18 @@ Grouped by the engineering discipline they demonstrate.
 - **Multi-stage Dockerfile.** Non-root user, HEALTHCHECK, separate builders for API vs dashboard.
 - **Docker Compose** includes a Redis service with a healthcheck gate so `api` only starts when Redis is responsive.
 
+### Model registry & versioning
+
+- **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+cd1037dac48a.e927845864e2`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments.
+- **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
+- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
+- **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/High_pay_Analysis_us/releases) and redeployed without re-training. Because the tag encodes both the code SHA and the data hash, `git checkout <sha>` plus `python -m scripts.train_quantile` bit-reproduces the release.
+- **Why not MLflow Model Registry?** Free, versioned, rollback-able, and one fewer service to operate. A real production system would graduate to MLflow or SageMaker Model Registry; for a portfolio-scale project, GitHub Releases is the pragmatic choice and the trade-off is documented here on purpose.
+- **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote — so the provenance contract cannot silently regress.
+
 ### Tests
 
-- **127 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), and Docker image sanity (guards that every top-level import in `api/main.py` is COPY'd into the API stage).
+- **139 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards that every top-level import in `api/main.py` is COPY'd into the API stage), single-trainer + version consistency + model-version provenance regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 

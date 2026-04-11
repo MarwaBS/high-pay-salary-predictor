@@ -219,6 +219,20 @@ class HealthResponse(BaseModel):
     model_loaded: bool
     dataset_rows: int
     version: str = __version__
+    model_version: str = Field(
+        default="unknown",
+        description=(
+            "Composite model provenance string of the form "
+            "``{service_version}+{git_sha}.{data_sha256}`` emitted by "
+            "``scripts/train_quantile.py`` and persisted in "
+            "``models/model_metrics.json``. Operators can paste the "
+            "``git_sha`` fragment into ``git show`` to recover the exact "
+            "training code, and compare the ``data_sha256`` fragment "
+            "against a local re-hash of ``data/cleaned_high_pay_data.csv`` "
+            'to prove the training data matches. Returns ``"unknown"`` '
+            "for pre-provenance artefacts."
+        ),
+    )
 
 
 class MetaResponse(BaseModel):

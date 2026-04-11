@@ -49,7 +49,10 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import logging
+import os
+import subprocess
 from pathlib import Path
 
 import numpy as np
@@ -59,6 +62,7 @@ from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, train_test_split
 from xgboost import XGBRegressor
 
+from api import __version__ as SERVICE_VERSION
 from api.drift import save_baseline_stats
 from pipeline import (
     FEATURES_FULL,
@@ -98,6 +102,65 @@ def pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, alpha: float) -> float:
     """
     error = y_true - y_pred
     return float(np.mean(np.maximum(alpha * error, (alpha - 1) * error)))
+
+
+def _resolve_git_sha() -> str:
+    """Return the short git SHA of HEAD, or ``"unknown"`` if git isn't available.
+
+    CI workflows set ``GITHUB_SHA``; honour that first so scheduled runs
+    record the exact SHA that triggered the workflow even when the
+    checkout is shallow or in a detached-HEAD state. Falls back to a
+    local ``git rev-parse`` for developer runs, and finally to
+    ``"unknown"`` so the trainer never crashes on a bare tarball.
+    """
+    env_sha = os.environ.get("GITHUB_SHA") or os.environ.get("GIT_SHA")
+    if env_sha:
+        return env_sha[:12]
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return out.strip() or "unknown"
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return "unknown"
+
+
+def _hash_training_data(path: Path) -> str:
+    """Return the first 12 hex chars of the SHA-256 of the training CSV.
+
+    Binding the model version to the data content means two runs on the
+    same code against the same CSV produce the same ``MODEL_VERSION``,
+    and two runs on the same code against *different* CSVs do not.
+    That is what makes the version string a real reproducibility
+    primitive and not just a timestamp.
+    """
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()[:12]
+
+
+def build_model_version(data_path: Path) -> str:
+    """Build the canonical model version string.
+
+    Shape: ``{service_version}+{git_sha}.{data_sha256_prefix}``. The
+    ``+`` separator keeps this a valid semver build-metadata suffix so
+    tooling that parses semver strings (release automation, dependency
+    managers) continues to work. The two prefixed fragments are each
+    12 hex chars — enough to disambiguate without bloating logs.
+
+    Examples::
+
+        2.0.0+a1b2c3d4e5f6.9e8d7c6b5a40
+        2.0.0+unknown.9e8d7c6b5a40     # offline build, no git
+    """
+    git_sha = _resolve_git_sha()
+    data_sha = _hash_training_data(data_path)
+    return f"{SERVICE_VERSION}+{git_sha}.{data_sha}"
 
 
 def main() -> None:
@@ -253,7 +316,17 @@ def main() -> None:
     save_features(FEATURES_FULL, str(ROOT / cfg["model"]["features_path"]))
     save_group_means(group_means, str(ROOT / cfg["model"]["group_means_path"]))
 
+    # ── Model provenance: service version + code SHA + data SHA ────────────
+    # The composite version is the reproducibility primitive: any operator
+    # investigating a production incident can recover the exact training
+    # state (code, data) from the three fragments. It is also the string
+    # the scheduled release workflow uses to tag GitHub Releases.
+    model_version = build_model_version(data_path)
+    logger.info("Model version: %s", model_version)
+
     metrics = {
+        "model_version": model_version,
+        "service_version": SERVICE_VERSION,
         "r2": round(r2, 4),
         "rmse": round(rmse, 2),
         "mae": round(mae, 2),
