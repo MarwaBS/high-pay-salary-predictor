@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field, field_validator
 
+from api import __version__
+
 # ── Request ───────────────────────────────────────────────────────────────────
 
 
@@ -216,7 +218,7 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     model_loaded: bool
     dataset_rows: int
-    version: str = "2.0.0"
+    version: str = __version__
 
 
 class MetaResponse(BaseModel):

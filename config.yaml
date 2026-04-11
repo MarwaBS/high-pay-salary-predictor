@@ -29,9 +29,9 @@ thresholds:
 model:
   test_size: 0.20
   random_state: 42
-  # XGBoost hyper-parameters (tuned via 30-trial Optuna TPE search on
-  # log1p-transformed target with fixed train-only group-mean encoding).
-  # Rerun scripts/train_model.py --tune to refresh.
+  # XGBoost hyper-parameters — multi-quantile XGBoost via
+  # ``reg:quantileerror`` with ``quantile_alpha=[0.10, 0.50, 0.90]``.
+  # Trained on log1p(Annual Income); callers must expm1() the prediction.
   n_estimators: 169
   max_depth: 3
   learning_rate: 0.045
@@ -43,8 +43,6 @@ model:
   log_transform_target: true
   # Cross-validation
   cv_folds: 5
-  # Optuna HPO
-  optuna_n_trials: 30
   # Saved artefacts — XGBoost native format (.ubj) and JSON (no pickle)
   model_path: "models/xgb_salary_model.ubj"
   features_path: "models/feature_names.json"
