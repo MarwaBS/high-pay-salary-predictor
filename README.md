@@ -1,11 +1,18 @@
 # High-Paying Jobs in the US — Salary Quantile Predictor
 
+[![Live Demo](https://img.shields.io/badge/%F0%9F%A4%97%20Live%20Demo-on%20Hugging%20Face-yellow)](https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/MarwaBS/High_pay_Analysis_us/actions/workflows/ci.yml/badge.svg)](https://github.com/MarwaBS/High_pay_Analysis_us/actions/workflows/ci.yml)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](MODEL_CARD.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
+
+> **🤗 [Try the live demo on Hugging Face Spaces →](https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor)**
+> A single Docker container runs both the FastAPI service and the Streamlit
+> dashboard. The Predictor tab calls `POST /predict` on the co-located API,
+> so cache hits, rate limiting, drift monitoring, and benchmark lookups all
+> flow through one prediction path.
 
 > **What this is**: a portfolio project that analyses high-paying US
 > jobs (≥ $100K/yr) and serves an XGBoost **quantile** model (P10/P50/P90)
