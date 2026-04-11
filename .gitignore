@@ -161,7 +161,7 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Private interview prep and reports (never commit)
+# Private notes and reports (never commit)
 private/
 
 # Legacy pickle artefacts (project now uses XGBoost native .ubj + JSON — no pickle)

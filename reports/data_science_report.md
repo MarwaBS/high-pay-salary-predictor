@@ -89,25 +89,36 @@ suggests once occupation composition is controlled for.
 
 ## 6. Model performance
 
-| Model | Feature set | Test R² | CV R² | RMSE | Notes |
-|-------|-------------|---------|-------|------|-------|
-| Ridge Regression | Full (11) | ~0.02 | — | — | Linear baseline |
-| XGBoost | Full (11) | **0.040** | **0.040 ± 0.012** | **$107,365** | Primary production model |
-| XGBoost | Demographic only (6) | lower | — | — | Isolation of demographic signal |
-| LightGBM | Full (11) | comparable | — | — | Speed comparison |
-| XGBoost (Optuna HPO) | Full (11) | ~0.040 | ~0.040 | — | 30-trial TPE; default ≈ optimal |
+The production model is a **multi-quantile XGBoost regressor**
+(`objective="reg:quantileerror"`, `quantile_alpha=[0.10, 0.50, 0.90]`).
+It returns P10 / P50 / P90 income predictions in a single pass and is
+scored on **empirical quantile coverage**, not point-estimate R².
 
-**Why is R² low?** Individual Census incomes within the $100K+ cohort span $100K–$1M+,
-driven by unobserved factors: equity compensation, bonuses, tenure, specific employer.
-Available features explain occupation- and state-level *means* reliably, but cannot
-resolve individual-level variation. CV R² is stable at 0.040 ± 0.012 (5-fold),
-confirming no overfitting — this is a data-ceiling effect, not a modelling failure.
+| Metric | Value | Notes |
+|---|---|---|
+| 80% empirical coverage | ~0.77 | Target ≈ 0.80 ± 0.05. Fraction of test targets inside `[P10, P90]`. |
+| Median PI width | ~$112K | Typical 80% interval spread in dollar space. |
+| Quantile crossings | 0 | P10 > P50 or P50 > P90 — must remain zero. |
+| Test P50 R² | ~0.03 | Point-estimate R² is intentionally weak here — see note below. |
+| CV P50 R² (5-fold, train-only, dollar) | ~0.03 ± 0.02 | Same space as test R²; confirms no overfitting or space mismatch. |
 
-**Prediction intervals:** the `/predict` API and dashboard return an empirical 80% PI
-derived from the 10th/90th percentiles of test-set residuals:
-- offset_10 ≈ −$73,935 (lower bound)
-- offset_90 ≈ +$64,101 (upper bound)
-- Median PI width: ~$138,037 | empirical coverage on test set: 80.0%
+**Note on point-estimate R².** Under a quantile objective, P50 is the
+median-minimiser, not the mean-minimiser. R² rewards mean predictions,
+so it is a weak fit-statistic for this model. The relevant SLO is the
+calibrated quantile coverage above.
+
+**Cohort constraint.** The training set is the `INCTOT ≥ $100K` × BLS
+`A_MEAN ≥ $100K` double-filtered slice built in notebook 1. Within
+that cohort, individual income is dominated by unobserved factors
+(equity, bonuses, tenure, specific employer) that no point estimator
+can resolve on the available features. Re-prepping from the full
+Census dataset with a binary `≥ $100K` classifier target is a tracked
+future improvement.
+
+**Prediction intervals.** The `/predict` API and dashboard return the
+P10 and P90 columns of the quantile model directly — not residual
+offsets. `predicted_salary` is retained as an alias for P50 so v1
+clients keep working.
 
 **Feature importance (SHAP):**
 Top drivers are `Annual Mean Wage` (BLS occupation-level wage), `Occ_Mean_Income`,
