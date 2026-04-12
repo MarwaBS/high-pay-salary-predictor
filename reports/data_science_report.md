@@ -146,7 +146,7 @@ and demographic features contribute less but are statistically significant.
 - `save_model / load_model` — XGBoost native .ubj (no pickle)
 - `save_features / load_features / save_metrics / load_metrics` — plain JSON
 
-This module is imported by `api/main.py`, `streamlit_app.py`, `scripts/train_model.py`,
+This module is imported by `api/main.py`, `streamlit_app.py`, `scripts/train_quantile.py`,
 and `tests/conftest.py`, ensuring every layer of the stack uses an identical encoding.
 
 ---
