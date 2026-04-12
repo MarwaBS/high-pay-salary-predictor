@@ -76,8 +76,8 @@ def df_engineered(df: pd.DataFrame, edu_order: dict, region_map: dict, group_mea
 def production_model(cfg: dict):
     """The trained production XGBoost model loaded from disk.
 
-    Requires 'make model' (or 'python scripts/train_model.py') to have been
-    run first. CI runs that step before pytest.
+    Requires 'make model' (or 'python -m scripts.train_quantile') to have
+    been run first. CI runs that step before pytest.
     """
     model_path = Path(__file__).parent.parent / cfg["model"]["model_path"]
     return load_model(str(model_path))
