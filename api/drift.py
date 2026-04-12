@@ -212,8 +212,8 @@ def save_baseline_stats(
 ) -> None:
     """Compute and save per-feature baseline statistics from training data.
 
-    Call this in train_model.py after training to persist the baseline
-    that the drift monitor compares against.
+    Call this from ``scripts/train_quantile.py`` after training to
+    persist the baseline that the drift monitor compares against.
     """
     stats = {}
     for feat, values in feature_data.items():

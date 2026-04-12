@@ -94,6 +94,58 @@ def _api_stage_copy_targets() -> set[str]:
     return copies
 
 
+def _parse_requirements(path: Path) -> set[str]:
+    """Return the set of lowercased distribution names pinned in *path*.
+
+    Strips comments and blank lines, splits on the first version specifier
+    (``==``, ``>=``, ``<=``, ``~=``, ``!=``, ``>``, ``<``), and lowercases
+    the resulting name. Extras (``uvicorn[standard]``) are flattened to
+    the bare name. Good enough for a "is it in the list" assertion; does
+    not attempt to be a full PEP 508 parser.
+    """
+    names: set[str] = set()
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        # Split off any version specifier.
+        for sep in ("==", ">=", "<=", "~=", "!=", ">", "<"):
+            if sep in line:
+                line = line.split(sep, 1)[0]
+                break
+        # Drop extras: uvicorn[standard] -> uvicorn
+        line = line.split("[", 1)[0]
+        names.add(line.strip().lower())
+    return names
+
+
+def test_api_requirements_pins_sklearn_for_xgboost_wrapper():
+    """Regression guard for the 2026-04-11 smoke-test crash.
+
+    ``pipeline.load_model`` instantiates ``XGBRegressor()`` (and
+    ``load_classifier`` instantiates ``XGBClassifier()``), and in xgboost
+    3.x both constructors call into ``sklearn.base`` and raise
+    ``ImportError: sklearn needs to be installed in order to use this
+    module`` if scikit-learn is not present. The API container must
+    therefore ship scikit-learn, not just xgboost.
+
+    Historically the failure mode was silent: the dev environment picked
+    up sklearn transitively through other packages in ``requirements.txt``,
+    so the bug only surfaced inside the minimal ``requirements-api.txt``
+    image at container start-up.
+    """
+    api_reqs = _parse_requirements(REPO_ROOT / "requirements-api.txt")
+    assert "scikit-learn" in api_reqs, (
+        "requirements-api.txt must pin scikit-learn. xgboost 3.x's "
+        "XGBRegressor / XGBClassifier constructors hard-require sklearn, "
+        "and pipeline.load_model / load_classifier instantiate both at "
+        "API startup. Without this pin the API container crashes with "
+        "'ImportError: sklearn needs to be installed in order to use "
+        "this module' the first time the lifespan handler runs."
+    )
+    assert "xgboost" in api_reqs, "requirements-api.txt must pin xgboost"
+
+
 def test_api_main_bare_imports_all_copied_into_api_stage():
     """Regression guard for the 390382a CI smoke-test crash.
 
