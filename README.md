@@ -268,7 +268,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **147 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards that every top-level import in `api/main.py` is COPY'd into the API stage), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** regression guards.
+- **149 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -487,30 +487,41 @@ High_pay_Analysis_us/
 │   ├── high_pay_jobs_data_cleaning.ipynb      # Pipeline: BLS + Census → cleaned CSV
 │   ├── high_paying_jobs_data_visualization.ipynb  # EDA: distributions, rankings, correlations
 │   ├── us_high_income_jobs_mapping.ipynb      # Geospatial: choropleth maps
-│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests + MLflow
+│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests
 │
-├── streamlit_app.py                           # ★ Interactive dashboard (run with streamlit)
-├── config.yaml                                # ★ All thresholds, paths, color palettes
+├── streamlit_app.py                           # ★ Interactive dashboard (routes predictor tab through /predict)
+├── config.yaml                                # ★ All thresholds, paths, color palettes, premium-tier threshold
 ├── Dockerfile                                 # ★ Multi-stage build: dashboard + api (non-root)
 ├── docker-compose.yml                         # ★ Two services: dashboard (8501) + api (8000)
 ├── Makefile                                   # ★ install / data / model / test / lint / format / clean
 ├── pyproject.toml                             # ★ Ruff, mypy, pytest, coverage configuration
 ├── .pre-commit-config.yaml                    # ★ ruff, nbstripout, file hygiene hooks
 │
-├── api/
-│   ├── main.py                                # ★ FastAPI app: /health /meta /predict /drift /metrics
-│   ├── schemas.py                             # ★ Pydantic v2 request/response models
-│   └── drift.py                               # ★ Online drift monitor (z-score vs training baseline)
+├── api/                                       # ★ FastAPI inference service (thin, layered)
+│   ├── __init__.py                            #   Single source of truth for __version__
+│   ├── main.py                                #   App + lifespan + routes: /health /meta /predict /predict/batch /drift /metrics
+│   ├── inference.py                           #   encode_features / build_benchmark_lookup / build_response
+│   ├── schemas.py                             #   Pydantic v2 request/response models with bounded string fields
+│   ├── cache.py                               #   Optional Redis-backed prediction cache (degrades to no-op)
+│   └── drift.py                               #   Online drift monitor with Redis-shared rolling window
 │
 ├── scripts/
-│   └── train_model.py                         # ★ Standalone model training script (replaces Makefile one-liner)
+│   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/
-│   ├── conftest.py                            # ★ Shared session-scope fixtures (cfg, df, group_means, df_engineered)
-│   ├── test_pipeline.py                       # ★ Config, schema, feature engineering, model prediction (45 tests)
-│   ├── test_api.py                            # ★ API endpoints, validation, prediction (22 tests)
-│   ├── test_integration.py                    # ★ Full pipeline path: split → group_means → engineer → predict (10 tests)
-│   └── test_performance.py                    # ★ Latency SLOs, throughput benchmarks (6 tests)
+├── tests/                                     # ★ 147 tests across 14 files — every fix is a locked regression guard
+│   ├── conftest.py                            #   Shared session-scope fixtures
+│   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
+│   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
+│   ├── test_api.py                            #   API endpoints, validation, auth, CORS, rate limiting
+│   ├── test_integration.py                    #   Full pipeline: split → group_means → engineer → predict → response
+│   ├── test_drift.py                          #   Drift monitor, rolling window, Redis shared-backend aggregation
+│   ├── test_performance.py                    #   Latency SLOs, throughput benchmarks
+│   ├── test_classifier.py                     #   Premium-tier classifier head + API exposure guards
+│   ├── test_model_version.py                  #   Composite model_version provenance string + /health exposure
+│   ├── test_version_consistency.py            #   Single __version__ constant drives FastAPI, /, /health
+│   ├── test_single_trainer.py                 #   Guards that only one trainer script exists (F-01 regression)
+│   ├── test_no_dangling_trainer_refs.py       #   Guards that no file references the deleted legacy trainer
+│   └── test_docker_image.py                   #   Dockerfile COPY completeness + API image has sklearn pinned
 │
 ├── Data/                                      # Processed datasets (single source of truth)
 │   ├── cleaned_high_pay_data.csv              #   10,255 rows × 15 cols
@@ -522,10 +533,12 @@ High_pay_Analysis_us/
 │   └── census_data.csv
 │
 ├── models/                                    # Saved ML model artefacts (generated, no pickle)
-│   ├── xgb_salary_model.ubj                   #   XGBoost native binary (portable)
-│   ├── feature_names.json                     #   Feature list (10 features)
+│   ├── xgb_salary_model.ubj                   #   Multi-quantile XGBoost regressor (α = [0.10, 0.50, 0.90])
+│   ├── xgb_premium_classifier.ubj             #   Premium-tier binary classifier (P(Annual Income ≥ premium_threshold))
+│   ├── feature_names.json                     #   Feature list
 │   ├── group_means.json                       #   Training-set occ/state means (leakage-free inference)
-│   └── model_metrics.json                     #   R², RMSE, MAE, CV R², PI offsets, subgroup metrics, permutation importance
+│   ├── baseline_stats.json                    #   Per-feature baseline for drift monitor
+│   └── model_metrics.json                     #   Quantile coverage, subgroup fairness, classifier metrics, model_version
 │
 ├── Images/                                    # Auto-saved figures (300 DPI)
 │
@@ -534,12 +547,18 @@ High_pay_Analysis_us/
 │
 ├── k8s/                                       # ★ Kubernetes manifests (deployment, service, HPA, PDB, configmap)
 │
+├── deploy/
+│   └── huggingface/                           # ★ Self-contained HF Spaces deployment package (Docker + start.sh)
+│
 ├── .github/workflows/
-│   └── ci.yml                                 # ★ GitHub Actions CI/CD: lint + test + audit + Docker build/push
+│   ├── ci.yml                                 # ★ Lint + test + audit + Docker build/push + smoke test
+│   └── train.yml                              # ★ Scheduled (weekly) retraining + GitHub Release as model registry
 │
 ├── requirements.txt                           # Pinned runtime + dev dependencies
+├── requirements-api.txt                       # ★ API-stage Docker deps only (minimal, fully pinned)
 ├── requirements-lock.txt                      # pip freeze — exact transitive deps for full reproducibility
-├── CONTRIBUTING.md                            # Contribution guide
+├── MODEL_CARD.md                              # Intended use, limitations, fairness, subgroup metrics
+├── CONTRIBUTING.md                             # Contribution guide
 └── LICENSE                                    # MIT
 ```
 
