@@ -53,4 +53,4 @@ slowapi==0.1.9
 # Imported lazily inside api/cache.py — the API degrades to a no-op cache
 # if REDIS_URL is unset, so this dep is required at build time but optional
 # at runtime.
-redis==7.1.1
+redis==7.4.0
