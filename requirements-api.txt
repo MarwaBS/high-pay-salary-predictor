@@ -20,7 +20,7 @@
 
 # ── Core API framework ───────────────────────────────────────────────────────
 fastapi==0.135.2
-pydantic==2.12.5
+pydantic==2.13.0
 uvicorn[standard]==0.42.0
 
 # ── Data handling at inference time ──────────────────────────────────────────
