@@ -19,7 +19,7 @@
 # Keep this file sorted alphabetically (by package name) so diffs are readable.
 
 # ── Core API framework ───────────────────────────────────────────────────────
-fastapi==0.135.2
+fastapi==0.136.0
 pydantic==2.12.5
 uvicorn[standard]==0.42.0
 
