@@ -13,7 +13,7 @@ jobs:
     strategy:
       fail-fast: false          # let both Python versions run independently
       matrix:
-        python-version: ["3.10", "3.11"]
+        python-version: ["3.11", "3.12"]
 
     steps:
       - name: Checkout code
@@ -37,9 +37,35 @@ jobs:
           pip-audit --requirement requirements.txt --skip-editable \
             --ignore-vuln CVE-2025-69872
 
+      - name: Generate CycloneDX SBOM (API runtime surface)
+        # Standard 2026 supply-chain artifact. Scans requirements-api.txt
+        # (what ships in the API Docker image) and emits a CycloneDX 1.5
+        # JSON stored as a 90-day CI artifact for downstream SCA / SLSA
+        # tooling. Mirror of the Price_Prediction / ResumeForge pattern.
+        run: |
+          pip-audit --requirement requirements-api.txt --skip-editable \
+            --format=cyclonedx-json \
+            --output=sbom-api.cyclonedx.json \
+            --ignore-vuln CVE-2025-69872
+      - name: Upload SBOM artifact
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-api-cyclonedx-${{ github.run_number }}
+          path: sbom-api.cyclonedx.json
+          retention-days: 90
+
       - name: Lint with ruff
         run: |
           ruff check . --output-format=github
+
+      - name: Bandit security scan (source + api)
+        # Complementary to pip-audit: static-analyses the project's own
+        # code for issues bandit flags (hardcoded secrets, insecure
+        # yaml.load, weak crypto, etc.). Fails on MEDIUM+ severity.
+        run: |
+          pip install bandit
+          bandit -r api/ pipeline.py scripts/ -n 3 -ll
 
       - name: Format check with ruff
         run: |
@@ -111,7 +137,33 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push API image
+      - name: Build API image (load for Trivy scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Trivy scan API image (HIGH/CRITICAL, ignore-unfixed)
+        # Container-layer vulnerability scan complementary to pip-audit.
+        # `.trivyignore` at repo root holds managed-risk CVE IDs. Fails
+        # the job BEFORE the push step, so a vulnerable image never
+        # reaches GHCR.
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          trivyignores: .trivyignore
+
+      - name: Push API image (post-scan)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -121,9 +173,30 @@ jobs:
             ${{ env.IMAGE_BASE }}/api:latest
             ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
           cache-from: type=gha
+
+      - name: Build Dashboard image (load for Trivy scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: dashboard
+          push: false
+          load: true
+          tags: ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
+          cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push Dashboard image
+      - name: Trivy scan Dashboard image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
+          format: table
+          exit-code: "1"
+          severity: "HIGH,CRITICAL"
+          ignore-unfixed: true
+          vuln-type: "os,library"
+          trivyignores: .trivyignore
+
+      - name: Push Dashboard image (post-scan)
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -133,7 +206,6 @@ jobs:
             ${{ env.IMAGE_BASE }}/dashboard:latest
             ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
           cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Train quantile model for smoke test
         run: |

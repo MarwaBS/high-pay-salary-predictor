@@ -4,12 +4,13 @@
 # streamlit / shap / lightgbm / statsmodels / geopandas here. Keeping the
 # API image lean also makes pip-audit scans faster and reduces the CVE
 # surface.
-FROM python:3.11-slim AS api-builder
+FROM python:3.12-slim-bookworm AS api-builder
 
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements-api.txt .
@@ -21,12 +22,13 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements-api.txt
 # ── Stage 1b: Dashboard dependency builder ──────────────────────────────────
 # Separate builder for Streamlit + viz stack so the api image does not pull
 # shap/plotly/matplotlib it never uses.
-FROM python:3.11-slim AS dashboard-builder
+FROM python:3.12-slim-bookworm AS dashboard-builder
 
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -49,12 +51,14 @@ RUN pip install --no-cache-dir --prefix=/install \
 
 
 # ── Stage 2: Streamlit dashboard ──────────────────────────────────────────────
-FROM python:3.11-slim AS dashboard
+FROM python:3.12-slim-bookworm AS dashboard
 
 WORKDIR /app
 
 # Install curl for HEALTHCHECK — not present in slim by default
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=dashboard-builder /install /usr/local
@@ -86,12 +90,14 @@ ENTRYPOINT ["streamlit", "run", "streamlit_app.py", \
 
 
 # ── Stage 3: FastAPI salary predictor ────────────────────────────────────────
-FROM python:3.11-slim AS api
+FROM python:3.12-slim-bookworm AS api
 
 WORKDIR /app
 
 # Install curl for HEALTHCHECK
-RUN apt-get update && apt-get install -y --no-install-recommends curl \
+RUN apt-get update \
+    && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=api-builder /install /usr/local
