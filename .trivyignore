@@ -1,0 +1,9 @@
+# Trivy container-scan ignores.
+#
+# Currently empty — no documented managed-risk container CVEs on this project.
+# Add CVE / GHSA IDs here only with inline rationale when a breaking fix is
+# not feasible, matching the ResumeForge + Price_Prediction pattern.
+#
+# Related: the pip-audit step in ci.yml already ignores CVE-2025-69872 with
+# rationale inline. Trivy does not honour pip-audit's list, so if a Python
+# package CVE shows up in container scan, add it here too.
