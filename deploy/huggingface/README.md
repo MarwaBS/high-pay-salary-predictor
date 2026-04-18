@@ -12,9 +12,9 @@ short_description: Quantile XGBoost salary predictor (P10/P50/P90)
 
 # High-Paying Jobs in the US — Salary Quantile Predictor
 
-[![GitHub](https://img.shields.io/badge/GitHub-MarwaBS/High__pay__Analysis__us-181717?logo=github)](https://github.com/MarwaBS/High_pay_Analysis_us)
-[![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](https://github.com/MarwaBS/High_pay_Analysis_us/blob/main/MODEL_CARD.md)
-[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://github.com/MarwaBS/High_pay_Analysis_us/blob/main/api/main.py)
+[![GitHub](https://img.shields.io/badge/GitHub-MarwaBS/high--pay--salary--predictor-181717?logo=github)](https://github.com/MarwaBS/high-pay-salary-predictor)
+[![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](https://github.com/MarwaBS/high-pay-salary-predictor/blob/main/MODEL_CARD.md)
+[![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](https://github.com/MarwaBS/high-pay-salary-predictor/blob/main/api/main.py)
 
 Live demo of an end-to-end ML service analysing high-paying US jobs
 (≥ $100K/yr). A multi-quantile XGBoost model returns **P10 / P50 / P90**
@@ -65,9 +65,9 @@ apply uniformly to any future consumer.
 
 ## Links
 
-- **GitHub**: <https://github.com/MarwaBS/High_pay_Analysis_us>
-- **Model card**: <https://github.com/MarwaBS/High_pay_Analysis_us/blob/main/MODEL_CARD.md>
-- **API docs** (if you want to see the OpenAPI spec): `https://<this-space>.hf.space/docs` is NOT exposed because Streamlit is the public surface. To inspect the API contract, see [`api/schemas.py`](https://github.com/MarwaBS/High_pay_Analysis_us/blob/main/api/schemas.py) on GitHub.
+- **GitHub**: <https://github.com/MarwaBS/high-pay-salary-predictor>
+- **Model card**: <https://github.com/MarwaBS/high-pay-salary-predictor/blob/main/MODEL_CARD.md>
+- **API docs** (if you want to see the OpenAPI spec): `https://<this-space>.hf.space/docs` is NOT exposed because Streamlit is the public surface. To inspect the API contract, see [`api/schemas.py`](https://github.com/MarwaBS/high-pay-salary-predictor/blob/main/api/schemas.py) on GitHub.
 
 ## Notes on the live environment
 
