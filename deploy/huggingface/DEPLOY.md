@@ -17,9 +17,8 @@ always-on, no credit card.
 1. A Hugging Face account. Sign up free at <https://huggingface.co/join> if
    you don't have one.
 2. Git installed locally.
-3. The deployed project at
-   `C:\Users\marwa\OneDrive\Bureau\Deployed_project\High_pay_Analysis_us`
-   (that's where we've been working).
+3. A local clone of this project (referred to below as
+   `<PROJECT_DIR>` — substitute your own clone path).
 
 ---
 
@@ -93,7 +92,7 @@ From `hf-space-high-pay`, copy the following **from the deployed project**:
 
 ```bash
 # Paths assume you're in the hf-space-high-pay directory
-PROJECT="C:/Users/marwa/OneDrive/Bureau/Deployed_project/High_pay_Analysis_us"
+PROJECT="<PROJECT_DIR>"   # substitute the absolute path to your local clone
 
 # 1. HF-specific files — these replace the Space defaults
 cp "$PROJECT/deploy/huggingface/Dockerfile"      ./Dockerfile
@@ -302,8 +301,7 @@ GitHub repo has a one-click path to the live demo.
 
 Once the Space is set up, the update flow is:
 
-1. Make your changes in the main project
-   (`Deployed_project/High_pay_Analysis_us`).
+1. Make your changes in the main project (`<PROJECT_DIR>`).
 2. Copy the changed files to `hf-space-high-pay/`.
 3. `git commit -am "Update X" && git push` in `hf-space-high-pay/`.
 4. HF rebuilds automatically (~30 s for code-only changes, ~3 min if
