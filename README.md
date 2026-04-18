@@ -3,7 +3,7 @@
 [![Live Demo](https://img.shields.io/badge/%F0%9F%A4%97%20Live%20Demo-on%20Hugging%20Face-yellow)](https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor)
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![CI](https://github.com/MarwaBS/High_pay_Analysis_us/actions/workflows/ci.yml/badge.svg)](https://github.com/MarwaBS/High_pay_Analysis_us/actions/workflows/ci.yml)
+[![CI](https://github.com/MarwaBS/high-pay-salary-predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/MarwaBS/high-pay-salary-predictor/actions/workflows/ci.yml)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](MODEL_CARD.md)
 [![FastAPI](https://img.shields.io/badge/API-FastAPI-009688?logo=fastapi&logoColor=white)](api/main.py)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](Dockerfile)
@@ -262,7 +262,7 @@ Grouped by the engineering discipline they demonstrate.
 - **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+cd1037dac48a.e927845864e2`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments.
 - **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
 - **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
-- **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/High_pay_Analysis_us/releases) and redeployed without re-training. Because the tag encodes both the code SHA and the data hash, `git checkout <sha>` plus `python -m scripts.train_quantile` bit-reproduces the release.
+- **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases) and redeployed without re-training. Because the tag encodes both the code SHA and the data hash, `git checkout <sha>` plus `python -m scripts.train_quantile` bit-reproduces the release.
 - **Why not MLflow Model Registry?** Free, versioned, rollback-able, and one fewer service to operate. A real production system would graduate to MLflow or SageMaker Model Registry; for a portfolio-scale project, GitHub Releases is the pragmatic choice and the trade-off is documented here on purpose.
 - **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote — so the provenance contract cannot silently regress.
 
@@ -478,7 +478,7 @@ See `reports/data_science_report.md` for the full analyst-oriented narrative.
 ## Repository structure
 
 ```
-High_pay_Analysis_us/
+high-pay-salary-predictor/
 │
 ├── pipeline.py                                # ★ Single source of truth: FEATURES + engineer_features + shared helpers
 ├── config_schema.py                           # ★ Pydantic validation for config.yaml (fail-fast on typos)
