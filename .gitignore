@@ -164,6 +164,30 @@ cython_debug/
 # Private notes and reports (never commit)
 private/
 
+# === Private internal artifacts ===
+# Broad patterns so individual private filenames never leak. Mirrors the
+# ResumeForge + Price_Prediction pattern.
+*_REPORT.md
+*_STATE.md
+*_NOTES.md
+*_PLAN.md
+*_TASKS.md
+*_PRIVATE.md
+*_VERDICT.md
+*_REVIEW.md
+*_SUMMARY.md
+AUDIT_*.md
+FAANG_*.md
+INTERVIEW_*.md
+CLAUDE.md
+Private_test/
+Private/
+internal/
+audits/
+.claude/
+sbom.cyclonedx.json
+sbom-api.cyclonedx.json
+
 # Legacy pickle artefacts (project now uses XGBoost native .ubj + JSON — no pickle)
 models/*.pkl
 
