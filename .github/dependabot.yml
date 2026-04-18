@@ -1,15 +1,22 @@
 version: 2
 updates:
-  # Python dependencies — weekly security patches
+  # Python dependencies — weekly security patches (patch + minor only)
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 2
     labels:
       - "dependencies"
       - "security"
+    ignore:
+      # Major-version bumps are breaking by definition — manage manually
+      # in a dedicated branch after reading the changelog. Otherwise
+      # Dependabot fires off weekly pandas 2->3 / fastapi 0->1 style PRs
+      # that always need rejection.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions — keep action versions pinned and patched
   - package-ecosystem: "github-actions"
