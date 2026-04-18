@@ -6,8 +6,8 @@ and standards for keeping the project consistent and reproducible.
 ## Setup
 
 ```bash
-git clone https://github.com/MarwaBS/High_pay_Analysis_us.git
-cd High_pay_Analysis_us
+git clone https://github.com/MarwaBS/high-pay-salary-predictor.git
+cd high-pay-salary-predictor
 make install          # creates .venv and installs all dependencies
 pre-commit install    # installs git hooks (ruff, nbstripout, file hygiene)
 ```
