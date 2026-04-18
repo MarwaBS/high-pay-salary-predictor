@@ -188,6 +188,13 @@ audits/
 sbom.cyclonedx.json
 sbom-api.cyclonedx.json
 
+# Detailed data-science / technical reports belong in private memory,
+# not in the public repo. Broad pattern so any future reports/ file is
+# also blocked.
+reports/
+*_report.md
+*_REPORT.md
+
 # Legacy pickle artefacts (project now uses XGBoost native .ubj + JSON — no pickle)
 models/*.pkl
 
