@@ -72,7 +72,7 @@ You need a **write-scope** token to push to the Space repo.
 Open a terminal (PowerShell or Git Bash — either works on Windows):
 
 ```bash
-cd "C:/Users/marwa/OneDrive/Bureau"
+cd /path/to/your/workspace   # any folder where you keep clones
 git clone https://<owner>:<hf_token>@huggingface.co/spaces/<owner>/high-pay-salary-predictor hf-space-high-pay
 cd hf-space-high-pay
 ```

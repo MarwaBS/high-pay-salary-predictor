@@ -43,7 +43,9 @@ scikit-learn==1.5.2
 pyyaml==6.0.1
 
 # ── Observability: Prometheus /metrics endpoint ──────────────────────────────
-prometheus-fastapi-instrumentator==7.1.0
+# 8.0.0 lifts the starlette<1.0.0 cap → starlette resolves to >=1.0.1,
+# fixing the transitive CVE-2026-48710 (PYSEC-2026-161, Host-header path bypass).
+prometheus-fastapi-instrumentator==8.0.0
 
 # ── Security: per-IP rate limiting ───────────────────────────────────────────
 limits==5.8.0
