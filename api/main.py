@@ -47,7 +47,6 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-import yaml
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -168,7 +167,6 @@ ROOT = Path(__file__).parent.parent
 # typos or invalid values at import time so the k8s liveness probe catches
 # broken config before traffic hits the pod.
 VALIDATED_CFG = ProjectConfig.from_yaml(ROOT / "config.yaml")
-CFG: dict = yaml.safe_load((ROOT / "config.yaml").read_text())
 
 EDU_ORDER = VALIDATED_CFG.education_order
 REGION_MAP = {s: r for r, states in VALIDATED_CFG.regions.items() for s in states}

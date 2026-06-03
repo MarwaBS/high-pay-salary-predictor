@@ -242,30 +242,6 @@ def compute_fallback_means(
     return occ_fallback, state_fallback
 
 
-def get_bls_defaults(
-    df: pd.DataFrame,
-    state: str,
-    occupation: str,
-    state_col: str = "State Abbreviation",
-) -> dict[str, float]:
-    """Return median BLS context for a state+occupation pair with progressive fallback.
-
-    Lookup order: (state AND occupation) → (state only) → (global).
-    Returns dict with keys: employment, location_quotient, jobs_per_1000, hourly_mean.
-    """
-    mask_both = (df[state_col] == state) & (df["Occupation"] == occupation)
-    subset = df[mask_both] if mask_both.sum() > 0 else df[df[state_col] == state]
-    if len(subset) == 0:
-        subset = df  # final fallback: global medians
-
-    return {
-        "employment": float(subset["Employment"].median()),
-        "location_quotient": float(subset["Location Quotient"].median()),
-        "jobs_per_1000": float(subset["Jobs per 1000"].median()),
-        "hourly_mean": float(subset["Hourly Mean"].median()),
-    }
-
-
 # ---------------------------------------------------------------------------
 # Model persistence — no pickle
 # ---------------------------------------------------------------------------
