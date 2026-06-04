@@ -179,12 +179,10 @@ private/
 AUDIT_*.md
 FAANG_*.md
 INTERVIEW_*.md
-CLAUDE.md
 Private_test/
 Private/
 internal/
 audits/
-.claude/
 sbom.cyclonedx.json
 sbom-api.cyclonedx.json
 
