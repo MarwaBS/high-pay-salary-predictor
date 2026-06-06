@@ -13,6 +13,9 @@
 > dashboard. The Predictor tab calls `POST /predict` on the co-located API,
 > so cache hits, rate limiting, drift monitoring, and benchmark lookups all
 > flow through one prediction path.
+>
+> _On the free Spaces tier the app sleeps after inactivity; the first visit
+> wakes it (~30s cold start), then it's instant._
 
 > **What this is**: a portfolio project that analyses high-paying US
 > jobs (≥ $100K/yr) and serves an XGBoost **quantile** model (P10/P50/P90)
