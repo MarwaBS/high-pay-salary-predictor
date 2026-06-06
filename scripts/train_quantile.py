@@ -358,7 +358,7 @@ def main() -> None:
 
     # Quantile-specific metrics: pinball loss + empirical coverage
     pinballs_dollar = {
-        f"p{int(alpha * 100)}_pinball": round(pinball_loss(y_test.values, preds_dollar[:, i], alpha), 2)
+        f"p{int(alpha * 100)}_pinball": round(pinball_loss(y_test.to_numpy(), preds_dollar[:, i], alpha), 2)
         for i, alpha in enumerate(QUANTILE_ALPHAS)
     }
     coverage_80 = float(((y_test.values >= p10_dollar) & (y_test.values <= p90_dollar)).mean())

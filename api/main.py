@@ -403,7 +403,10 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
-app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
+# Starlette types the handler's exc param as the base Exception; our handler
+# narrows it to RateLimitExceeded (and reads .detail), which is correct at
+# runtime but trips the invariant arg-type check. Scoped ignore, not blanket.
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, _global_exception_handler)
 
 app.add_middleware(
