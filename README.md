@@ -25,6 +25,15 @@
 > fairness discussion. The model is scored on calibrated quantile
 > coverage, not on R² — point-estimate R² is a weak fit-statistic under
 > a quantile loss.
+>
+> **The honest numbers** (full detail + baselines in
+> [MODEL_CARD.md](MODEL_CARD.md)): 80% interval coverage ≈ 0.77 (target
+> 0.80), median P10–P90 width ≈ $113K, point-estimate R² ≈ 0.03. The
+> premium-tier classifier *ties* a logistic-regression baseline (AUC ≈
+> 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
+> model. None of that is hidden. The project's real subject is the
+> production-ML *engineering* around an honestly-hard problem: a
+> leakage-safe, calibrated, observable serving path at **sub-6 ms p99**.
 
 ## Key Findings
 

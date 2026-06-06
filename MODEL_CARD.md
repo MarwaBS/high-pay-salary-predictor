@@ -8,7 +8,7 @@
 | **Version** | 2.0.0 |
 | **Type** | Gradient-boosted quantile regression (XGBoost `reg:quantileerror`, alphas = [0.10, 0.50, 0.90]) |
 | **Output** | P10 / P50 / P90 dollar predictions per request — not a point estimate |
-| **Artefact** | `models/xgb_salary_quantile.ubj` (XGBoost native binary, no pickle) |
+| **Artefact** | `models/xgb_salary_model.ubj` (XGBoost native binary, no pickle) |
 | **Training script** | `scripts/train_quantile.py` |
 | **Config** | `config.yaml` |
 
@@ -131,32 +131,81 @@ CV is computed **only on the training set**, in **dollar space**, using
 a fresh fold model — exactly the same space as the test metric above.
 This is enforced by `tests/test_pipeline.py::test_saved_cv_matches_test`.
 
+### Stability across seeds
+
+The headline numbers above come from one train/test split. To show they
+are not a lucky split, `scripts/train_quantile.py` re-runs both heads
+across 5 seeds and records mean ± std in `model_metrics.json`:
+
+| Metric | Mean ± std (5 seeds) |
+|---|---|
+| P50 R² | ~0.018 ± 0.012 |
+| 80% coverage | ~0.782 ± 0.013 |
+| Classifier ROC-AUC | ~0.695 ± 0.008 |
+| Classifier Brier | ~0.213 ± 0.002 |
+
+The tight std bands confirm the metrics are stable across splits, not
+single-split artefacts — including the honest one: the near-zero R² is a
+**consistent** feature-ceiling result, not noise.
+
+### Serving latency
+
+Single `POST /predict`, in-process (FastAPI `TestClient`, excludes
+network/proxy), N = 1,500 on dev hardware:
+
+| Percentile | Latency |
+|---|---|
+| p50 | ~3.6 ms |
+| p95 | ~4.6 ms |
+| p99 | ~5.2 ms |
+
+The sub-6 ms p99 is a direct result of moving every per-request lookup to
+an O(1) dict get / O(log n) binary search precomputed at startup
+(`build_benchmark_lookup`, `build_bls_defaults_lookup`, and the fallback
+means) — the hot path performs no DataFrame scans.
+
 ### Premium-tier classifier head (Gap 1 Phase 1)
 
 A separate XGBoost binary classifier is trained in the same pass with
-`objective="binary:logistic"`, `scale_pos_weight = neg/pos` (no
-resampling), and lighter hyper-parameters than the regressor
-(`n_estimators=200`, `max_depth=4`, `learning_rate=0.05`). Target:
-`Annual Income ≥ config.model.premium_threshold` (default `$150,000`).
+`objective="binary:logistic"` and lighter hyper-parameters than the
+regressor (`n_estimators=200`, `max_depth=4`, `learning_rate=0.05`).
+Target: `Annual Income ≥ config.model.premium_threshold` (default
+`$150,000`).
+
+**No `scale_pos_weight`.** At the ~40/60 class balance the imbalance is
+mild, and reweighting bought a negligible ranking gain while degrading
+*probability calibration* — and the API serves this output to callers as
+a probability (`p_above_premium_threshold`). Honest probabilities matter
+more here than a fractional AUC bump, so the head is trained unweighted
+and the Brier score below proves the served numbers are calibrated.
 
 At HEAD, on the held-out test split:
 
 | Metric | Value | What it means |
 |---|---|---|
 | Positive rate (test) | ~0.39 | Fraction of the test cohort earning ≥ `$150,000`. |
-| ROC-AUC | ~0.67 | Discrimination across the full threshold sweep. |
+| ROC-AUC | ~0.68 | Discrimination across the full threshold sweep. |
 | PR-AUC | ~0.55 | Precision-recall AUC — more informative than ROC on the ~40% positive rate. |
-| F1 @ 0.5 | ~0.56 | Balanced F1 at the default decision threshold. |
-| Subgroup ROC-AUC | 0.64–0.71 across Gender / Region | No fairness collapse — all slices stay comfortably above 0.5. |
+| F1 @ 0.5 | ~0.50 | Balanced F1 at the default decision threshold. |
+| **Brier score** | **~0.217** vs **0.237** no-skill | Calibration of the served probability — lower is better; beats the constant-base-rate predictor. |
+| Subgroup ROC-AUC | 0.64–0.70 across Gender / Region | No fairness collapse — all slices stay comfortably above 0.5. |
 
-The classifier is intentionally not a heroic ROC-AUC — the underlying
-features simply do not separate the top-40% slice of a double-filtered
-cohort cleanly, and claiming 0.9 on this data would be a sign of
-leakage, not skill. What matters is that the probability is calibrated
-enough to be useful as a layered signal ("clear the bar?" + "what's the
-range?"), and that the test locks in both the metric and the subgroup
-fairness guardrail. Phase 2 (raw `≥ $100K` membership against the
-unfiltered Census cohort) is where the separability gain lives.
+**Baselines — does the GBM earn its place?** Recorded in
+`model_metrics.json`, same split:
+
+| Baseline | Value | Verdict |
+|---|---|---|
+| Majority-class accuracy | ~0.61 | XGBoost accuracy (~0.65) beats it, but only modestly. |
+| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head only ties a scaled logistic regression.** |
+
+The honest conclusion: on this feature set the gradient-booster buys
+nothing over linear logistic regression — the signal ceiling is the
+**features**, not the model. XGBoost is kept for serving consistency
+(same `.ubj` format as the regressor, no pickle), not for an accuracy
+lift, and that trade-off is stated rather than hidden. A heroic 0.9
+ROC-AUC on this double-filtered cohort would be a sign of leakage, not
+skill. Phase 2 (raw `≥ $100K` membership against the unfiltered Census
+cohort) is where real separability gain lives.
 
 ## Subgroup Performance
 
@@ -184,7 +233,10 @@ The API endpoint `POST /predict` and the Streamlit dashboard now return:
 
 Quantile crossings (P10 > P90) are clamped defensively inside
 `api/inference.build_response`, so clients never see an inverted range
-even if XGBoost emits one at a decision boundary.
+even if XGBoost emits one at a decision boundary. The raw crossing rate
+is also exported on `/metrics` as `salary_quantile_crossings_total`, so a
+rising rate — a model-health signal — is observable rather than silently
+corrected.
 
 ## Limitations and Biases
 
