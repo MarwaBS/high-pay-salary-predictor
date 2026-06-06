@@ -83,7 +83,7 @@ def build_benchmark_lookup(df: pd.DataFrame) -> dict[tuple[str, str], GroupStats
     grouped = df.groupby(["State Abbreviation", "Education Level"])["Annual Income"]
     for (state, education), series in grouped:
         values = np.sort(series.to_numpy(dtype=float))
-        lookup[(state, education)] = GroupStats(
+        lookup[(str(state), str(education))] = GroupStats(
             median=float(np.median(values)),
             mean=float(np.mean(values)),
             count=int(len(values)),
@@ -124,7 +124,7 @@ def build_bls_defaults_lookup(df: pd.DataFrame) -> dict[tuple[str, str], BlsDefa
 
     # Cell-level: (state, occupation) → medians within the cell
     for (state, occupation), sub in df.groupby(["State Abbreviation", "Occupation"]):
-        lookup[(state, occupation)] = BlsDefaults(
+        lookup[(str(state), str(occupation))] = BlsDefaults(
             employment=float(sub["Employment"].median()),
             location_quotient=float(sub["Location Quotient"].median()),
             jobs_per_1000=float(sub["Jobs per 1000"].median()),
@@ -133,7 +133,7 @@ def build_bls_defaults_lookup(df: pd.DataFrame) -> dict[tuple[str, str], BlsDefa
 
     # State-level fallback: (state, "") → state medians
     for state, sub in df.groupby("State Abbreviation"):
-        lookup[(state, "")] = BlsDefaults(
+        lookup[(str(state), "")] = BlsDefaults(
             employment=float(sub["Employment"].median()),
             location_quotient=float(sub["Location Quotient"].median()),
             jobs_per_1000=float(sub["Jobs per 1000"].median()),
