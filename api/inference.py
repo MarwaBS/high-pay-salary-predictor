@@ -191,9 +191,7 @@ def encode_feature_values(
         "Gender_Bin": 1 if req.gender == "Male" else 0,
         "Region_Code": region_codes.get(region, 0),
         "Employment": req.employment if req.employment is not None else bls["employment"],
-        "Location Quotient": (
-            req.location_quotient if req.location_quotient is not None else bls["location_quotient"]
-        ),
+        "Location Quotient": (req.location_quotient if req.location_quotient is not None else bls["location_quotient"]),
         "Jobs per 1000": req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"],
         "Hourly Mean": req.hourly_mean if req.hourly_mean is not None else bls["hourly_mean"],
         "Occ_Mean_Income": occ_means.get(req.occupation, occ_fallback),
