@@ -176,8 +176,10 @@ def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
     dict with keys ``"occ_means"`` and ``"state_means"``.
     """
     return {
-        "occ_means": df_train.groupby("Occupation")["Annual Income"].mean().to_dict(),
-        "state_means": df_train.groupby("State Abbreviation")["Annual Income"].mean().to_dict(),
+        "occ_means": {str(k): float(v) for k, v in df_train.groupby("Occupation")["Annual Income"].mean().items()},
+        "state_means": {
+            str(k): float(v) for k, v in df_train.groupby("State Abbreviation")["Annual Income"].mean().items()
+        },
     }
 
 
@@ -317,7 +319,8 @@ def save_features(features: list[str], path: str) -> None:
 def load_features(path: str) -> list[str]:
     """Load the feature name list from JSON."""
     with open(path) as f:
-        return json.load(f)
+        features: list[str] = json.load(f)
+    return features
 
 
 def save_metrics(metrics: dict, path: str) -> None:
@@ -332,7 +335,8 @@ def load_metrics(path: str) -> dict:
     if not Path(path).exists():
         return {}
     with open(path) as f:
-        return json.load(f)
+        metrics: dict = json.load(f)
+    return metrics
 
 
 def save_group_means(group_means: dict, path: str) -> None:
@@ -356,7 +360,8 @@ def load_group_means(path: str) -> dict[str, dict[str, float]]:
             "Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
         )
     with open(p) as f:
-        return json.load(f)
+        group_means: dict[str, dict[str, float]] = json.load(f)
+    return group_means
 
 
 # ---------------------------------------------------------------------------
