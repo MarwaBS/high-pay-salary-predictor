@@ -5,8 +5,9 @@ Each helper has a single responsibility so the FastAPI ``/predict`` route
 in ``api/main.py`` stays thin and every step can be unit-tested without
 spinning up a TestClient.
 
-The pipeline is: ``encode_features`` → ``run_model`` →
-``lookup_benchmarks`` → ``build_response``. ``build_benchmark_lookup`` is
+The pipeline is: ``encode_feature_values`` → ``build_feature_frame`` →
+``run_model`` → ``lookup_benchmarks`` → ``build_response``.
+``build_benchmark_lookup`` is
 called once at startup to build an O(log n) lookup table of per-(state,
 education) salary benchmarks so the route never scans the full frame at
 request time.
@@ -21,9 +22,8 @@ import pandas as pd
 
 from api.schemas import PredictRequest, PredictResponse
 from pipeline import (
+    FEATURES_FULL,
     REGION_CODES,
-    build_feature_row,
-    compute_fallback_means,
     predict_quantiles,
 )
 
@@ -163,7 +163,7 @@ def _lookup_bls(
     return lookup[_GLOBAL_KEY]
 
 
-def encode_features(
+def encode_feature_values(
     req: PredictRequest,
     *,
     edu_order: dict[str, int],
@@ -171,40 +171,44 @@ def encode_features(
     region_codes: dict[str, int],
     occ_means: dict[str, float],
     state_means: dict[str, float],
+    occ_fallback: float,
+    state_fallback: float,
     bls_defaults_lookup: dict[tuple[str, str], BlsDefaults],
-) -> pd.DataFrame:
-    """Turn a validated request into a model-ready single-row DataFrame.
+) -> dict[str, float]:
+    """Turn a validated request into an ordered feature dict (one per model column).
 
-    Reads BLS context defaults from the precomputed ``bls_defaults_lookup``
-    (O(1) dict get) instead of scanning the full DataFrame per request.
+    Pure and allocation-light: the occupation/state fallback means are
+    precomputed once at startup and passed in, so no per-request reduction
+    over the group-mean dicts happens here. Keys are the model's feature
+    names, so a caller can both build a frame *and* feed the drift monitor
+    from this dict — no DataFrame round-trip needed.
     """
     bls = _lookup_bls(bls_defaults_lookup, req.state, req.occupation)
-    employment = req.employment if req.employment is not None else bls["employment"]
-    lq = req.location_quotient if req.location_quotient is not None else bls["location_quotient"]
-    jobs_k = req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"]
-    hourly_mean = req.hourly_mean if req.hourly_mean is not None else bls["hourly_mean"]
-
-    edu_ord = edu_order[req.education_level]
-    gender_bin = 1 if req.gender == "Male" else 0
     region = region_map.get(req.state, "South")
-    region_code = region_codes.get(region, 0)
+    return {
+        "Age": req.age,
+        "Education_Ord": edu_order[req.education_level],
+        "Gender_Bin": 1 if req.gender == "Male" else 0,
+        "Region_Code": region_codes.get(region, 0),
+        "Employment": req.employment if req.employment is not None else bls["employment"],
+        "Location Quotient": (
+            req.location_quotient if req.location_quotient is not None else bls["location_quotient"]
+        ),
+        "Jobs per 1000": req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"],
+        "Hourly Mean": req.hourly_mean if req.hourly_mean is not None else bls["hourly_mean"],
+        "Occ_Mean_Income": occ_means.get(req.occupation, occ_fallback),
+        "State_Mean_Income": state_means.get(req.state, state_fallback),
+    }
 
-    occ_fallback, state_fallback = compute_fallback_means({"occ_means": occ_means, "state_means": state_means})
-    occ_mean_income = occ_means.get(req.occupation, occ_fallback)
-    state_mean_income = state_means.get(req.state, state_fallback)
 
-    return build_feature_row(
-        age=req.age,
-        edu_ord=edu_ord,
-        gender_bin=gender_bin,
-        region_code=region_code,
-        employment=employment,
-        lq=lq,
-        jobs_k=jobs_k,
-        hourly_mean=hourly_mean,
-        occ_mean_income=occ_mean_income,
-        state_mean_income=state_mean_income,
-    )
+def build_feature_frame(rows: list[dict[str, float]]) -> pd.DataFrame:
+    """Pack one or more feature dicts into a model-ready DataFrame.
+
+    Column order is pinned to ``FEATURES_FULL`` regardless of dict insertion
+    order, so a single construction replaces the previous
+    list-of-one-row-frames + ``pd.concat`` pattern on the batch path.
+    """
+    return pd.DataFrame(rows, columns=FEATURES_FULL)
 
 
 def run_model(model: Any, row: pd.DataFrame) -> tuple[float, float, float]:
@@ -279,7 +283,8 @@ __all__ = [
     "build_benchmark_lookup",
     "build_bls_defaults_lookup",
     "lookup_benchmarks",
-    "encode_features",
+    "encode_feature_values",
+    "build_feature_frame",
     "run_model",
     "build_response",
     "REGION_CODES",
