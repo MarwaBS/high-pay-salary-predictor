@@ -218,7 +218,9 @@ def _prepare_split(
     return df_train, df_test, group_means
 
 
-def _train_quantile_regressor(X_train: pd.DataFrame, y_train_log: pd.Series, *, params: dict, seed: int) -> XGBRegressor:
+def _train_quantile_regressor(
+    X_train: pd.DataFrame, y_train_log: pd.Series, *, params: dict, seed: int
+) -> XGBRegressor:
     """Fit the multi-quantile regressor (P10/P50/P90 in one model)."""
     model = XGBRegressor(
         objective="reg:quantileerror",
