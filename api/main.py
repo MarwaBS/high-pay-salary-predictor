@@ -64,8 +64,9 @@ from api.inference import (
     GroupStats,
     build_benchmark_lookup,
     build_bls_defaults_lookup,
+    build_feature_frame,
     build_response,
-    encode_features,
+    encode_feature_values,
     lookup_benchmarks,
     run_model,
 )
@@ -80,6 +81,7 @@ from api.schemas import (
 from config_schema import ProjectConfig
 from pipeline import (
     REGION_CODES,
+    compute_fallback_means,
     engineer_features,
     load_classifier,
     load_group_means,
@@ -194,6 +196,10 @@ class AppState:
     region_codes: dict[str, int] = field(default_factory=dict)
     occ_means: dict[str, float] = field(default_factory=dict)
     state_means: dict[str, float] = field(default_factory=dict)
+    # Occupation/state fallback means, precomputed once at startup so the
+    # hot path never reduces over the full group-mean dicts per request.
+    occ_fallback: float = 0.0
+    state_fallback: float = 0.0
     drift_monitor: DriftMonitor | None = None
     benchmark_lookup: dict[tuple[str, str], GroupStats] = field(default_factory=dict)
     bls_defaults_lookup: dict[tuple[str, str], BlsDefaults] = field(default_factory=dict)
@@ -216,6 +222,8 @@ async def lifespan(app: FastAPI):
     group_means = load_group_means(str(ROOT / VALIDATED_CFG.model.group_means_path))
     state.occ_means = group_means["occ_means"]
     state.state_means = group_means["state_means"]
+    # Reduce over the group-mean dicts exactly once here, not per request.
+    state.occ_fallback, state.state_fallback = compute_fallback_means(group_means)
 
     # Engineer features using saved training means (no leakage at inference)
     df_raw = pd.read_csv(ROOT / VALIDATED_CFG.data.cleaned)
@@ -522,18 +530,21 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
         return PredictResponse(**cached)
 
     # ── Feature encoding → inference → response ─────────────────────────────
-    row = encode_features(
+    values = encode_feature_values(
         req,
         edu_order=EDU_ORDER,
         region_map=REGION_MAP,
         region_codes=state.region_codes,
         occ_means=state.occ_means,
         state_means=state.state_means,
+        occ_fallback=state.occ_fallback,
+        state_fallback=state.state_fallback,
         bls_defaults_lookup=state.bls_defaults_lookup,
     )
+    row = build_feature_frame([values])
 
     if state.drift_monitor is not None:
-        state.drift_monitor.observe(row.iloc[0].to_dict())
+        state.drift_monitor.observe(values)
 
     p10, p50, p90 = run_model(state.model, row)
     group_stats = lookup_benchmarks(state.benchmark_lookup, req.state, req.education_level)
@@ -603,22 +614,24 @@ def predict_batch(
     # 3. Single vectorised model call for the un-cached items.
     if rows_to_score:
         encoded = [
-            encode_features(
+            encode_feature_values(
                 item,
                 edu_order=EDU_ORDER,
                 region_map=REGION_MAP,
                 region_codes=state.region_codes,
                 occ_means=state.occ_means,
                 state_means=state.state_means,
+                occ_fallback=state.occ_fallback,
+                state_fallback=state.state_fallback,
                 bls_defaults_lookup=state.bls_defaults_lookup,
             )
             for _, item in rows_to_score
         ]
-        batch_df = pd.concat(encoded, ignore_index=True)
+        batch_df = build_feature_frame(encoded)
 
         if state.drift_monitor is not None:
-            for _, row in batch_df.iterrows():
-                state.drift_monitor.observe(row.to_dict())
+            for features in encoded:
+                state.drift_monitor.observe(features)
 
         raw = np.asarray(state.model.predict(batch_df))
         if raw.ndim != 2 or raw.shape[1] != 3:

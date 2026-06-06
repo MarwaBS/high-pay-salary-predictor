@@ -150,12 +150,14 @@ def engineer_features(
     out["Region_Code"] = out["Region"].map(REGION_CODES).fillna(0).astype(int)
 
     if occ_means is not None:
-        out["Occ_Mean_Income"] = out["Occupation"].map(occ_means).fillna(pd.Series(occ_means).mean())
+        occ_fallback = float(np.mean(list(occ_means.values()))) if occ_means else 0.0
+        out["Occ_Mean_Income"] = out["Occupation"].map(occ_means).fillna(occ_fallback)
     else:
         out["Occ_Mean_Income"] = out.groupby("Occupation")["Annual Income"].transform("mean")
 
     if state_means is not None:
-        out["State_Mean_Income"] = out["State Abbreviation"].map(state_means).fillna(pd.Series(state_means).mean())
+        state_fallback = float(np.mean(list(state_means.values()))) if state_means else 0.0
+        out["State_Mean_Income"] = out["State Abbreviation"].map(state_means).fillna(state_fallback)
     else:
         out["State_Mean_Income"] = out.groupby("State Abbreviation")["Annual Income"].transform("mean")
 
