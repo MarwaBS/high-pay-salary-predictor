@@ -51,6 +51,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import APIKeyHeader
+from prometheus_client import Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from slowapi import Limiter
 from slowapi.errors import RateLimitExceeded
@@ -68,6 +69,7 @@ from api.inference import (
     build_response,
     encode_feature_values,
     lookup_benchmarks,
+    quantiles_crossed,
     run_model,
 )
 from api.schemas import (
@@ -442,6 +444,14 @@ async def request_id_middleware(request: Request, call_next):
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
 
+# Counts predictions whose raw quantiles crossed (p10>p50 or p50>p90) and were
+# clamped by build_response. A rising rate is a model-health signal, so it is
+# surfaced on /metrics instead of being silently corrected.
+QUANTILE_CROSSINGS = Counter(
+    "salary_quantile_crossings_total",
+    "Predictions where the model's raw quantiles crossed before clamping.",
+)
+
 
 # ── Validation helper ────────────────────────────────────────────────────────
 
@@ -547,6 +557,8 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
         state.drift_monitor.observe(values)
 
     p10, p50, p90 = run_model(state.model, row)
+    if quantiles_crossed(p10, p50, p90):
+        QUANTILE_CROSSINGS.inc()
     group_stats = lookup_benchmarks(state.benchmark_lookup, req.state, req.education_level)
 
     # Premium-tier classifier probability (Gap 1 Phase 1). ``None`` when
@@ -649,6 +661,8 @@ def predict_batch(
 
         for local_idx, (global_idx, item) in enumerate(rows_to_score):
             p10, p50, p90 = (float(x) for x in preds_dollar[local_idx])
+            if quantiles_crossed(p10, p50, p90):
+                QUANTILE_CROSSINGS.inc()
             group_stats = lookup_benchmarks(state.benchmark_lookup, item.state, item.education_level)
             p_premium = float(clf_proba[local_idx]) if clf_proba is not None else None
             resp = build_response(
