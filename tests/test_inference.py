@@ -17,10 +17,14 @@ import pytest
 from api.inference import (
     build_benchmark_lookup,
     build_bls_defaults_lookup,
+    build_feature_frame,
     build_response,
+    encode_feature_values,
     lookup_benchmarks,
+    quantiles_crossed,
 )
 from api.schemas import PredictRequest
+from pipeline import FEATURES_FULL
 
 
 @pytest.fixture
@@ -217,3 +221,68 @@ class TestBuildResponsePercentile:
             group_stats=group_stats,
         )
         assert resp.predicted_p10 <= resp.predicted_p50 <= resp.predicted_p90
+
+
+class TestQuantilesCrossed:
+    """The raw-crossing detector that feeds the Prometheus health counter."""
+
+    def test_monotonic_trio_is_not_crossed(self) -> None:
+        assert quantiles_crossed(100_000.0, 150_000.0, 200_000.0) is False
+
+    def test_equal_values_are_not_crossed(self) -> None:
+        # Degenerate-but-ordered (legacy point model) must not count as crossed.
+        assert quantiles_crossed(150_000.0, 150_000.0, 150_000.0) is False
+
+    @pytest.mark.parametrize(
+        ("p10", "p50", "p90"),
+        [
+            (200_000.0, 150_000.0, 250_000.0),  # p10 > p50
+            (100_000.0, 250_000.0, 200_000.0),  # p50 > p90
+            (300_000.0, 200_000.0, 100_000.0),  # fully inverted
+        ],
+    )
+    def test_crossings_are_detected(self, p10: float, p50: float, p90: float) -> None:
+        assert quantiles_crossed(p10, p50, p90) is True
+
+
+class TestEncodeFeatureValues:
+    """encode_feature_values must emit exactly the model's feature columns."""
+
+    def test_keys_match_features_full_and_build_frame_round_trips(self, sample_bls_df: pd.DataFrame) -> None:
+        bls_lookup = build_bls_defaults_lookup(sample_bls_df)
+        req = PredictRequest(
+            state="CA",
+            occupation="Software Developers",
+            education_level="Bachelor's degree",
+            gender="Female",
+            age=32,
+        )
+        values = encode_feature_values(
+            req,
+            edu_order={"Bachelor's degree": 3},
+            region_map={"CA": "West"},
+            region_codes={"West": 3},
+            occ_means={"Software Developers": 175_000.0},
+            state_means={"CA": 165_000.0},
+            occ_fallback=150_000.0,
+            state_fallback=150_000.0,
+            bls_defaults_lookup=bls_lookup,
+        )
+        assert set(values.keys()) == set(FEATURES_FULL)
+        frame = build_feature_frame([values])
+        assert list(frame.columns) == FEATURES_FULL
+        assert len(frame) == 1
+        # Unseen occupation/state must fall back to the precomputed means.
+        miss = encode_feature_values(
+            req.model_copy(update={"occupation": "Unknown Job", "state": "ZZ"}),
+            edu_order={"Bachelor's degree": 3},
+            region_map={},
+            region_codes={},
+            occ_means={"Software Developers": 175_000.0},
+            state_means={"CA": 165_000.0},
+            occ_fallback=150_000.0,
+            state_fallback=140_000.0,
+            bls_defaults_lookup=bls_lookup,
+        )
+        assert miss["Occ_Mean_Income"] == 150_000.0
+        assert miss["State_Mean_Income"] == 140_000.0
