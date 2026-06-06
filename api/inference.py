@@ -211,6 +211,17 @@ def build_feature_frame(rows: list[dict[str, float]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=FEATURES_FULL)
 
 
+def quantiles_crossed(p10: float, p50: float, p90: float) -> bool:
+    """True if the raw quantile trio violates monotonicity (p10<=p50<=p90).
+
+    ``build_response`` clamps crossings so callers never see a degenerate
+    interval, but a *rising* crossing rate is a model-health signal (the
+    booster drifting near decision boundaries). The route increments a
+    Prometheus counter on this so the clamp is observable, not silent.
+    """
+    return p10 > p50 or p50 > p90
+
+
 def run_model(model: Any, row: pd.DataFrame) -> tuple[float, float, float]:
     """Invoke the (multi-quantile) model and return (p10, p50, p90) dollars.
 
@@ -285,6 +296,7 @@ __all__ = [
     "lookup_benchmarks",
     "encode_feature_values",
     "build_feature_frame",
+    "quantiles_crossed",
     "run_model",
     "build_response",
     "REGION_CODES",
