@@ -42,6 +42,13 @@ class PredictionCache:
 
     def __init__(self) -> None:
         self._client = None
+        # Namespaces every key by the loaded model version. Without it, a
+        # weekly retrain pushes a new model while a shared Redis still holds
+        # the previous model's predictions, so callers are served stale
+        # values for up to the TTL and replicas on different model versions
+        # cross-contaminate. ``api.main`` sets this in the lifespan once
+        # ``model_version`` is known.
+        self.version: str = ""
         if REDIS_URL:
             try:
                 import redis
@@ -63,10 +70,11 @@ class PredictionCache:
         if not self._client:
             return None
         try:
-            key = f"predict:{_feature_hash(payload)}"
+            key = f"predict:{self.version}:{_feature_hash(payload)}"
             cached = self._client.get(key)
             return json.loads(cached) if cached else None
         except Exception:
+            logger.warning("Redis GET failed — serving without cache", exc_info=True)
             return None
 
     def set(self, payload: dict[str, Any], result: dict[str, Any], ttl: int | None = None) -> None:
@@ -74,7 +82,10 @@ class PredictionCache:
         if not self._client:
             return
         try:
-            key = f"predict:{_feature_hash(payload)}"
+            key = f"predict:{self.version}:{_feature_hash(payload)}"
             self._client.setex(key, ttl or CACHE_TTL, json.dumps(result, default=str))
         except Exception:
-            pass  # cache write failure is non-critical
+            # Cache write failure is non-critical, but log it: a silently
+            # broken cache (e.g. Redis OOM) otherwise looks like a healthy
+            # no-op forever.
+            logger.warning("Redis SET failed — prediction not cached", exc_info=True)

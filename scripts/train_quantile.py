@@ -610,8 +610,11 @@ def main() -> None:
     save_metrics(metrics, str(ROOT / cfg["model"]["metrics_path"]))
 
     # ── Drift baseline from training features ───────────────────────────────
+    # Write next to the other artefacts (config-driven models dir) instead of
+    # a hardcoded ``models/`` so all outputs honour config.yaml::model paths.
+    baseline_path = primary_model_path.parent / "baseline_stats.json"
     baseline_data = {feat: X_train[feat].tolist() for feat in FEATURES_FULL}
-    save_baseline_stats(baseline_data, str(ROOT / "models" / "baseline_stats.json"))
+    save_baseline_stats(baseline_data, str(baseline_path))
 
     logger.info("Artefacts saved:")
     logger.info("  Model       : %s", primary_model_path)
@@ -619,7 +622,7 @@ def main() -> None:
     logger.info("  Features    : %s", ROOT / cfg["model"]["features_path"])
     logger.info("  Group means : %s", ROOT / cfg["model"]["group_means_path"])
     logger.info("  Metrics     : %s", ROOT / cfg["model"]["metrics_path"])
-    logger.info("  Drift base  : %s", ROOT / "models" / "baseline_stats.json")
+    logger.info("  Drift base  : %s", baseline_path)
     logger.info(
         "Done — Test P50 R²=%.4f  coverage_80=%.1f%%  clf ROC-AUC=%.4f",
         r2,
