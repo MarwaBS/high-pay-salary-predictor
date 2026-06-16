@@ -529,7 +529,10 @@ high-pay-salary-predictor/
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
-│   ├── test_api.py                            #   API endpoints, validation, auth, CORS, rate limiting
+│   ├── test_api.py                            #   API endpoints, validation, prediction, batch, cache
+│   ├── test_api_security.py                   #   Auth (401), CORS allow-list, rate limiting (429), X-Forwarded-For
+│   ├── test_cache.py                          #   PredictionCache version namespacing + graceful no-op
+│   ├── test_train_quantile.py                 #   End-to-end trainer run + provenance + metric sanity
 │   ├── test_integration.py                    #   Full pipeline: split → group_means → engineer → predict → response
 │   ├── test_drift.py                          #   Drift monitor, rolling window, Redis shared-backend aggregation
 │   ├── test_performance.py                    #   Latency SLOs, throughput benchmarks
