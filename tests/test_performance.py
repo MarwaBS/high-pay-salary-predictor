@@ -55,9 +55,13 @@ class TestLatency:
         assert elapsed < 0.200, f"Single prediction took {elapsed:.3f}s, exceeding 200ms SLO"
 
     def test_predict_p99_under_200ms(self, client, base_payload):
-        """p99 of 50 sequential predictions must stay under 200ms."""
+        """p99 of 100 sequential predictions must stay under 200ms.
+
+        Uses 100 samples so the 99th percentile is a genuine percentile
+        (nearest-rank index 98) rather than the max of a 50-sample run.
+        """
         times = []
-        for _ in range(50):
+        for _ in range(100):
             start = time.perf_counter()
             resp = client.post("/predict", json=base_payload)
             elapsed = time.perf_counter() - start
@@ -65,8 +69,8 @@ class TestLatency:
             times.append(elapsed)
 
         times.sort()
-        p50 = times[24]
-        p99 = times[49]
+        p50 = times[49]
+        p99 = times[98]  # nearest-rank 99th percentile of 100 samples
         assert p99 < 0.200, f"p99 latency {p99:.3f}s exceeds 200ms SLO (p50={p50:.3f}s)"
 
     def test_health_under_100ms(self, client):
