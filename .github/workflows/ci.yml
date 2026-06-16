@@ -77,7 +77,7 @@ jobs:
         # Matches the Makefile `type-check` target and the pre-commit hook,
         # which previously had no CI enforcement.
         run: |
-          pip install mypy
+          pip install mypy pandas-stubs
           mypy api pipeline.py scripts
 
       - name: Train quantile model (required by API + TestModelPrediction)
