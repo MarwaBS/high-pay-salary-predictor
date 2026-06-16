@@ -36,7 +36,8 @@
 > 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
 > production-ML *engineering* around an honestly-hard problem: a
-> leakage-safe, calibrated, observable serving path at **sub-6 ms p99**.
+> leakage-safe, calibrated, observable serving path that holds its
+> **p99 < 200 ms** latency SLO (enforced in CI) with comfortable headroom.
 
 ## Key Findings
 
@@ -71,7 +72,7 @@ An end-to-end data science pipeline analysing high-paying jobs (≥ $100K/yr) ac
 │                            │  [Gender distribution violin plot]         │
 │                            │  [US choropleth — income / LQ / count]     │
 │                            │  [Salary predictor form → live estimate]   │
-│                            │  [SHAP feature importance + residuals]     │
+│                            │  [Predicted vs actual + residuals plots]   │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -217,15 +218,18 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 
 ### API performance benchmarks
 
-Measured with FastAPI TestClient (single process, no cache):
+Representative local measurements with FastAPI TestClient (single process, no
+cache, warm). These are illustrative of a dev machine, not a committed
+benchmark — only the SLO below is machine-independent and CI-enforced:
 
 | Endpoint | p50 | p95 | p99 |
 |----------|-----|-----|-----|
-| `POST /predict` | 10ms | 13ms | 14ms |
-| `GET /health` | 2ms | 3ms | 3ms |
-| `GET /meta` | 2ms | 3ms | 3ms |
+| `POST /predict` | ~10ms | ~13ms | ~14ms |
+| `GET /health` | ~2ms | ~3ms | ~3ms |
+| `GET /meta` | ~2ms | ~3ms | ~3ms |
 
-**Throughput:** ~87 predictions/sec (single process). SLO: `/predict` p99 < 200ms — enforced in CI via `tests/test_performance.py`.
+**Enforced SLO (machine-independent):** `/predict` p99 < 200ms, and ≥10
+predictions/sec sustained — both enforced in CI via `tests/test_performance.py`.
 
 ---
 
@@ -236,7 +240,7 @@ Grouped by the engineering discipline they demonstrate.
 ### Modelling
 
 - **Multi-quantile XGBoost.** `reg:quantileerror` with α=[0.10, 0.50, 0.90] in a single model. API returns `predicted_p10 / p50 / p90` directly. Honest uncertainty beats a rationalised point estimate — see [MODEL_CARD.md](MODEL_CARD.md) for the rationale.
-- **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, `scale_pos_weight = neg/pos`). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** — a true unfiltered `≥ $100K` membership classifier — is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
+- **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, **no `scale_pos_weight`** — at the cohort's mild ~40/60 class balance, reweighting would trade probability calibration for a negligible ranking gain, and the head is served as a calibrated probability; see [MODEL_CARD.md](MODEL_CARD.md)). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** — a true unfiltered `≥ $100K` membership classifier — is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
 - **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::test_no_occ_mean_leakage`) locks this in.
 - **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF = 5.44×10⁸ against `Hourly Mean`). 10 features total.
 - **CV = Test space.** 5-fold CV runs on the training set only, scored in dollar space via `make_scorer(expm1)`, so `cv_r2_mean` and test `r2` are directly comparable.
@@ -258,7 +262,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Security & Reproducibility
 
-- **Blocking `pip-audit` CVE gate** in CI with documented suppressions in `.pip-audit-ignore.txt`.
+- **Blocking `pip-audit` CVE gate** in CI, run against both `requirements.txt` and the pinned `requirements-lock.txt`, with **no current suppressions** (`.pip-audit-ignore.txt` is the documented place for any future ones).
 - **Pinned Docker builds.** `requirements-api.txt` holds exact versions for the API runtime. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull `shap` / `lightgbm` / `streamlit` / `statsmodels` it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
 - **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
@@ -280,7 +284,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **149 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **170+ tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -399,7 +403,7 @@ Right-skewed distributions with long upper tails in every role — the primary j
 
 **Age vs annual income**
 ![Age vs Income](./Images/Age_Annual_Income.png)
-Age is the **single strongest predictor** (permutation ΔR²=0.112, ranking above occupation and BLS wage signals). Income rises steeply from 22–40, plateaus 40–65. Age acts as a proxy for seniority, negotiating experience, and accumulated tenure — unobserved variables that the model captures indirectly.
+Age is the **single strongest predictor** in exploratory permutation-importance analysis, ranking above occupation and BLS wage signals. Income rises steeply from 22–40, plateaus 40–65. Age acts as a proxy for seniority, negotiating experience, and accumulated tenure — unobserved variables that the model captures indirectly.
 
 **Gender distribution across top occupations**
 ![Gender by Occupation](./Images/Gender_Distribution_Occupations.png)
@@ -419,7 +423,7 @@ CA, NY, TX, and FL lead in absolute headcount (large populations). MD, VA, and W
 
 **Average income by state (bar)**
 ![Average Income by State](./Images/Average_Highest_Income_state_Viz.png)
-New England and Mid-Atlantic states dominate average income. The model captures this through `Region_Code` and `State_Mean_Income` — Northeast R² (0.097) is the highest of the four regions, confirming regional signal is real and learnable.
+New England and Mid-Atlantic states dominate average income. The model captures this through `Region_Code` and `State_Mean_Income` — the Northeast carries the strongest regional signal of the four Census regions in exploratory analysis, confirming regional signal is real and learnable.
 
 **Location Quotient by state**
 ![LQ by State](./Images/High_Paying_Jobs_LQ_Distribution_Viz.png)
@@ -439,7 +443,7 @@ Larger labor markets show a mild *negative* correlation with education premium �
 
 **Average income by US Census region**
 ![Regional Patterns](./Images/Regional_Patterns_Analysis_Viz.png)
-Northeast leads in mean ± std income. South and Midwest show lower means with wider distributions. The model's subgroup analysis confirms this: Northeast test R²=0.097, South R²=0.067 — the Northeast is the most predictable region because industry mix is more homogeneous within occupation cells.
+Northeast leads in mean ± std income. South and Midwest show lower means with wider distributions. Exploratory subgroup analysis is consistent with this — the Northeast is the most predictable region because its industry mix is more homogeneous within occupation cells. (These regional R² figures are exploratory, from the analysis notebook; the committed, artifact-backed subgroup metric is the classifier's per-region ROC-AUC in `models/model_metrics.json`.)
 
 ## Map gallery (choropleths)
 
@@ -483,7 +487,8 @@ Gender share overlays (map)
 - No causal inference; descriptive and exploratory focus.
 - Industry deep-dives and longitudinal trends would refine signals.
 
-See `reports/data_science_report.md` for the full analyst-oriented narrative.
+The full analyst-oriented narrative lives in the analysis notebooks
+(`04_salary_prediction_model.ipynb` and the EDA/visualisation notebooks).
 
 ---
 
@@ -520,7 +525,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 147 tests across 14 files — every fix is a locked regression guard
+├── tests/                                     # ★ 170+ tests — every fix is a locked regression guard
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
@@ -554,9 +559,6 @@ high-pay-salary-predictor/
 │
 ├── Images/                                    # Auto-saved figures (300 DPI)
 │
-├── reports/
-│   └── data_science_report.md                 # Analyst-oriented narrative and findings
-│
 ├── k8s/                                       # ★ Kubernetes manifests (deployment, service, HPA, PDB, configmap)
 │
 ├── deploy/
@@ -580,8 +582,8 @@ high-pay-salary-predictor/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **96 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + drift detection + performance (latency SLOs, throughput benchmarks).
-- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.10 and 3.11). `pip-audit` runs as a **blocking** CVE gate. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
+- **170+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥75% coverage threshold. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
-- **Exact lock file:** `requirements-lock.txt` pins all 133 transitive dependencies.
+- **Exact lock file:** `requirements-lock.txt` (generated via `pip freeze`) pins every transitive dependency to an exact version for full reproducibility.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.

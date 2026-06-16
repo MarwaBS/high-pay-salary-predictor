@@ -1,5 +1,5 @@
 {
-  "model_version": "2.0.0+3ef6a5da07a7.e927845864e2",
+  "model_version": "2.0.0+1c5e9d896ee5.e927845864e2",
   "service_version": "2.0.0",
   "r2": 0.0282,
   "rmse": 107999.16,
@@ -30,7 +30,7 @@
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
-  "train_date": "2026-06-06",
+  "train_date": "2026-06-16",
   "hyperparameters": {
     "n_estimators": 169,
     "max_depth": 3,

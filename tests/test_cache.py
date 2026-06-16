@@ -1,0 +1,68 @@
+"""
+PredictionCache behaviour — version namespacing and graceful degradation.
+
+The cache key is namespaced by the loaded model version so a retrain never
+serves a previous model's cached predictions from a shared Redis. These tests
+use a tiny in-memory fake client (no Redis required) to lock that contract.
+"""
+
+from __future__ import annotations
+
+from api.cache import PredictionCache
+
+
+class _FakeRedis:
+    """Minimal dict-backed stand-in for the redis client surface used here."""
+
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    def get(self, key: str):
+        return self.store.get(key)
+
+    def setex(self, key: str, ttl: int, value: str) -> None:
+        self.store[key] = value
+
+    def ping(self) -> bool:
+        return True
+
+
+def _cache_with_fake() -> PredictionCache:
+    c = PredictionCache()
+    c._client = _FakeRedis()  # force-enable without a live Redis
+    return c
+
+
+def test_roundtrip_when_enabled():
+    c = _cache_with_fake()
+    c.version = "v1"
+    payload = {"state": "CA", "age": 30}
+    c.set(payload, {"predicted_salary": 123.0})
+    assert c.get(payload) == {"predicted_salary": 123.0}
+
+
+def test_key_namespaced_by_model_version():
+    """A version bump must invalidate the previous model's cached entries."""
+    c = _cache_with_fake()
+    payload = {"state": "CA", "age": 30}
+
+    c.version = "v1"
+    c.set(payload, {"predicted_salary": 100.0})
+    assert c.get(payload) == {"predicted_salary": 100.0}
+
+    # New model version → the old entry is no longer addressable.
+    c.version = "v2"
+    assert c.get(payload) is None
+
+    # And the two versions coexist without collision.
+    c.set(payload, {"predicted_salary": 200.0})
+    assert c.get(payload) == {"predicted_salary": 200.0}
+    c.version = "v1"
+    assert c.get(payload) == {"predicted_salary": 100.0}
+
+
+def test_disabled_cache_is_noop():
+    c = PredictionCache()  # no client → disabled
+    assert c.enabled is False
+    assert c.get({"state": "CA"}) is None
+    c.set({"state": "CA"}, {"predicted_salary": 1.0})  # must not raise

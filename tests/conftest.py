@@ -7,13 +7,23 @@ Having fixtures here (instead of duplicated in each test file) means
 pytest auto-discovers them and any test can use them without importing.
 """
 
-from pathlib import Path
+import os
 
-import pandas as pd
-import pytest
-import yaml
+# Disable per-IP rate limiting for the shared test app. ``api.main`` reads
+# RATE_LIMIT at import time; many tests issue dozens of /predict calls and would
+# otherwise exhaust the default 60/min budget and flake with 429s. The security
+# tests that actually exercise the limiter set RATE_LIMIT explicitly and reload
+# the module, overriding this default for their scope. setdefault() so an
+# explicit environment value still wins.
+os.environ.setdefault("RATE_LIMIT", "1000000/minute")
 
-from pipeline import engineer_features, load_group_means, load_model
+from pathlib import Path  # noqa: E402
+
+import pandas as pd  # noqa: E402
+import pytest  # noqa: E402
+import yaml  # noqa: E402
+
+from pipeline import engineer_features, load_group_means, load_model  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Session-scope: load once, reuse across the entire test run

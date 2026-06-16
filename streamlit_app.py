@@ -329,7 +329,7 @@ def _call_predict_api(payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
-def tab_predictor(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) -> None:
+def tab_predictor(df: pd.DataFrame) -> None:
     """Render the Salary Predictor form.
 
     Delegates inference to the FastAPI ``/predict`` endpoint via ``httpx``
@@ -547,81 +547,6 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.markdown("---")
-
-    # ── Permutation importance (from training artefacts) ──────────────────────
-    perm_imp = metrics.get("permutation_importance", {})
-    if perm_imp:
-        perm_df = pd.DataFrame(
-            [
-                {"Feature": feat, "Mean ΔR²": v["mean"], "Std": v["std"]}
-                for feat, v in sorted(perm_imp.items(), key=lambda x: x[1]["mean"], reverse=True)
-            ]
-        )
-        fig_perm = px.bar(
-            perm_df.sort_values("Mean ΔR²"),
-            x="Mean ΔR²",
-            y="Feature",
-            orientation="h",
-            error_x="Std",
-            title="Permutation Importance (Mean Decrease in R², 50 repeats)",
-            color="Mean ΔR²",
-            color_continuous_scale="Oranges",
-        )
-        fig_perm.update_layout(showlegend=False)
-        st.plotly_chart(fig_perm, use_container_width=True)
-        st.caption(
-            "Permutation importance shuffles each feature and measures R² drop — "
-            "more trustworthy than gain-based importance for correlated features."
-        )
-
-    st.markdown("---")
-
-    # ── Subgroup performance ───────────────────────────────────────────────────
-    subgroup = metrics.get("subgroup_metrics", {})
-    if subgroup:
-        st.subheader("Subgroup Performance (held-out test set)")
-        sg_df = pd.DataFrame(
-            [
-                {"Subgroup": k, "n": v["n"], "R²": round(v["r2"], 4), "MAE ($)": int(v["mae"])}
-                for k, v in subgroup.items()
-            ]
-        )
-        col_g, col_r = st.columns(2)
-        with col_g:
-            gender_df = sg_df[sg_df["Subgroup"].str.startswith("Gender")]
-            fig_g = px.bar(
-                gender_df,
-                x="Subgroup",
-                y="R²",
-                title="R² by Gender",
-                color="Subgroup",
-                color_discrete_map={"Gender=Male": "#2196F3", "Gender=Female": "#E91E63"},
-                text="R²",
-            )
-            fig_g.update_traces(texttemplate="%{text:.3f}", textposition="outside")
-            fig_g.update_layout(showlegend=False, yaxis_range=[0, sg_df["R²"].max() * 1.3])
-            st.plotly_chart(fig_g, use_container_width=True)
-        with col_r:
-            region_df = sg_df[sg_df["Subgroup"].str.startswith("Region")]
-            fig_r = px.bar(
-                region_df,
-                x="Subgroup",
-                y="R²",
-                title="R² by Region",
-                color="R²",
-                color_continuous_scale="Blues",
-                text="R²",
-            )
-            fig_r.update_traces(texttemplate="%{text:.3f}", textposition="outside")
-            fig_r.update_layout(showlegend=False, yaxis_range=[0, sg_df["R²"].max() * 1.3])
-            st.plotly_chart(fig_r, use_container_width=True)
-        st.dataframe(sg_df, use_container_width=True, hide_index=True)
-        st.caption(
-            "Lower female R² reflects smaller sample size and higher within-cohort income variance. "
-            "Gender is encoded as binary (Census CPS limitation)."
-        )
-
 
 # ── Main App ──────────────────────────────────────────────────────────────────
 
@@ -650,7 +575,7 @@ def main() -> None:
     with tab2:
         tab_geographic(filtered_df)
     with tab3:
-        tab_predictor(df, model, metrics)
+        tab_predictor(df)
     with tab4:
         tab_model(df, model, metrics)
 
