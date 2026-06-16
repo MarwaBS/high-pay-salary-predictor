@@ -77,8 +77,8 @@ data: install
 	@echo ">>> Running data cleaning notebook..."
 	@test -f Resources/bls_state_data.xlsx || \
 	  (echo "ERROR: Resources/bls_state_data.xlsx not found." && exit 1)
-	@test -f Resources/census_data.csv || \
-	  (echo "ERROR: Resources/census_data.csv not found." && exit 1)
+	@test -f Data/census_data.csv || \
+	  (echo "ERROR: Data/census_data.csv not found." && exit 1)
 	$(JUPYTER) nbconvert --to notebook --execute \
 	  --ExecutePreprocessor.timeout=600 \
 	  --output high_pay_jobs_data_cleaning.ipynb \

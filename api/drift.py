@@ -182,11 +182,35 @@ class DriftMonitor:
         for feat, stats in self.baseline.items():
             baseline_mean = stats["mean"]
             baseline_std = stats["std"]
-            values = [obs.get(feat, 0.0) for obs in observations]
+            # Only count observations that actually carry the feature. The old
+            # ``obs.get(feat, 0.0)`` invented zeros for absent features, which
+            # dragged the mean toward zero and manufactured phantom drift.
+            values = [obs[feat] for obs in observations if feat in obs]
+            n = len(values)
+
+            if n == 0:
+                # Feature never observed in this window — can't assess drift.
+                result[feat] = {
+                    "z_score": 0.0,
+                    "current_mean": None,
+                    "baseline_mean": round(baseline_mean, 2),
+                    "n_observed": 0,
+                    "drifted": False,
+                }
+                continue
+
             current_mean = float(np.mean(values))
 
+            # Test whether the *mean* of n observations differs from the
+            # baseline mean: the correct yardstick is the standard error of
+            # the mean (σ/√n), not the population σ. Dividing by σ alone (the
+            # previous behaviour) required a full multi-σ shift in the raw
+            # feature to alert — i.e. it was statistically near-deaf. With the
+            # standard error, ``alert_threshold`` is in standard-error units
+            # (default 2.0 ≈ a 95% confidence bound on the mean).
             if baseline_std > 0:
-                z_score = abs(current_mean - baseline_mean) / baseline_std
+                standard_error = baseline_std / np.sqrt(n)
+                z_score = float(abs(current_mean - baseline_mean) / standard_error)
             else:
                 z_score = 0.0
 
@@ -194,7 +218,8 @@ class DriftMonitor:
                 "z_score": round(z_score, 3),
                 "current_mean": round(current_mean, 2),
                 "baseline_mean": round(baseline_mean, 2),
-                "drifted": z_score > self.alert_threshold,
+                "n_observed": n,
+                "drifted": bool(z_score > self.alert_threshold),
             }
 
         return {

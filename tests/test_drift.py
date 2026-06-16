@@ -6,7 +6,6 @@ Run: pytest tests/test_drift.py -v
 
 import json
 
-import numpy as np
 import pytest
 
 from api.drift import DriftMonitor, save_baseline_stats
@@ -31,12 +30,19 @@ def monitor(baseline_stats):
 
 class TestDriftDetection:
     def test_no_drift_on_normal_observations(self, monitor):
-        """Observations matching baseline should not trigger drift."""
-        rng = np.random.default_rng(42)
-        for _ in range(50):
-            monitor.observe({"Age": float(rng.normal(40, 10)), "Education_Ord": float(rng.normal(2, 1))})
+        """Observations centred on the baseline mean should not trigger drift.
+
+        Uses a deterministic spread symmetric about each baseline mean so the
+        sample mean equals the baseline mean exactly — the z-score is then 0
+        regardless of the (now standard-error-based) sensitivity. Random draws
+        from the baseline distribution would, correctly, trip the 2-SE bound
+        ~5% of the time, which is expected statistics, not a bug."""
+        for _ in range(25):
+            monitor.observe({"Age": 30.0, "Education_Ord": 1.0})
+            monitor.observe({"Age": 50.0, "Education_Ord": 3.0})  # symmetric → mean stays at baseline
         report = monitor.check_drift()
         assert not report["any_drifted"]
+        assert report["features"]["Age"]["z_score"] == pytest.approx(0.0, abs=1e-6)
 
     def test_drift_detected_on_shifted_mean(self, monitor):
         """Large mean shift (3 std) should flag drift."""
@@ -48,6 +54,28 @@ class TestDriftDetection:
         assert report["features"]["Age"]["z_score"] > 2.0
         # Education_Ord should NOT be flagged (unchanged)
         assert report["features"]["Education_Ord"]["drifted"] is False
+
+    def test_small_consistent_mean_shift_now_alerts(self, monitor):
+        """A consistent sub-σ shift in the mean must alert. Age→43 is only
+        0.3σ of the raw feature — the old σ-scaled z-score (0.3) stayed silent;
+        the standard-error z-score (≈2.1 at n=50) correctly flags it."""
+        for _ in range(50):
+            monitor.observe({"Age": 43.0, "Education_Ord": 2.0})
+        report = monitor.check_drift()
+        assert report["features"]["Age"]["drifted"] is True
+        assert report["features"]["Age"]["z_score"] > 2.0
+        assert report["features"]["Education_Ord"]["drifted"] is False
+
+    def test_absent_feature_does_not_manufacture_drift(self, monitor):
+        """A feature missing from observations must not be imputed as 0.0 (which
+        previously dragged its mean far from baseline and faked drift)."""
+        for _ in range(40):
+            monitor.observe({"Age": 40.0})  # Education_Ord never observed
+        report = monitor.check_drift()
+        assert report["features"]["Education_Ord"]["n_observed"] == 0
+        assert report["features"]["Education_Ord"]["drifted"] is False
+        assert report["features"]["Education_Ord"]["current_mean"] is None
+        assert report["any_drifted"] is False
 
     def test_drift_clears_after_normal_observations(self, baseline_stats):
         """Drift flag should clear when window fills with normal data."""
