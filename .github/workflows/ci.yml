@@ -34,8 +34,11 @@ jobs:
 
       - name: Security — audit dependencies for known CVEs
         run: |
-          pip-audit --requirement requirements.txt --skip-editable \
-            --ignore-vuln CVE-2025-69872
+          # Audit both the loose runtime set and the exact reproducible lock.
+          # No suppressions: the previous --ignore-vuln targeted a diskcache
+          # CVE for a package that isn't in the dependency tree at all.
+          pip-audit --requirement requirements.txt --skip-editable
+          pip-audit --requirement requirements-lock.txt
 
       - name: Generate CycloneDX SBOM (API runtime surface)
         # Standard 2026 supply-chain artifact. Scans requirements-api.txt
@@ -45,8 +48,7 @@ jobs:
         run: |
           pip-audit --requirement requirements-api.txt --skip-editable \
             --format=cyclonedx-json \
-            --output=sbom-api.cyclonedx.json \
-            --ignore-vuln CVE-2025-69872
+            --output=sbom-api.cyclonedx.json
       - name: Upload SBOM artifact
         if: matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
@@ -71,6 +73,13 @@ jobs:
         run: |
           ruff format --check .
 
+      - name: Type-check with mypy
+        # Matches the Makefile `type-check` target and the pre-commit hook,
+        # which previously had no CI enforcement.
+        run: |
+          pip install mypy pandas-stubs
+          mypy api pipeline.py scripts
+
       - name: Train quantile model (required by API + TestModelPrediction)
         run: |
           # Produces models/xgb_salary_model.ubj as a multi-quantile XGBoost
@@ -78,9 +87,13 @@ jobs:
           # tests/test_pipeline.py::test_model_outputs_quantile_triple.
           python -m scripts.train_quantile
 
-      - name: Run pytest
+      - name: Run pytest (with enforced coverage gate)
         run: |
-          pytest tests/ -v --tb=short
+          # --cov activates coverage; the fail_under=75 threshold in
+          # pyproject.toml ([tool.coverage.report]) is then enforced and
+          # fails the job if total coverage regresses below it.
+          pytest tests/ -v --tb=short \
+            --cov --cov-report=term-missing --cov-report=xml
 
   notebook-check:
     name: Notebook syntax check

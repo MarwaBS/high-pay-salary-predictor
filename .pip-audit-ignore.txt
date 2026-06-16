@@ -6,9 +6,10 @@
 #   3. A tracking issue is linked
 #
 # Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN   or   CVE-YYYY-NNNNN
-
-# diskcache 5.6.3 (transitive dep via dvc-data → dvc)
-# No fix version available upstream. diskcache is used only by DVC for
-# local artifact caching — not exposed to API users or network traffic.
-# Risk: LOW — local-only, no untrusted input reaches diskcache.
-CVE-2025-69872
+#
+# There are currently NO suppressions: the CVE gate in CI runs clean against
+# both requirements.txt and the pinned requirements-lock.txt. A prior entry
+# suppressed a diskcache CVE attributed to "dvc-data → dvc", but dvc is not a
+# dependency of this project and diskcache is not in the tree at all, so the
+# suppression was vestigial and has been removed. The real CVE that pip-audit
+# surfaces (starlette < 1.3.1) was fixed by upgrading, not suppressed.

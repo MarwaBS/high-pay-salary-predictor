@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -95,7 +96,18 @@ from pipeline import (
 
 
 class _JSONFormatter(logging.Formatter):
-    """Emit logs as single-line JSON for machine parsing and log aggregation."""
+    """Emit logs as single-line JSON for machine parsing and log aggregation.
+
+    Any non-standard attributes attached via ``logger.info(..., extra={...})``
+    (request_id, method, path, status, duration_ms, …) are merged into the
+    JSON object. Without this, every structured field is silently dropped and
+    access logs collapse to ``{"message": "request completed"}`` — making the
+    request-correlation story the README advertises impossible.
+    """
+
+    #: Attributes the stdlib sets on every LogRecord; everything else on the
+    #: record was supplied by the caller via ``extra=`` and must be emitted.
+    _RESERVED = frozenset(logging.makeLogRecord({}).__dict__) | {"message", "asctime", "taskName"}
 
     def format(self, record: logging.LogRecord) -> str:
         entry = {
@@ -104,9 +116,13 @@ class _JSONFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+        # Merge caller-supplied structured fields (extra={...}).
+        for key, value in record.__dict__.items():
+            if key not in self._RESERVED and not key.startswith("_"):
+                entry[key] = value
         if record.exc_info and record.exc_info[0]:
             entry["exception"] = self.formatException(record.exc_info)
-        return json.dumps(entry)
+        return json.dumps(entry, default=str)
 
 
 _handler = logging.StreamHandler()
@@ -125,7 +141,9 @@ async def verify_api_key(key: str | None = Security(_api_key_header)) -> str | N
     """Validate API key if API_KEY is configured; skip in dev mode (unset)."""
     if not API_KEY:
         return None  # dev mode: no auth required
-    if key != API_KEY:
+    # Constant-time comparison so a timing side-channel can't be used to
+    # recover the key byte by byte.
+    if key is None or not secrets.compare_digest(key, API_KEY):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return key
 
@@ -143,14 +161,26 @@ TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 
 
 def _client_ip(request: Request) -> str:
-    """Return the client IP, respecting TRUSTED_PROXY_HOPS for X-Forwarded-For."""
+    """Return the client IP, respecting TRUSTED_PROXY_HOPS for X-Forwarded-For.
+
+    Security-critical. Each of our own ``TRUSTED_PROXY_HOPS`` reverse proxies
+    appends exactly one entry to the *right* end of ``X-Forwarded-For``, so the
+    right-most ``TRUSTED_PROXY_HOPS`` entries are the trustworthy ones and the
+    real client is the left-most of those — index ``-TRUSTED_PROXY_HOPS``
+    (werkzeug ``ProxyFix`` semantics). Every entry further left is
+    client-supplied and therefore spoofable: reading it would let an attacker
+    forge ``X-Forwarded-For`` to mint a fresh rate-limit bucket on every
+    request. The previous ``len - 1 - hops`` index was off by one and returned
+    exactly that attacker-controlled entry. If the header carries fewer entries
+    than we have trusted proxies, it cannot have come through our proxy chain,
+    so we ignore it and bind to the direct peer.
+    """
     xff = request.headers.get("X-Forwarded-For", "")
     if xff and TRUSTED_PROXY_HOPS > 0:
-        # XFF is "client, proxy1, proxy2, ..." — peel TRUSTED_PROXY_HOPS
-        # proxies off the right end and take the next entry as the client.
         hops = [h.strip() for h in xff.split(",") if h.strip()]
-        idx = max(0, len(hops) - 1 - TRUSTED_PROXY_HOPS)
-        return hops[idx]
+        if len(hops) >= TRUSTED_PROXY_HOPS:
+            return hops[-TRUSTED_PROXY_HOPS]
+        return request.client.host if request.client else "unknown"
     return request.client.host if request.client else "unknown"
 
 
@@ -289,6 +319,9 @@ async def lifespan(app: FastAPI):
     # emitted by scripts/train_quantile.py. Falls back to "unknown" on
     # pre-provenance artefacts so the API is backwards-compatible.
     state.model_version = str(metrics.get("model_version", "unknown"))
+    # Namespace the prediction cache by model version so a retrain never
+    # serves a previous model's cached predictions from a shared Redis.
+    cache.version = state.model_version
 
     # Classifier ↔ config threshold consistency check. The trainer writes
     # the exact ``classifier_threshold`` it was fitted against into
@@ -395,7 +428,10 @@ async def _global_exception_handler(request: Request, exc: Exception) -> JSONRes
     generic 500 body with the request ID so operators can correlate without
     leaking internal details to the caller.
     """
-    request_id = request.headers.get("X-Request-ID", "unknown")
+    # Prefer the id the middleware minted (stored on request.state); fall back
+    # to an inbound header, then "unknown". Reading state first means errors
+    # are correlatable even when the caller sent no X-Request-ID.
+    request_id = getattr(request.state, "request_id", None) or request.headers.get("X-Request-ID", "unknown")
     logger.exception("Unhandled exception", extra={"request_id": request_id, "path": request.url.path})
     return JSONResponse(
         status_code=500,
@@ -426,6 +462,9 @@ app.add_middleware(
 async def request_id_middleware(request: Request, call_next):
     """Attach a unique request ID to every request for tracing."""
     request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    # Store on request.state so downstream handlers (notably the 500 handler)
+    # can correlate even when the client did not send an X-Request-ID.
+    request.state.request_id = request_id
     start = time.perf_counter()
     response = await call_next(request)
     elapsed = time.perf_counter() - start
@@ -536,13 +575,12 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     """
     _validate_domain(req)
 
-    # ── Cache lookup (keyed on validated request payload) ────────────────────
-    cache_key = req.model_dump()
-    cached = cache.get(cache_key)
-    if cached is not None:
-        return PredictResponse(**cached)
-
-    # ── Feature encoding → inference → response ─────────────────────────────
+    # ── Feature encoding + drift observation (BEFORE the cache) ──────────────
+    # Encode and observe drift for every request, including cache hits — the
+    # drift monitor must see all production traffic. If observation happened
+    # after the cache short-circuit, repeated (cached) queries would be
+    # invisible to drift detection. Only the expensive model inference below
+    # is cached.
     values = encode_feature_values(
         req,
         edu_order=EDU_ORDER,
@@ -558,6 +596,12 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
 
     if state.drift_monitor is not None:
         state.drift_monitor.observe(values)
+
+    # ── Cache lookup (keyed on validated request payload) ────────────────────
+    cache_key = req.model_dump()
+    cached = cache.get(cache_key)
+    if cached is not None:
+        return PredictResponse(**cached)
 
     p10, p50, p90 = run_model(state.model, row)
     if quantiles_crossed(p10, p50, p90):
@@ -614,39 +658,41 @@ def predict_batch(
                 detail=f"Item {idx}: {exc.detail}",
             ) from exc
 
+    # 2. Encode every item once and observe drift for ALL of them (cache hits
+    #    included) so the drift monitor sees all batch traffic — consistent
+    #    with /predict, where only inference is cached, never observation.
+    encoded_all = [
+        encode_feature_values(
+            item,
+            edu_order=EDU_ORDER,
+            region_map=REGION_MAP,
+            region_codes=state.region_codes,
+            occ_means=state.occ_means,
+            state_means=state.state_means,
+            occ_fallback=state.occ_fallback,
+            state_fallback=state.state_fallback,
+            bls_defaults_lookup=state.bls_defaults_lookup,
+        )
+        for item in req.items
+    ]
+    if state.drift_monitor is not None:
+        for features in encoded_all:
+            state.drift_monitor.observe(features)
+
     responses: list[PredictResponse | None] = [None] * len(req.items)
     rows_to_score: list[tuple[int, PredictRequest]] = []
 
-    # 2. Cache pass — return hits without touching the model.
+    # 3. Cache pass — return hits without touching the model.
     for idx, item in enumerate(req.items):
-        cache_key = item.model_dump()
-        cached = cache.get(cache_key)
+        cached = cache.get(item.model_dump())
         if cached is not None:
             responses[idx] = PredictResponse(**cached)
         else:
             rows_to_score.append((idx, item))
 
-    # 3. Single vectorised model call for the un-cached items.
+    # 4. Single vectorised model call for the un-cached items.
     if rows_to_score:
-        encoded = [
-            encode_feature_values(
-                item,
-                edu_order=EDU_ORDER,
-                region_map=REGION_MAP,
-                region_codes=state.region_codes,
-                occ_means=state.occ_means,
-                state_means=state.state_means,
-                occ_fallback=state.occ_fallback,
-                state_fallback=state.state_fallback,
-                bls_defaults_lookup=state.bls_defaults_lookup,
-            )
-            for _, item in rows_to_score
-        ]
-        batch_df = build_feature_frame(encoded)
-
-        if state.drift_monitor is not None:
-            for features in encoded:
-                state.drift_monitor.observe(features)
+        batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
 
         raw = np.asarray(state.model.predict(batch_df))
         if raw.ndim != 2 or raw.shape[1] != 3:
