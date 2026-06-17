@@ -155,18 +155,29 @@ class _AuthFailureThrottle:
         self._window = window_s
         self._hits: dict[str, deque[float]] = defaultdict(deque)
         self._lock = threading.Lock()
+        self._last_sweep = 0.0
+
+    def _sweep_stale(self, cutoff: float) -> None:
+        """Drop IPs whose most-recent failure has aged out. Called at most once
+        per window so the map can't grow without bound as attackers rotate source
+        IPs — a per-IP deque is never emptied in place (the just-appended hit keeps
+        it non-empty), so eviction has to happen here, across keys."""
+        stale = [ip for ip, dq in self._hits.items() if not dq or dq[-1] < cutoff]
+        for ip in stale:
+            del self._hits[ip]
 
     def record_failure(self, ip: str, now: float) -> bool:
         """Record one failure for ``ip`` at time ``now``; return True if the IP is
         still within budget, False once it has exceeded ``limit`` in the window."""
         with self._lock:
-            dq = self._hits[ip]
             cutoff = now - self._window
+            if now - self._last_sweep >= self._window:
+                self._sweep_stale(cutoff)
+                self._last_sweep = now
+            dq = self._hits[ip]
             while dq and dq[0] < cutoff:
                 dq.popleft()
             dq.append(now)
-            if not dq:  # pragma: no cover - dq always has the just-appended hit
-                del self._hits[ip]
             return len(dq) <= self._limit
 
 
