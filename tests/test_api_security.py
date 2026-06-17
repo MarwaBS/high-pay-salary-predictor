@@ -348,3 +348,23 @@ class TestAuthFailureThrottle:
                 for _ in range(5):
                     r = client.post("/predict", json=payload, headers={"X-API-Key": "s3cret"})
                     assert r.status_code == 200, r.text
+
+    def test_throttle_evicts_stale_ips_and_does_not_grow_unbounded(self):
+        """Regression: the per-IP failure map must not grow without bound as
+        attackers rotate source IPs. A per-IP deque is never emptied in place (the
+        just-recorded hit keeps it non-empty), so eviction happens via a windowed
+        sweep of keys whose newest failure has aged out. Drives time explicitly via
+        the injected ``now`` so it is deterministic."""
+        from api.main import _AuthFailureThrottle
+
+        thr = _AuthFailureThrottle(limit=3, window_s=60.0)
+        # 1000 distinct IPs all fail once at t=0.
+        for i in range(1000):
+            thr.record_failure(f"10.0.{i // 256}.{i % 256}", now=0.0)
+        assert len(thr._hits) == 1000
+        # A single new IP fails two windows later → triggers the stale sweep, which
+        # drops every aged-out IP. The map collapses to just the active one.
+        still_ok = thr.record_failure("203.0.113.7", now=130.0)
+        assert still_ok is True
+        assert len(thr._hits) == 1, f"stale IPs not evicted: {len(thr._hits)} remain"
+        assert "203.0.113.7" in thr._hits
