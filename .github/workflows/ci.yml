@@ -226,24 +226,52 @@ jobs:
           pip install -e .
           python -m scripts.train_quantile
 
-      - name: Smoke test API image
+      - name: Smoke test API image (health + real /predict on the shipped stack)
         run: |
+          set -euo pipefail
           docker run -d --name smoke-api -p 8000:8000 \
             -v ${{ github.workspace }}/models:/app/models:ro \
             -v ${{ github.workspace }}/Data:/app/Data:ro \
             ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+
+          cleanup() { docker logs smoke-api || true; docker stop smoke-api || true; }
+          trap cleanup EXIT
+
           # Poll /health with a retry loop instead of a fixed sleep —
           # cold-start loading of the CSV + XGBoost model on a GHA runner
           # is variable and can exceed any fixed wait. 30 × 1s = 30s cap.
+          healthy=""
           for i in $(seq 1 30); do
             if curl -sf http://localhost:8000/health > /dev/null; then
-              echo "Smoke test passed — API healthy after ${i}s"
-              docker stop smoke-api
-              exit 0
+              echo "API healthy after ${i}s"
+              healthy=1
+              break
             fi
             sleep 1
           done
-          echo "Smoke test failed — API never became healthy within 30s"
-          docker logs smoke-api
-          docker stop smoke-api
-          exit 1
+          if [ -z "$healthy" ]; then
+            echo "Smoke test failed — API never became healthy within 30s"
+            exit 1
+          fi
+
+          # The image installs requirements-api.txt (numpy 1.26 / pandas 2.2 /
+          # sklearn 1.5.2) — a DIFFERENT dependency universe than the dev lock the
+          # unit tests run under. A /health ping never touches the model, so it
+          # cannot catch a pandas-3→2 or numpy-2→1 inference break. Drive a real
+          # /predict end to end against the shipped image, with values pulled from
+          # /meta so they are guaranteed in-domain.
+          OCC=$(curl -sf http://localhost:8000/meta | jq -r '.occupations[0]')
+          EDU=$(curl -sf http://localhost:8000/meta | jq -r '.education_levels[0]')
+          ST=$(curl -sf http://localhost:8000/meta | jq -r '.states[0]')
+          echo "predict probe: state=$ST occupation=$OCC education=$EDU"
+          BODY=$(jq -nc --arg st "$ST" --arg occ "$OCC" --arg edu "$EDU" \
+            '{state:$st, occupation:$occ, education_level:$edu, gender:"Female", age:32}')
+          RESP=$(curl -sf -X POST http://localhost:8000/predict \
+            -H 'Content-Type: application/json' -d "$BODY")
+          echo "predict response: $RESP"
+          # Assert it is a real, sane prediction (positive median, ordered quantiles)
+          # — proves the model actually runs under the shipped dependency stack.
+          echo "$RESP" | jq -e \
+            '.predicted_p50 > 0 and .predicted_p10 <= .predicted_p50 and .predicted_p50 <= .predicted_p90' \
+            > /dev/null || { echo "Smoke test failed — /predict did not return a valid prediction"; exit 1; }
+          echo "Smoke test passed — /health + real /predict OK on the shipped image"

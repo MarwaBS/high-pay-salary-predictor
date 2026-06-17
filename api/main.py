@@ -39,8 +39,10 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 import uuid
+from collections import defaultdict, deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -136,14 +138,53 @@ logger = logging.getLogger(__name__)
 API_KEY = os.getenv("API_KEY", "")
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
+# Per-IP throttle for FAILED auth attempts. The main rate limiter runs inside the
+# route function, after dependency resolution, so a 401 raised by verify_api_key
+# never reaches it — leaving X-API-Key guessing unthrottled. This caps failures
+# per IP independently (in-process per replica; defence-in-depth, not a substitute
+# for a high-entropy key).
+AUTH_FAILURE_LIMIT = int(os.getenv("AUTH_FAILURE_LIMIT", "10"))
+AUTH_FAILURE_WINDOW_S = float(os.getenv("AUTH_FAILURE_WINDOW_S", "60"))
 
-async def verify_api_key(key: str | None = Security(_api_key_header)) -> str | None:
+
+class _AuthFailureThrottle:
+    """Sliding-window count of failed auth attempts per client IP."""
+
+    def __init__(self, limit: int, window_s: float) -> None:
+        self._limit = limit
+        self._window = window_s
+        self._hits: dict[str, deque[float]] = defaultdict(deque)
+        self._lock = threading.Lock()
+
+    def record_failure(self, ip: str, now: float) -> bool:
+        """Record one failure for ``ip`` at time ``now``; return True if the IP is
+        still within budget, False once it has exceeded ``limit`` in the window."""
+        with self._lock:
+            dq = self._hits[ip]
+            cutoff = now - self._window
+            while dq and dq[0] < cutoff:
+                dq.popleft()
+            dq.append(now)
+            if not dq:  # pragma: no cover - dq always has the just-appended hit
+                del self._hits[ip]
+            return len(dq) <= self._limit
+
+
+_auth_throttle = _AuthFailureThrottle(AUTH_FAILURE_LIMIT, AUTH_FAILURE_WINDOW_S)
+
+
+async def verify_api_key(request: Request, key: str | None = Security(_api_key_header)) -> str | None:
     """Validate API key if API_KEY is configured; skip in dev mode (unset)."""
     if not API_KEY:
         return None  # dev mode: no auth required
     # Constant-time comparison so a timing side-channel can't be used to
     # recover the key byte by byte.
     if key is None or not secrets.compare_digest(key, API_KEY):
+        # Throttle brute-force key guessing per IP — the route-level limiter
+        # never sees this request because the 401 short-circuits before it.
+        within_budget = _auth_throttle.record_failure(_client_ip(request), time.monotonic())
+        if not within_budget:
+            raise HTTPException(status_code=429, detail="Too many failed authentication attempts")
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return key
 
@@ -399,17 +440,40 @@ MAX_BODY_BYTES = int(os.getenv("MAX_BODY_BYTES", str(512 * 1024)))  # 512 KiB de
 
 
 class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
+    def _too_large(self) -> JSONResponse:
+        return JSONResponse(
+            status_code=413,
+            content={"detail": f"Request body exceeds {MAX_BODY_BYTES} bytes"},
+        )
+
     async def dispatch(self, request: Request, call_next):
         cl = request.headers.get("content-length")
         if cl is not None:
             try:
-                if int(cl) > MAX_BODY_BYTES:
-                    return JSONResponse(
-                        status_code=413,
-                        content={"detail": f"Request body exceeds {MAX_BODY_BYTES} bytes"},
-                    )
+                declared = int(cl)
             except ValueError:
-                pass
+                declared = None
+            if declared is not None:
+                if declared > MAX_BODY_BYTES:
+                    return self._too_large()
+                # A valid Content-Length within the cap is enforced by the ASGI
+                # server (it reads exactly that many bytes), so trust it and skip
+                # re-measuring.
+                return await call_next(request)
+        # No Content-Length (e.g. Transfer-Encoding: chunked) or a malformed one
+        # bypasses the header check entirely — the original bug. Measure the real
+        # body with a running counter and abort the moment it exceeds the cap, so
+        # an unbounded chunked upload can't consume memory before validation.
+        chunks: list[bytes] = []
+        size = 0
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                return self._too_large()
+            chunks.append(chunk)
+        # Cache the (<= cap) body so downstream handlers/Pydantic read it normally
+        # instead of trying to re-consume the already-drained stream.
+        request._body = b"".join(chunks)
         return await call_next(request)
 
 
