@@ -220,11 +220,14 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 
 Representative local measurements with FastAPI TestClient (single process, no
 cache, warm). These are illustrative of a dev machine, not a committed
-benchmark — only the SLO below is machine-independent and CI-enforced:
+benchmark — only the SLO below is machine-independent and CI-enforced. The
+`/predict` figures match [`MODEL_CARD.md`](MODEL_CARD.md#serving-latency)
+(same in-process methodology, N=1,500), which is the single source for these
+numbers:
 
 | Endpoint | p50 | p95 | p99 |
 |----------|-----|-----|-----|
-| `POST /predict` | ~10ms | ~13ms | ~14ms |
+| `POST /predict` | ~3.6ms | ~4.6ms | ~5.2ms |
 | `GET /health` | ~2ms | ~3ms | ~3ms |
 | `GET /meta` | ~2ms | ~3ms | ~3ms |
 

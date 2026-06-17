@@ -130,6 +130,76 @@ class TestDriftEdgeCases:
         assert report["window_size"] == 100  # capped at window
 
 
+# ── Sensitivity at the real operating window ─────────────────────────────────
+
+
+class TestDriftSensitivityAtWindow500:
+    """Regression for the over-sensitivity the standard-error z-score introduced.
+
+    With the SE z-score alone, the alarm fires whenever the window mean shifts by
+    more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the default
+    window=500. Production traffic is never i.i.d. from the training baseline, so
+    that alarmed on every benign sampling wobble. The fix adds a practical
+    effect-size floor (``min_effect_size``) on TOP of significance.
+    """
+
+    BASELINE = {
+        "Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0},
+        "Education_Ord": {"mean": 2.0, "std": 1.0, "min": 1.0, "max": 4.0},
+        "Region_Code": {"mean": 1.85, "std": 1.03, "min": 0.0, "max": 3.0},
+        "Hourly_Mean": {"mean": 65.7, "std": 13.7, "min": 48.0, "max": 123.0},
+    }
+
+    def test_iid_from_baseline_at_n500_does_not_alarm(self):
+        """Drawing 500 observations straight from the baseline distribution — i.e.
+        NO real drift — must not alarm. Before the effect-size floor this falsely
+        alarmed on ~50% of windows (each feature ~5% × several features)."""
+        import numpy as np
+
+        rng = np.random.default_rng(20260617)
+        false_alarms = 0
+        trials = 25
+        for _ in range(trials):
+            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            for _ in range(500):
+                mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
+            if mon.check_drift()["any_drifted"]:
+                false_alarms += 1
+        # Allow a hair of slack for the rare tail, but it must be near-zero — the
+        # pre-fix rate was ~50%.
+        assert false_alarms <= 1, f"{false_alarms}/{trials} i.i.d. windows alarmed"
+
+    def test_genuine_consistent_shift_still_alarms_at_n500(self):
+        """A consistent >= min_effect_size shift in a feature mean must still be
+        caught at the real window — the fix must not make the monitor deaf."""
+        import numpy as np
+
+        rng = np.random.default_rng(7)
+        mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+        for _ in range(500):
+            obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
+            obs["Age"] = 40.0 + 0.5 * 10.0  # consistent +0.5 std shift on Age
+            mon.observe(obs)
+        report = mon.check_drift()
+        assert report["any_drifted"] is True
+        assert report["features"]["Age"]["drifted"] is True
+        assert report["features"]["Age"]["effect_size"] >= 0.2
+
+    def test_significant_but_trivial_effect_does_not_alarm(self):
+        """The precise failure mode: a statistically significant (SE z > 2) but
+        practically trivial (< 0.2 std) mean shift must NOT alarm at n=500."""
+        # +0.1 std on Age: at n=500 the SE z-score is 0.1*sqrt(500) ~= 2.24 > 2
+        # (significant), but the effect size is 0.1 < 0.2 (trivial) -> no alarm.
+        mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+        for _ in range(500):
+            mon.observe({"Age": 41.0})  # exactly +0.1 std, zero sample variance
+        report = mon.check_drift()
+        age = report["features"]["Age"]
+        assert age["z_score"] > 2.0, "shift should be statistically significant"
+        assert age["effect_size"] == pytest.approx(0.1, abs=1e-6)
+        assert age["drifted"] is False, "trivial effect must not alarm"
+
+
 # ── Persistence ──────────────────────────────────────────────────────────────
 
 

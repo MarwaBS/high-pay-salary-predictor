@@ -59,6 +59,7 @@ class DriftMonitor:
         baseline_stats: dict[str, dict[str, float]],
         window: int = 500,
         alert_threshold: float = 2.0,
+        min_effect_size: float = 0.2,
         redis_client: Any | None = None,
     ) -> None:
         """
@@ -67,7 +68,17 @@ class DriftMonitor:
         baseline_stats : per-feature statistics from training set
                          {feature: {mean, std, min, max}}
         window         : number of recent observations to keep
-        alert_threshold: z-score above which a feature is flagged as drifted
+        alert_threshold: standard-error z-score above which the mean shift is
+                         judged statistically real (not sampling noise)
+        min_effect_size: minimum |mean shift| in baseline-std units required to
+                         flag drift, ON TOP OF statistical significance. Without
+                         it, the standard-error z-score alone alarms on a shift of
+                         only ``alert_threshold/sqrt(window)`` std — at the default
+                         window=500 that is ~0.09 std, so any real (never i.i.d.)
+                         traffic trips it constantly. Requiring BOTH significance
+                         AND a practical effect (Cohen's-d small = 0.2) means a
+                         genuinely-i.i.d. window at n=500 (mean wanders ~0.045 std)
+                         stays silent, while a consistent >=0.2-std shift alarms.
         redis_client   : optional Redis client. If provided (or discoverable
                          from REDIS_URL), observations are stored in a
                          shared list so multi-replica Deployments aggregate
@@ -76,6 +87,7 @@ class DriftMonitor:
         self.baseline = baseline_stats
         self.window = window
         self.alert_threshold = alert_threshold
+        self.min_effect_size = min_effect_size
         self.buffer: deque[dict[str, float]] = deque(maxlen=window)
         self._observation_count = 0
         self._redis = redis_client or self._discover_redis()
@@ -192,6 +204,7 @@ class DriftMonitor:
                 # Feature never observed in this window — can't assess drift.
                 result[feat] = {
                     "z_score": 0.0,
+                    "effect_size": 0.0,
                     "current_mean": None,
                     "baseline_mean": round(baseline_mean, 2),
                     "n_observed": 0,
@@ -211,15 +224,25 @@ class DriftMonitor:
             if baseline_std > 0:
                 standard_error = baseline_std / np.sqrt(n)
                 z_score = float(abs(current_mean - baseline_mean) / standard_error)
+                effect_size = float(abs(current_mean - baseline_mean) / baseline_std)
             else:
                 z_score = 0.0
+                effect_size = 0.0
+
+            # Drift requires BOTH a statistically real mean shift (SE z-score)
+            # AND a practically meaningful one (effect size). The z-score alone
+            # makes the alarm n-sensitive — at window=500 a ~0.09-std wobble
+            # clears it — so always-noisy production traffic alarms forever. The
+            # effect-size floor is the practical-significance gate.
+            drifted = bool(z_score > self.alert_threshold and effect_size > self.min_effect_size)
 
             result[feat] = {
                 "z_score": round(z_score, 3),
+                "effect_size": round(effect_size, 3),
                 "current_mean": round(current_mean, 2),
                 "baseline_mean": round(baseline_mean, 2),
                 "n_observed": n,
-                "drifted": bool(z_score > self.alert_threshold),
+                "drifted": drifted,
             }
 
         return {
