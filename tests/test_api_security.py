@@ -268,3 +268,83 @@ class TestRateLimiting:
                         break
             assert last is not None and last.status_code == 429
             assert "detail" in last.json()
+
+
+# ── Request body size limit (413) ─────────────────────────────────────────────
+
+
+class TestBodySizeLimit:
+    """The middleware capped only the declared Content-Length, so a chunked
+    upload (Transfer-Encoding: chunked, no Content-Length) slipped past it
+    unbounded. The fix measures the actual streamed bytes when no usable
+    Content-Length is present."""
+
+    def test_declared_oversize_content_length_rejected_413(self):
+        with reloaded_module(MAX_BODY_BYTES="1024") as m:
+            client = TestClient(m.app)
+            # A normal (Content-Length-bearing) oversize body is still rejected.
+            r = client.post("/predict", content=b"x" * 4096)
+            assert r.status_code == 413
+
+    def test_chunked_oversize_body_rejected_413(self):
+        with reloaded_module(MAX_BODY_BYTES="1024") as m:
+            client = TestClient(m.app)
+
+            def big_chunks():
+                # An iterable body makes httpx use Transfer-Encoding: chunked with
+                # NO Content-Length — the exact bypass the old middleware missed.
+                for _ in range(8):
+                    yield b"x" * 512  # 4096 bytes total, over the 1024 cap
+
+            r = client.post("/predict", content=big_chunks())
+            assert r.status_code == 413, f"chunked oversize body bypassed the limit: {r.status_code}"
+
+    def test_chunked_under_cap_passes_through(self):
+        # A small chunked body must still reach the handler (here it fails
+        # validation with 422, proving it got past the size gate, not 413).
+        with reloaded_module(MAX_BODY_BYTES="65536") as m:
+            with TestClient(m.app) as client:
+
+                def small_chunks():
+                    yield b'{"state":'
+                    yield b'"CA"}'
+
+                r = client.post("/predict", content=small_chunks())
+                assert r.status_code != 413
+                assert r.status_code == 422  # reached Pydantic; missing fields
+
+
+# ── Failed-auth brute-force throttle (429) ────────────────────────────────────
+
+
+class TestAuthFailureThrottle:
+    """A 401 from verify_api_key short-circuits before the route-level limiter,
+    so repeated wrong keys were unthrottled. The per-IP failure throttle caps
+    them: the first N return 401, then further attempts return 429."""
+
+    def test_repeated_failed_auth_eventually_429(self):
+        with reloaded_module(API_KEY="s3cret", AUTH_FAILURE_LIMIT="3") as m:
+            client = TestClient(m.app)
+            statuses = [
+                client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": "wrong"}).status_code
+                for _ in range(6)
+            ]
+            assert statuses[:3] == [401, 401, 401], statuses
+            assert 429 in statuses[3:], f"brute-force was never throttled: {statuses}"
+
+    def test_successful_auth_not_throttled(self):
+        # A valid key must never be throttled, even after the failure budget would
+        # have been exhausted by OTHER (failed) attempts — success bypasses it.
+        with reloaded_module(API_KEY="s3cret", AUTH_FAILURE_LIMIT="2") as m:
+            with TestClient(m.app) as client:
+                payload = {
+                    "state": "CA",
+                    "occupation": m.state.occupations[0],
+                    "education_level": "Bachelor's degree",
+                    "gender": "Female",
+                    "age": 32,
+                }
+                # Many valid requests in a row stay 200 (failure throttle untouched).
+                for _ in range(5):
+                    r = client.post("/predict", json=payload, headers={"X-API-Key": "s3cret"})
+                    assert r.status_code == 200, r.text
