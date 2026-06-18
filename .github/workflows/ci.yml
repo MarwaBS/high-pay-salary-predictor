@@ -89,7 +89,7 @@ jobs:
 
       - name: Run pytest (with enforced coverage gate)
         run: |
-          # --cov activates coverage; the fail_under=75 threshold in
+          # --cov activates coverage; the fail_under=88 threshold in
           # pyproject.toml ([tool.coverage.report]) is then enforced and
           # fails the job if total coverage regresses below it.
           pytest tests/ -v --tb=short \
