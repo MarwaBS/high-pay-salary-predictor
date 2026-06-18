@@ -589,7 +589,7 @@ high-pay-salary-predictor/
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
 - **170+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
-- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥75% coverage threshold. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold (actual ~92%). On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (generated via `pip freeze`) pins every transitive dependency to an exact version for full reproducibility.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
