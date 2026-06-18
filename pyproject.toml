@@ -86,4 +86,7 @@ omit    = ["tests/*", ".venv/*"]
 
 [tool.coverage.report]
 show_missing = true
-fail_under   = 75
+# Floor sits a few points under the actual ~92% so a real coverage regression
+# fails CI, rather than leaving 17 points of dead slack below reality (a gate at
+# 75 against 92% actual barely constrains anything). Raise as coverage rises.
+fail_under   = 88
