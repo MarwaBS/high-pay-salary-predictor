@@ -46,9 +46,19 @@ jobs:
           # CVE for a package that isn't in the dependency tree at all.
           pip-audit --requirement requirements.txt --skip-editable
           pip-audit --requirement requirements-lock.txt
-          # Dashboard image universe (exact pins consumed by the Dockerfile
-          # dashboard-builder stage) — previously installed from hand-listed
-          # >= floors and never audited.
+
+      - name: Security — audit the dashboard image universe (3.12 only)
+        # requirements-dashboard.txt is a `pip freeze` of the dashboard Docker
+        # image, whose base is python:3.12-slim. Its exact pins (scipy==1.18.0,
+        # numpy==2.4.6, pandas==3.0.3, …) only exist for CPython >=3.12, so on
+        # the 3.11 matrix leg pip-audit's resolver cannot even construct the
+        # set and errors before checking a single CVE — it would be auditing a
+        # dependency universe that is never built or shipped (the image is
+        # always 3.12). Gate the audit to the interpreter that matches the
+        # artifact, mirroring the SBOM step's `== '3.12'` guard below. The
+        # dashboard deps are still audited on every run, on their real Python.
+        if: matrix.python-version == '3.12'
+        run: |
           pip-audit --requirement requirements-dashboard.txt
 
       - name: Generate CycloneDX SBOM (API runtime surface)
