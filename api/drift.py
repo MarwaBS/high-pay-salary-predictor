@@ -76,8 +76,9 @@ class DriftMonitor:
                          per report, the per-feature significance cut is
                          Sidak-adjusted from this familywise alpha (see
                          ``check_drift``) — an UNcorrected per-feature z>2 test
-                         false-alarmed on 43.5% of stationary 30-observation
-                         windows (measured, 200 bootstrap trials).
+                         false-alarmed on ~37% of stationary 30-observation
+                         windows (measured, 2000 bootstrap trials on the real
+                         baseline; the union of ~10 per-feature tests).
         min_effect_size: minimum |mean shift| in baseline-std units required to
                          flag drift, ON TOP OF statistical significance. Without
                          it, the standard-error z-score alone alarms on a shift of
@@ -223,7 +224,7 @@ class DriftMonitor:
         # production). At a per-feature two-sided cut of z > 2 (alpha_1 =
         # erfc(2/sqrt 2) ~= 4.55%) the familywise false-alarm probability on a
         # perfectly stationary window is 1 - (1 - 0.0455)^10 ~= 37% — and
-        # measured 43.5% at n=30 / 34.5% at n=100 over 200 bootstrap trials,
+        # measured ~37% at both n=30 and n=100 over 2000 bootstrap trials,
         # because during ramp-up nothing else gates the decision (see the
         # effect-floor note below). Sidak inverts that union bound exactly for
         # independent tests: testing each feature at
@@ -288,7 +289,7 @@ class DriftMonitor:
             # for n > (z_crit/d)^2 — with z_crit ~ 2 and d = 0.2 that is
             # n > 100. Below that, "significant" implies "above the floor",
             # the floor adds nothing, and every feature runs at its full
-            # per-test alpha — exactly the measured 43.5%-at-n=30 ramp-up
+            # per-test alpha — exactly the measured ~37%-at-n=30 ramp-up
             # false-alarm regime. Scaling the floor as
             #     floor_n = max(d, alert_threshold * sqrt(2/n))
             # keeps the practical gate a factor sqrt(2) ABOVE the base

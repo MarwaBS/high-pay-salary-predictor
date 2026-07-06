@@ -39,10 +39,12 @@ project uses SemVer.
   fills: per-feature significance is now Šidák-corrected across the ~10
   monitored features and the 0.2 σ effect floor ramp-scales as
   `max(0.2, 2·√(2/n))`. Measured familywise false alarms on stationary
-  bootstrapped traffic (200 trials): 43.5 % → 6.5 % at n=30,
-  34.5 % → 3.0 % at n=100; detection of an Age +5 yr (0.5 σ) shift
-  unchanged at 100 % for n=150 and n=500, and full-window (n=500)
-  behaviour is byte-for-byte identical.
+  bootstrapped traffic (2000 trials on the real baseline): ~37 % → ~4 %
+  at n=30 and ~37 % → ~6 % at n=100 — i.e. down to the ≈4.6 % design
+  bound (the "before" is the uncorrected union of ~10 per-feature z>2
+  tests, which does not vary with n). Detection of an Age +5 yr (0.5 σ)
+  shift is unchanged at 100 % for n=150 and n=500, and full-window
+  (n=500) behaviour is byte-for-byte identical.
 
 ### Changed
 - Python target bumped: `requires-python >= 3.11` (was `>= 3.10`).

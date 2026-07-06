@@ -5,6 +5,7 @@ Run: pytest tests/test_drift.py -v
 """
 
 import json
+import math
 
 import pytest
 
@@ -61,7 +62,7 @@ class TestDriftDetection:
         z-score (0.3) stayed silent forever; the standard-error z-score flags it
         (≈4.7 SE at n=250). During ramp-up the detector is deliberately
         conservative (ramp-scaled effect floor + Šidák correction — an
-        uncorrected z>2 cut false-alarmed on 43.5% of stationary n=30 windows),
+        uncorrected z>2 cut false-alarmed on ~37% of stationary n=30 windows),
         so a 0.3σ shift is below the n=50 floor (2·√(2/50) ≈ 0.4σ) but well
         above the settled floor (0.2σ) once n ≥ 2·(z/d)² = 200."""
         mon = DriftMonitor(baseline_stats, window=300, alert_threshold=2.0)
@@ -220,7 +221,7 @@ class TestDriftRampUpFalseAlarms:
     feature was cut at an UNcorrected z > 2 (per-test α ≈ 4.55%), and below
     n = (z/d)² = 100 the fixed 0.2σ effect floor is implied by significance
     alone — so nothing gated the union and a perfectly stationary window
-    false-alarmed on 43.5% of trials at n=30 and 34.5% at n=100 (measured, 200
+    false-alarmed on ~37% of trials at both n=30 and n=100 (measured, 2000
     bootstrap trials on the real baseline). The fix Šidák-corrects the
     per-feature α across the k tested features AND ramp-scales the effect floor
     (max(0.2, z·√(2/n))), bounding the familywise false-alarm rate at
@@ -259,16 +260,16 @@ class TestDriftRampUpFalseAlarms:
     def test_stationary_n30_familywise_false_alarm_rate_bounded(self):
         """At the 30-observation reporting floor, i.i.d.-from-baseline windows
         (NO real drift) must false-alarm at ≲ the designed familywise ≈4.6% —
-        allow 7% for binomial noise over 150 trials. Pre-fix: 43.5%."""
+        allow 7% for binomial noise over 150 trials. Pre-fix: ~37%."""
         rate = self._familywise_false_alarm_rate(n_obs=30, trials=150, seed=20260704)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 (pre-fix regime was 43.5%)"
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 (pre-fix regime was ~37%)"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
         """Same bound at n=100, where the fixed 0.2σ floor exactly coincides
-        with the uncorrected z>2 bound and so (pre-fix) added nothing: 34.5%
+        with the uncorrected z>2 bound and so (pre-fix) added nothing: ~37%
         of stationary windows alarmed. Post-fix must be ≤ 7%."""
         rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 (pre-fix regime was 34.5%)"
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 (pre-fix regime was ~37%)"
 
     def test_mid_window_real_drift_still_fires(self):
         """Deaf-check: the ramp-up conservatism must NOT silence real drift
@@ -289,6 +290,72 @@ class TestDriftRampUpFalseAlarms:
             if report["any_drifted"] and report["features"]["Age"]["drifted"]:
                 detections += 1
         assert detections == trials, f"only {detections}/{trials} mid-window drift trials fired"
+
+
+class TestDriftMechanismIsolation:
+    """Each false-alarm control is load-bearing ON ITS OWN, not just as a pair.
+
+    The Šidák per-feature correction and the ramp-scaled effect floor are
+    REDUNDANT at the production width (k≈10): there, clearing the ramp floor
+    already implies z > 2√2 ≈ 2.83, which is ~the Šidák per-feature cut, so a
+    stationary-traffic false-alarm test cannot tell them apart — deleting either
+    one alone leaves the familywise rate at ≈5% and every ramp-up test still
+    green. That is a maintenance trap: someone could silently drop the Šidák
+    correction (which the docstrings call load-bearing) and CI would stay green.
+
+    These two tests break the k=10 coincidence so each mechanism is isolated —
+    removing just that one mechanism flips the single assertion to red. They are
+    fully deterministic (constant observations, zero sample variance), so the
+    boundary values are exact, not statistical.
+    """
+
+    def test_sidak_correction_is_applied_not_just_familywise_alpha(self):
+        """With many features, a per-feature shift that is significant at the
+        UNcorrected familywise α but NOT at the Šidák-corrected per-feature α —
+        while clearing the effect floor — must NOT alarm.
+
+        k=100 features, n=200 (effect floor at its fixed 0.2σ handover). One
+        feature is shifted to z=3.3 (p≈9.7e-4): that is far below α_family
+        (0.0455) so an uncorrected detector fires, but ABOVE the Šidák per-feature
+        cut α_k≈4.7e-4, so the corrected detector stays silent. Its effect size
+        (0.233σ) clears the 0.2σ floor, so ONLY the Šidák correction is what
+        holds the alarm — delete it and this feature drifts. All other features
+        sit exactly on the baseline mean (z=0)."""
+        k, n, z_target = 100, 200, 3.3
+        value = z_target / (n**0.5)  # std=1 → this constant gives mean-shift z=z_target
+        baseline = {f"f{i:03d}": {"mean": 0.0, "std": 1.0, "min": -9.0, "max": 9.0} for i in range(k)}
+        mon = DriftMonitor(baseline, window=500, alert_threshold=2.0, min_effect_size=0.2)
+        for _ in range(n):
+            obs = {f: 0.0 for f in baseline}
+            obs["f000"] = value
+            mon.observe(obs)
+        report = mon.check_drift()
+        target = report["features"]["f000"]
+        # Pin the counterfactual: it IS significant at the familywise level and
+        # DOES clear the fixed floor, so the ONLY thing keeping it silent is the
+        # Šidák tightening of the per-feature α across k tests.
+        assert target["p_value"] < math.erfc(2.0 / math.sqrt(2.0)), "must be significant at α_family"
+        assert target["effect_size"] > 0.2, "must clear the fixed effect floor"
+        assert report["any_drifted"] is False, "Šidák correction must suppress this familywise-only signal"
+
+    def test_ramp_scaled_floor_binds_above_the_fixed_floor(self):
+        """A mid-fill shift that is statistically significant AND above the FIXED
+        0.2σ floor, but below the RAMP-scaled floor, must NOT alarm.
+
+        Single feature (k=1, so the Šidák term is a no-op and cannot be what
+        gates), n=50: ramp floor = max(0.2, 2·√(2/50)) = 0.4σ. A constant +0.3σ
+        shift is significant (z=0.3·√50≈2.12 > 2) and clears the fixed 0.2σ floor,
+        but 0.3 < 0.4, so the ramp-scaled floor is the ONLY thing holding the
+        alarm — drop the ramp scaling (fixed 0.2σ only) and this drifts."""
+        baseline = {"f": {"mean": 0.0, "std": 1.0, "min": -9.0, "max": 9.0}}
+        mon = DriftMonitor(baseline, window=500, alert_threshold=2.0, min_effect_size=0.2)
+        for _ in range(50):
+            mon.observe({"f": 0.3})
+        report = mon.check_drift()
+        feat = report["features"]["f"]
+        assert feat["z_score"] > 2.0, "must be statistically significant"
+        assert feat["effect_size"] > 0.2, "must clear the FIXED 0.2σ floor"
+        assert feat["drifted"] is False, "ramp-scaled floor must suppress a sub-floor mid-fill shift"
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────
