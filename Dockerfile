@@ -31,23 +31,12 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements-dashboard.txt .
 
-# Dashboard uses loose lower bounds for now (notebook/viz stack).
-# TODO: split into requirements-dashboard.txt with pinned versions when
-# the notebook stack is stabilised.
-RUN pip install --no-cache-dir --prefix=/install \
-        "pandas>=1.5.0" \
-        "numpy>=1.21.0" \
-        "scikit-learn>=1.1.0" \
-        "xgboost>=1.7.0" \
-        "lightgbm>=3.3.0" \
-        "shap>=0.41.0" \
-        "plotly>=5.10.0" \
-        "streamlit>=1.20.0" \
-        "pyyaml>=6.0" \
-        "matplotlib>=3.5.0" \
-        "httpx>=0.27.0"
+# Exact == pins (same policy as requirements-api.txt) so a rebuild in
+# 6 months pulls the same wheels. The file is also covered by the CI
+# pip-audit gate alongside the other requirements files.
+RUN pip install --no-cache-dir --prefix=/install -r requirements-dashboard.txt
 
 
 # ── Stage 2: Streamlit dashboard ──────────────────────────────────────────────
