@@ -19,6 +19,30 @@ project uses SemVer.
   Docker images BEFORE push to GHCR. Vulnerable images are blocked
   pre-push.
 - Dependabot `docker` ecosystem (was `pip` + `github-actions` only).
+- `requirements-dashboard.txt`: exact pins for the dashboard Docker image
+  (previously hand-listed `>=` floors inside the Dockerfile, never
+  audited); now consumed by the `dashboard-builder` stage and covered by
+  the CI `pip-audit` gate.
+- CI `schedule:` trigger (weekly, Mondays 05:00 UTC) re-running the full
+  pipeline on `main` — including the Docker builds + Trivy scans — so
+  newly published image CVEs are caught by time, not only by pushes.
+- Annotated tag `training/2.0.0` pinning training commit `1c5e9d896ee5`
+  (the exact code/data state behind the shipped
+  `model_version 2.0.0+1c5e9d896ee5.e927845864e2`), so provenance
+  survives feature-branch cleanup.
+- Drift monitor ramp-up regression tests: familywise false-alarm bounds
+  on stationary windows at n=30/n=100 (150 i.i.d. trials each) plus a
+  mid-window (n=150) deaf-check on a genuine 0.5 σ shift.
+
+### Fixed
+- Drift monitor no longer chronically false-alarms while its window
+  fills: per-feature significance is now Šidák-corrected across the ~10
+  monitored features and the 0.2 σ effect floor ramp-scales as
+  `max(0.2, 2·√(2/n))`. Measured familywise false alarms on stationary
+  bootstrapped traffic (200 trials): 43.5 % → 6.5 % at n=30,
+  34.5 % → 3.0 % at n=100; detection of an Age +5 yr (0.5 σ) shift
+  unchanged at 100 % for n=150 and n=500, and full-window (n=500)
+  behaviour is byte-for-byte identical.
 
 ### Changed
 - Python target bumped: `requires-python >= 3.11` (was `>= 3.10`).

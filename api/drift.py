@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 from collections import deque
 from pathlib import Path
@@ -68,8 +69,15 @@ class DriftMonitor:
         baseline_stats : per-feature statistics from training set
                          {feature: {mean, std, min, max}}
         window         : number of recent observations to keep
-        alert_threshold: standard-error z-score above which the mean shift is
-                         judged statistically real (not sampling noise)
+        alert_threshold: base standard-error z-score that sets the FAMILYWISE
+                         significance level of the detector: alpha_family =
+                         erfc(alert_threshold/sqrt(2)) (two-sided normal tail,
+                         default 2.0 -> ~4.6%). Because ~10 features are tested
+                         per report, the per-feature significance cut is
+                         Sidak-adjusted from this familywise alpha (see
+                         ``check_drift``) — an UNcorrected per-feature z>2 test
+                         false-alarmed on 43.5% of stationary 30-observation
+                         windows (measured, 200 bootstrap trials).
         min_effect_size: minimum |mean shift| in baseline-std units required to
                          flag drift, ON TOP OF statistical significance. Without
                          it, the standard-error z-score alone alarms on a shift of
@@ -79,6 +87,11 @@ class DriftMonitor:
                          AND a practical effect (Cohen's-d small = 0.2) means a
                          genuinely-i.i.d. window at n=500 (mean wanders ~0.045 std)
                          stays silent, while a consistent >=0.2-std shift alarms.
+                         While the window is still FILLING (n < 2*(z/d)^2 = 200 at
+                         the defaults) this fixed floor is vacuous — significance
+                         alone already implies a larger shift — so the effective
+                         floor is ramp-scaled: max(min_effect_size,
+                         alert_threshold*sqrt(2/n)). See ``check_drift``.
         redis_client   : optional Redis client. If provided (or discoverable
                          from REDIS_URL), observations are stored in a
                          shared list so multi-replica Deployments aggregate
@@ -174,8 +187,11 @@ class DriftMonitor:
             observations : total observations recorded (cluster-wide in Redis mode)
             window_size  : current buffer length
             backend      : "redis" | "memory"
-            features     : {feature: {z_score, current_mean, baseline_mean, drifted}}
-            any_drifted  : True if any feature exceeds alert_threshold
+            features     : {feature: {z_score, effect_size, p_value, current_mean,
+                            baseline_mean, n_observed, drifted}}
+            any_drifted  : True if any feature is BOTH statistically significant
+                           (Sidak-corrected across all tested features) AND above
+                           the (ramp-scaled) practical effect-size floor
         """
         observations, total_count = self._read_window()
         backend = "redis" if self._redis is not None else "memory"
@@ -190,14 +206,43 @@ class DriftMonitor:
                 "message": f"Need at least 30 observations (have {len(observations)})",
             }
 
+        # Collect per-feature samples FIRST so the number of tests actually
+        # performed (k) is known before any drift decision is made — the
+        # familywise correction below needs it.
+        feature_values = {
+            # Only count observations that actually carry the feature. The old
+            # ``obs.get(feat, 0.0)`` invented zeros for absent features, which
+            # dragged the mean toward zero and manufactured phantom drift.
+            feat: [obs[feat] for obs in observations if feat in obs]
+            for feat in self.baseline
+        }
+        n_tested = sum(1 for vals in feature_values.values() if vals)
+
+        # ── Familywise error control (Sidak) ──────────────────────────────
+        # ``any_drifted`` is the union of k per-feature tests (~10 in
+        # production). At a per-feature two-sided cut of z > 2 (alpha_1 =
+        # erfc(2/sqrt 2) ~= 4.55%) the familywise false-alarm probability on a
+        # perfectly stationary window is 1 - (1 - 0.0455)^10 ~= 37% — and
+        # measured 43.5% at n=30 / 34.5% at n=100 over 200 bootstrap trials,
+        # because during ramp-up nothing else gates the decision (see the
+        # effect-floor note below). Sidak inverts that union bound exactly for
+        # independent tests: testing each feature at
+        #     alpha_k = 1 - (1 - alpha_family)^(1/k)
+        # gives P(any false alarm) = alpha_family regardless of k. Features
+        # here are only weakly correlated, so alpha_family is a tight upper
+        # bound. ``alert_threshold`` keeps its z-score interface but now sets
+        # the FAMILYWISE level: alpha_family = erfc(threshold/sqrt 2) (~4.6%
+        # at the default 2.0). Decisions compare two-sided p-values
+        # (erfc(z/sqrt 2)) against alpha_k — equivalent to raising the
+        # per-feature z cut to ~2.8 at k=10, without needing an inverse-CDF.
+        alpha_family = math.erfc(self.alert_threshold / math.sqrt(2.0))
+        alpha_per_feature = 1.0 - (1.0 - alpha_family) ** (1.0 / n_tested) if n_tested else alpha_family
+
         result: dict[str, dict] = {}
         for feat, stats in self.baseline.items():
             baseline_mean = stats["mean"]
             baseline_std = stats["std"]
-            # Only count observations that actually carry the feature. The old
-            # ``obs.get(feat, 0.0)`` invented zeros for absent features, which
-            # dragged the mean toward zero and manufactured phantom drift.
-            values = [obs[feat] for obs in observations if feat in obs]
+            values = feature_values[feat]
             n = len(values)
 
             if n == 0:
@@ -205,6 +250,7 @@ class DriftMonitor:
                 result[feat] = {
                     "z_score": 0.0,
                     "effect_size": 0.0,
+                    "p_value": 1.0,
                     "current_mean": None,
                     "baseline_mean": round(baseline_mean, 2),
                     "n_observed": 0,
@@ -229,16 +275,36 @@ class DriftMonitor:
                 z_score = 0.0
                 effect_size = 0.0
 
-            # Drift requires BOTH a statistically real mean shift (SE z-score)
-            # AND a practically meaningful one (effect size). The z-score alone
-            # makes the alarm n-sensitive — at window=500 a ~0.09-std wobble
-            # clears it — so always-noisy production traffic alarms forever. The
-            # effect-size floor is the practical-significance gate.
-            drifted = bool(z_score > self.alert_threshold and effect_size > self.min_effect_size)
+            # Drift requires BOTH a statistically real mean shift (Sidak-
+            # corrected p-value, see above) AND a practically meaningful one
+            # (effect size). The significance test alone makes the alarm
+            # n-sensitive — at window=500 a ~0.09-std wobble clears it — so
+            # always-noisy production traffic alarms forever. The effect-size
+            # floor is the practical-significance gate.
+            #
+            # ── Ramp-scaled effect floor ──────────────────────────────────
+            # The fixed floor d = min_effect_size only binds once it exceeds
+            # the shift implied by significance alone (z_crit/sqrt(n)), i.e.
+            # for n > (z_crit/d)^2 — with z_crit ~ 2 and d = 0.2 that is
+            # n > 100. Below that, "significant" implies "above the floor",
+            # the floor adds nothing, and every feature runs at its full
+            # per-test alpha — exactly the measured 43.5%-at-n=30 ramp-up
+            # false-alarm regime. Scaling the floor as
+            #     floor_n = max(d, alert_threshold * sqrt(2/n))
+            # keeps the practical gate a factor sqrt(2) ABOVE the base
+            # significance bound in z-units (2.0 -> 2.83 SE; per-feature tail
+            # 0.47% vs 4.55%) for the whole ramp-up, decays as 1/sqrt(n), and
+            # hands over to the fixed Cohen's-d floor continuously at
+            # n = 2*(alert_threshold/d)^2 = 200 (defaults) — so behaviour at
+            # the full window=500 operating point is unchanged.
+            p_value = math.erfc(z_score / math.sqrt(2.0))
+            effect_floor = max(self.min_effect_size, self.alert_threshold * math.sqrt(2.0 / n))
+            drifted = bool(p_value < alpha_per_feature and effect_size > effect_floor)
 
             result[feat] = {
                 "z_score": round(z_score, 3),
                 "effect_size": round(effect_size, 3),
+                "p_value": round(p_value, 6),
                 "current_mean": round(current_mean, 2),
                 "baseline_mean": round(baseline_mean, 2),
                 "n_observed": n,

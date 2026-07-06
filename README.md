@@ -261,12 +261,13 @@ Grouped by the engineering discipline they demonstrate.
 
 - **Prometheus metrics** via `prometheus-fastapi-instrumentator`, exposed at `/metrics`.
 - **Distributed drift monitor.** `api/drift.DriftMonitor` uses a shared Redis list for the rolling window, so multi-replica Deployments aggregate cluster-wide. Falls back to an in-process deque when Redis is absent. Tested with a fake Redis shared between two monitor instances.
+- **Statistically controlled alarms.** A feature only flags drift when its mean shift is **both** statistically significant (standard-error z-test with a **Šidák correction** across the ~10 monitored features, so the *familywise* false-alarm rate stays ≈4.6% at the default threshold) **and** practically meaningful (effect ≥ 0.2 baseline σ, **ramp-scaled** to `max(0.2, 2·√(2/n))` while the window is still filling — below n = 200 the fixed floor is implied by significance alone and would gate nothing). Measured on stationary bootstrapped traffic (200 trials): false alarms 43.5% → 6.5% at n=30 and 34.5% → 3.0% at n=100, while a 0.5σ shift (Age +5 years) is still detected in 100% of trials at both n=150 and n=500.
 - **Request tracing.** Every request carries an `X-Request-ID` (inbound or generated) through the logs.
 
 ### Security & Reproducibility
 
 - **Blocking `pip-audit` CVE gate** in CI, run against both `requirements.txt` and the pinned `requirements-lock.txt`, with **no current suppressions** (`.pip-audit-ignore.txt` is the documented place for any future ones).
-- **Pinned Docker builds.** `requirements-api.txt` holds exact versions for the API runtime. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull `shap` / `lightgbm` / `streamlit` / `statsmodels` it never uses.
+- **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull `shap` / `lightgbm` / `streamlit` / `statsmodels` it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
 - **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
 
@@ -278,7 +279,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Model registry & versioning
 
-- **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+cd1037dac48a.e927845864e2`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments.
+- **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+cd1037dac48a.e927845864e2`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The training commit of the currently shipped model is additionally pinned by the annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0), so the SHA in `model_version` stays reachable even after feature branches are deleted.
 - **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
 - **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
 - **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases) and redeployed without re-training. Because the tag encodes both the code SHA and the data hash, `git checkout <sha>` plus `python -m scripts.train_quantile` bit-reproduces the release.
@@ -287,7 +288,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **170+ tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **170+ tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -374,7 +375,7 @@ uvicorn api.main:app --reload --port 8000
 | `GET` | `/meta` | Valid states, occupations, education levels |
 | `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
 | `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) |
-| `GET` | `/drift` | Feature drift report (z-score vs training baseline) |
+| `GET` | `/drift` | Feature drift report (Šidák-corrected SE z-test + effect floor vs training baseline) |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 **Example request:**
@@ -589,7 +590,7 @@ high-pay-salary-predictor/
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
 - **170+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
-- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold (actual ~92%). On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested.
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold (actual ~92%). The coverage figure is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (generated via `pip freeze`) pins every transitive dependency to an exact version for full reproducibility.
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
