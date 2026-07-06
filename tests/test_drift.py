@@ -55,13 +55,23 @@ class TestDriftDetection:
         # Education_Ord should NOT be flagged (unchanged)
         assert report["features"]["Education_Ord"]["drifted"] is False
 
-    def test_small_consistent_mean_shift_now_alerts(self, monitor):
-        """A consistent sub-σ shift in the mean must alert. Age→43 is only
-        0.3σ of the raw feature — the old σ-scaled z-score (0.3) stayed silent;
-        the standard-error z-score (≈2.1 at n=50) correctly flags it."""
+    def test_small_consistent_mean_shift_alerts_once_window_filled(self, baseline_stats):
+        """A consistent sub-σ shift in the mean must alert once enough data has
+        accumulated. Age→43 is only 0.3σ of the raw feature — the old σ-scaled
+        z-score (0.3) stayed silent forever; the standard-error z-score flags it
+        (≈4.7 SE at n=250). During ramp-up the detector is deliberately
+        conservative (ramp-scaled effect floor + Šidák correction — an
+        uncorrected z>2 cut false-alarmed on 43.5% of stationary n=30 windows),
+        so a 0.3σ shift is below the n=50 floor (2·√(2/50) ≈ 0.4σ) but well
+        above the settled floor (0.2σ) once n ≥ 2·(z/d)² = 200."""
+        mon = DriftMonitor(baseline_stats, window=300, alert_threshold=2.0)
         for _ in range(50):
-            monitor.observe({"Age": 43.0, "Education_Ord": 2.0})
-        report = monitor.check_drift()
+            mon.observe({"Age": 43.0, "Education_Ord": 2.0})
+        early = mon.check_drift()
+        assert early["features"]["Age"]["drifted"] is False, "0.3σ is below the n=50 ramp floor (≈0.4σ)"
+        for _ in range(200):
+            mon.observe({"Age": 43.0, "Education_Ord": 2.0})
+        report = mon.check_drift()
         assert report["features"]["Age"]["drifted"] is True
         assert report["features"]["Age"]["z_score"] > 2.0
         assert report["features"]["Education_Ord"]["drifted"] is False
@@ -198,6 +208,87 @@ class TestDriftSensitivityAtWindow500:
         assert age["z_score"] > 2.0, "shift should be statistically significant"
         assert age["effect_size"] == pytest.approx(0.1, abs=1e-6)
         assert age["drifted"] is False, "trivial effect must not alarm"
+
+
+# ── Ramp-up behaviour (window still filling) ─────────────────────────────────
+
+
+class TestDriftRampUpFalseAlarms:
+    """Regression for chronic false alarms while the window fills.
+
+    ``any_drifted`` is the union of ~10 per-feature tests. Before the fix, each
+    feature was cut at an UNcorrected z > 2 (per-test α ≈ 4.55%), and below
+    n = (z/d)² = 100 the fixed 0.2σ effect floor is implied by significance
+    alone — so nothing gated the union and a perfectly stationary window
+    false-alarmed on 43.5% of trials at n=30 and 34.5% at n=100 (measured, 200
+    bootstrap trials on the real baseline). The fix Šidák-corrects the
+    per-feature α across the k tested features AND ramp-scales the effect floor
+    (max(0.2, z·√(2/n))), bounding the familywise false-alarm rate at
+    ≈ erfc(2/√2) ≈ 4.6% at ANY window fill — without touching the n=500
+    operating point (see TestDriftSensitivityAtWindow500).
+    """
+
+    # Ten features, mirroring the width of the production baseline — the
+    # familywise failure mode only shows at realistic k.
+    BASELINE = {
+        "Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0},
+        "Education_Ord": {"mean": 2.0, "std": 1.0, "min": 1.0, "max": 4.0},
+        "Gender_Bin": {"mean": 0.42, "std": 0.49, "min": 0.0, "max": 1.0},
+        "Region_Code": {"mean": 1.85, "std": 1.03, "min": 0.0, "max": 3.0},
+        "Employment": {"mean": 30000.0, "std": 60000.0, "min": 40.0, "max": 600000.0},
+        "Location Quotient": {"mean": 1.0, "std": 0.6, "min": 0.01, "max": 8.0},
+        "Jobs per 1000": {"mean": 4.0, "std": 6.0, "min": 0.01, "max": 90.0},
+        "Hourly Mean": {"mean": 65.7, "std": 13.7, "min": 48.0, "max": 123.0},
+        "Occ_Mean_Income": {"mean": 136000.0, "std": 25000.0, "min": 100000.0, "max": 230000.0},
+        "State_Mean_Income": {"mean": 136000.0, "std": 9000.0, "min": 115000.0, "max": 160000.0},
+    }
+
+    def _familywise_false_alarm_rate(self, n_obs: int, trials: int, seed: int) -> float:
+        import numpy as np
+
+        rng = np.random.default_rng(seed)
+        false_alarms = 0
+        for _ in range(trials):
+            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            for _ in range(n_obs):
+                mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
+            if mon.check_drift()["any_drifted"]:
+                false_alarms += 1
+        return false_alarms / trials
+
+    def test_stationary_n30_familywise_false_alarm_rate_bounded(self):
+        """At the 30-observation reporting floor, i.i.d.-from-baseline windows
+        (NO real drift) must false-alarm at ≲ the designed familywise ≈4.6% —
+        allow 7% for binomial noise over 150 trials. Pre-fix: 43.5%."""
+        rate = self._familywise_false_alarm_rate(n_obs=30, trials=150, seed=20260704)
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 (pre-fix regime was 43.5%)"
+
+    def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
+        """Same bound at n=100, where the fixed 0.2σ floor exactly coincides
+        with the uncorrected z>2 bound and so (pre-fix) added nothing: 34.5%
+        of stationary windows alarmed. Post-fix must be ≤ 7%."""
+        rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 (pre-fix regime was 34.5%)"
+
+    def test_mid_window_real_drift_still_fires(self):
+        """Deaf-check: the ramp-up conservatism must NOT silence real drift
+        mid-fill. Age +5 years (0.5σ) at n=150 — floor(150) ≈ 0.23σ, expected
+        per-trial power ≈ 99.9% — must fire on every one of 25 trials."""
+        import numpy as np
+
+        rng = np.random.default_rng(20260706)
+        detections = 0
+        trials = 25
+        for _ in range(trials):
+            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            for _ in range(150):
+                obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
+                obs["Age"] += 5.0  # +0.5 baseline std
+                mon.observe(obs)
+            report = mon.check_drift()
+            if report["any_drifted"] and report["features"]["Age"]["drifted"]:
+                detections += 1
+        assert detections == trials, f"only {detections}/{trials} mid-window drift trials fired"
 
 
 # ── Persistence ──────────────────────────────────────────────────────────────

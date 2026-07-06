@@ -5,6 +5,13 @@ on:
     branches: ["**"]
   pull_request:
     branches: [main, master]
+  schedule:
+    # Weekly freshness re-scan (Mondays 05:00 UTC). Trivy findings and
+    # pip-audit CVEs are a function of TIME, not of pushes — without this,
+    # a quiet repo ships images whose last vulnerability scan silently ages.
+    # The scheduled run re-executes the full existing pipeline (pip-audit,
+    # tests, Docker build + Trivy scan on both images) on main.
+    - cron: "0 5 * * 1"
 
 jobs:
   test:
@@ -39,6 +46,20 @@ jobs:
           # CVE for a package that isn't in the dependency tree at all.
           pip-audit --requirement requirements.txt --skip-editable
           pip-audit --requirement requirements-lock.txt
+
+      - name: Security — audit the dashboard image universe (3.12 only)
+        # requirements-dashboard.txt is a `pip freeze` of the dashboard Docker
+        # image, whose base is python:3.12-slim. Its exact pins (scipy==1.18.0,
+        # numpy==2.4.6, pandas==3.0.3, …) only exist for CPython >=3.12, so on
+        # the 3.11 matrix leg pip-audit's resolver cannot even construct the
+        # set and errors before checking a single CVE — it would be auditing a
+        # dependency universe that is never built or shipped (the image is
+        # always 3.12). Gate the audit to the interpreter that matches the
+        # artifact, mirroring the SBOM step's `== '3.12'` guard below. The
+        # dashboard deps are still audited on every run, on their real Python.
+        if: matrix.python-version == '3.12'
+        run: |
+          pip-audit --requirement requirements-dashboard.txt
 
       - name: Generate CycloneDX SBOM (API runtime surface)
         # Standard 2026 supply-chain artifact. Scans requirements-api.txt
@@ -127,7 +148,9 @@ jobs:
   deploy:
     name: Build & Push Docker Images
     needs: [test, notebook-check]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Runs on merge to main AND on the weekly schedule (scheduled runs execute
+    # on the default branch), so the Trivy image scans stay fresh over time.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'schedule')
     runs-on: ubuntu-latest
     permissions:
       contents: read
