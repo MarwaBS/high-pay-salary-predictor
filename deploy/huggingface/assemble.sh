@@ -21,9 +21,17 @@ REPO_DIR="${1:?usage: assemble.sh <repo_dir> <space_dir>}"
 SPACE_DIR="${2:?usage: assemble.sh <repo_dir> <space_dir>}"
 
 # ── Space-specific files (Docker build entrypoints + HF card) ────────────────
+# The Dockerfile + README live at the Space repo ROOT (HF convention: HF builds
+# the root Dockerfile and renders the root README as the card). start.sh is
+# copied to deploy/huggingface/start.sh because the Dockerfile references it by
+# THAT path (`COPY deploy/huggingface/start.sh …`) — putting it at the root
+# would make the Space's `docker build` fail on a missing COPY source.
+# tests/test_space_snapshot.py enforces that assemble.sh satisfies every COPY
+# source the Dockerfile needs.
 cp "$REPO_DIR/deploy/huggingface/Dockerfile" "$SPACE_DIR/Dockerfile"
 cp "$REPO_DIR/deploy/huggingface/README.md" "$SPACE_DIR/README.md"
-cp "$REPO_DIR/deploy/huggingface/start.sh" "$SPACE_DIR/start.sh"
+mkdir -p "$SPACE_DIR/deploy/huggingface"
+cp "$REPO_DIR/deploy/huggingface/start.sh" "$SPACE_DIR/deploy/huggingface/start.sh"
 
 # ── Runtime dependency set (the only requirements file the image installs) ───
 cp "$REPO_DIR/requirements-api.txt" "$SPACE_DIR/requirements-api.txt"
