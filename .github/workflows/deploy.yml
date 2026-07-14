@@ -1,0 +1,140 @@
+# Deploy the runtime snapshot to the Hugging Face Space + weekly drift guard.
+#
+# WHY THIS EXISTS: the Space was assembled by hand once (deploy/huggingface/
+# DEPLOY.md) and never re-pushed — it served a 3-month-stale April revision
+# behind a "Live Demo" badge in the README. A demo only a human remembers to
+# redeploy will always rot; deploys must ride main.
+#
+# Two jobs, one assembly script (deploy/huggingface/assemble.sh — shared so the
+# deploy and the guard can never diverge):
+#
+#   deploy-space  — on every push to main: overlay the runtime snapshot (code +
+#                   config + committed model artefacts + Space Dockerfile/
+#                   README/start.sh + dataset) onto a clone of the Space repo
+#                   and push if anything changed. Requires the HF_TOKEN
+#                   repository secret (write-scoped); fails loudly with
+#                   instructions if it is missing or not write-scoped.
+#
+#   space-drift   — weekly: the same overlay against the live Space, READ-ONLY
+#                   (anonymous clone, no token). Any diff means the Space is not
+#                   serving main's code/models and the job FAILS. A red run here
+#                   is the honest signal the demo has rotted — and the standing
+#                   freshness alert the pull-only /drift endpoint can't provide
+#                   externally (the API is localhost-only inside the container).
+
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    # Weekly, offset from CI (Mon 06:00) and train.yml (Mon 03:00) so a shared
+    # runner hiccup doesn't take out multiple signals at once.
+    - cron: "30 6 * * 1"
+
+permissions:
+  contents: read
+
+env:
+  SPACE_URL_PUBLIC: https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor
+
+jobs:
+  deploy-space:
+    name: Push runtime snapshot to HF Space
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Validate HF_TOKEN secret is configured
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "${HF_TOKEN:-}" ]; then
+            echo "::error::HF_TOKEN secret is missing — the Space CANNOT be deployed and will drift from main. Create a WRITE token at https://huggingface.co/settings/tokens and add it as a repository secret named HF_TOKEN at https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          fi
+          # Fail fast on the two paste/permission mistakes that actually happen:
+          # a token pasted with a newline (breaks the clone URL) and a
+          # READ-scoped token (clone works on a public repo, then the push dies
+          # with 'Invalid username or password').
+          TOKEN="$(printf '%s' "${HF_TOKEN}" | tr -d '[:space:]')"
+          WHOAMI="$(curl -sf -H "Authorization: Bearer ${TOKEN}" https://huggingface.co/api/whoami-v2 || true)"
+          if [ -z "$WHOAMI" ]; then
+            echo "::error::HF_TOKEN is present but Hugging Face rejects it (whoami failed). Regenerate the token at https://huggingface.co/settings/tokens and update the secret."
+            exit 1
+          fi
+          ROLE="$(printf '%s' "$WHOAMI" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("auth",{}).get("accessToken",{}).get("role") or d.get("auth",{}).get("type") or "unknown")')"
+          echo "HF token authenticated; role: ${ROLE}"
+          case "$ROLE" in
+            write|fineGrained) : ;;
+            *)
+              echo "::error::HF_TOKEN authenticates but is not WRITE-scoped (role: ${ROLE}). A read token can clone the public Space but the deploy push fails with 'Invalid username or password'. Create a token with type WRITE at https://huggingface.co/settings/tokens and update the HF_TOKEN secret."
+              exit 1
+              ;;
+          esac
+
+      - name: Clone Space and overlay runtime snapshot
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Secrets pasted from the HF token page routinely carry a trailing
+          # newline; embedded in a URL that becomes "fatal: credential url
+          # cannot be parsed". Strip ALL whitespace before use.
+          TOKEN="$(printf '%s' "${HF_TOKEN}" | tr -d '[:space:]')"
+          # Skip-smudge avoids pulling the Space's existing blobs (assemble.sh
+          # replaces the tracked files wholesale). git lfs install wires the
+          # clean filter + pre-push hook so, if the Space's .gitattributes
+          # routes any file through LFS, it is stored/uploaded correctly.
+          GIT_LFS_SKIP_SMUDGE=1 git clone --quiet \
+            "https://MarwaBS:${TOKEN}@huggingface.co/spaces/MarwaBS/high-pay-salary-predictor" \
+            /tmp/hf-space
+          git -C /tmp/hf-space lfs install --local
+          bash deploy/huggingface/assemble.sh "$GITHUB_WORKSPACE" /tmp/hf-space
+
+      - name: Commit and push if the snapshot changed
+        run: |
+          set -euo pipefail
+          cd /tmp/hf-space
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Space already matches main — nothing to deploy."
+            exit 0
+          fi
+          git config user.name "MarwaBS"
+          git config user.email "marwabensalem30@gmail.com"
+          git commit --quiet -m "Deploy ${GITHUB_SHA} — runtime snapshot from main"
+          git push --quiet origin main
+          echo "Deployed ${GITHUB_SHA} to ${SPACE_URL_PUBLIC}"
+
+      - name: Summary
+        run: |
+          echo "### HF Space deploy" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Space: ${SPACE_URL_PUBLIC}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Source commit: \`${GITHUB_SHA}\`" >> "$GITHUB_STEP_SUMMARY"
+
+  space-drift:
+    name: Space serves main? (drift guard)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Overlay main onto the live Space (read-only) and diff
+        run: |
+          set -euo pipefail
+          GIT_LFS_SKIP_SMUDGE=1 git clone --quiet \
+            "${SPACE_URL_PUBLIC}" /tmp/hf-space
+          git -C /tmp/hf-space lfs install --local
+          bash deploy/huggingface/assemble.sh "$GITHUB_WORKSPACE" /tmp/hf-space
+          cd /tmp/hf-space
+          git add -A
+          if ! git diff --cached --quiet; then
+            echo "::error::The live Space does NOT match main — the public demo is serving stale code OR stale model artefacts. Files that differ:"
+            git diff --cached --stat
+            exit 1
+          fi
+          echo "Space matches main (code AND model artefacts)."

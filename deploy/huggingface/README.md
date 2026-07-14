@@ -71,6 +71,7 @@ apply uniformly to any future consumer.
 
 ## Notes on the live environment
 
+- **This Space is deployed automatically from `main`** by the repo's Deploy workflow, and a weekly drift guard fails CI if the Space ever stops matching `main` (code **or** model artefacts). It was previously hand-deployed — and served a 3-month-stale revision. Never again.
 - First load may take ~10 seconds while both uvicorn and Streamlit come up.
 - There is **no Redis cache** on the free tier — every prediction hits the model. The API falls back to a graceful no-op cache.
 - There is **no persistent storage** — state is lost on container restart.

@@ -112,9 +112,27 @@ shown in `models/model_metrics.json::train_date`.
 | 80% empirical coverage | **~0.77** | Fraction of test targets that fall inside `[P10, P90]`. Target = 0.80 ± 0.05. |
 | Median PI width | ~$112K | Typical spread of the 80% interval in dollar space. |
 | Quantile crossings | **0** | Number of test rows where P10 > P50 or P50 > P90. Must be zero. |
-| P10 pinball loss | ~$5.5K | Quantile loss at α=0.10. |
+| P10 pinball loss | ~$6.6K | Quantile loss at α=0.10. |
 | P50 pinball loss | ~$25K | Quantile loss at α=0.50 (equals `0.5 × MAE`). |
-| P90 pinball loss | ~$21K | Quantile loss at α=0.90. |
+| P90 pinball loss | ~$22K | Quantile loss at α=0.90. |
+
+### Provenance & reproducibility
+
+Each artefact carries a `model_version` of the form
+`{service_version}+{git_sha}.{data_sha256_prefix}` (e.g.
+`2.0.0+1c5e9d896ee5.e927845864e2`), recorded in `models/model_metrics.json`.
+The **git SHA is the exact training commit**. Training runs only on `main` (the
+weekly cron and `workflow_dispatch` in `train.yml`), so that commit is authored
+on main — but because PRs land via **squash-merge**, the training commit is a
+real, still-fetchable object that is **not an ancestor of `main`** after the
+squash (the squash creates a new commit with a different SHA). Do not expect
+`git checkout <git_sha>` from a shallow/gc'd clone to succeed. Reproducibility
+does **not** depend on checking out that commit: it rests on the committed
+artefacts, the exact-version `requirements-lock.txt`, the fixed training seed
+(`config.yaml::model.random_state`), and the `data_sha256` prefix that pins the
+input CSV — same code + same data + same seed reproduce the same
+`model_version`. `tests/test_model_version.py` enforces the version *shape*;
+the `data_sha256` is what actually binds a metric set to its input.
 
 ### Point-estimate metrics (backward compat, P50 column)
 
