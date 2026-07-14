@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Full history so `git rev-parse` in the trainer resolves
           # a real SHA rather than the shallow-checkout stub.
