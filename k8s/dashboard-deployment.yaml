@@ -66,7 +66,7 @@ spec:
               mountPath: /shared-data
       containers:
         - name: dashboard
-          image: ghcr.io/marwabs/high_pay_analysis_us/dashboard:IMAGE_TAG_PLACEHOLDER
+          image: ghcr.io/marwabs/high-pay-salary-predictor/dashboard:IMAGE_TAG_PLACEHOLDER
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

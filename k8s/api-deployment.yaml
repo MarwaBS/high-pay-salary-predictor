@@ -80,6 +80,7 @@ spec:
               set -eu
               echo "Fetching model from $MODEL_URL"
               curl -fsSL --retry 3 --retry-delay 2 "$MODEL_URL" -o /shared-models/xgb_salary_model.ubj
+              curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}xgb_premium_classifier.ubj" -o /shared-models/xgb_premium_classifier.ubj
               curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}feature_names.json" -o /shared-models/feature_names.json
               curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}group_means.json" -o /shared-models/group_means.json
               curl -fsSL --retry 3 --retry-delay 2 "${MODEL_URL%xgb_salary_model.ubj}model_metrics.json" -o /shared-models/model_metrics.json
@@ -94,7 +95,7 @@ spec:
               mountPath: /shared-data
       containers:
         - name: api
-          image: ghcr.io/marwabs/high_pay_analysis_us/api:IMAGE_TAG_PLACEHOLDER
+          image: ghcr.io/marwabs/high-pay-salary-predictor/api:IMAGE_TAG_PLACEHOLDER
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

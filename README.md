@@ -577,7 +577,7 @@ high-pay-salary-predictor/
 │
 ├── requirements.txt                           # Pinned runtime + dev dependencies
 ├── requirements-api.txt                       # ★ API-stage Docker deps only (minimal, fully pinned)
-├── requirements-lock.txt                      # pip freeze — exact transitive deps for full reproducibility
+├── requirements-lock.txt                      # pip freeze of the API runtime + CI tooling (the pip-audit target)
 ├── MODEL_CARD.md                              # Intended use, limitations, fairness, subgroup metrics
 ├── CONTRIBUTING.md                             # Contribution guide
 └── LICENSE                                    # MIT
@@ -592,5 +592,5 @@ high-pay-salary-predictor/
 - **170+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold (actual ~92%). The coverage figure is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
-- **Exact lock file:** `requirements-lock.txt` (generated via `pip freeze`) pins every transitive dependency to an exact version for full reproducibility.
+- **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
