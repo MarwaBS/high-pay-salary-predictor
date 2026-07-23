@@ -137,9 +137,12 @@ jobs:
       - name: Validate notebook JSON
         run: |
           python - <<'EOF'
-          import nbformat, glob, os, sys
+          import nbformat, glob, sys
+          paths = glob.glob("notebooks/*.ipynb")
+          if not paths:
+              sys.exit("No notebooks found under notebooks/ — did they move? This gate would otherwise pass by validating nothing.")
           errors = []
-          for path in glob.glob("*.ipynb"):
+          for path in paths:
               try:
                   nb = nbformat.read(path, as_version=4)
                   nbformat.validate(nb)
