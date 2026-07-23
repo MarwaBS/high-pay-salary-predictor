@@ -234,10 +234,22 @@ def compute_fallback_means(
 
     Used when a specific occupation or state has no entry in the training-set
     group means (e.g. unseen at training time).
+
+    Raises
+    ------
+    ValueError  if either group-mean dict is empty — averaging an empty set
+                yields NaN, which the API would then inject as the fallback
+                feature value for every unseen occupation/state. Fail at
+                startup instead of serving silent NaNs.
     """
-    occ_fallback = float(np.mean(list(group_means["occ_means"].values())))
-    state_fallback = float(np.mean(list(group_means["state_means"].values())))
-    return occ_fallback, state_fallback
+    occ = list(group_means["occ_means"].values())
+    state = list(group_means["state_means"].values())
+    if not occ or not state:
+        raise ValueError(
+            "compute_fallback_means: group_means artefact has empty occ_means or state_means "
+            "— retrain (`python -m scripts.train_quantile`) to produce non-empty means."
+        )
+    return float(np.mean(occ)), float(np.mean(state))
 
 
 # ---------------------------------------------------------------------------

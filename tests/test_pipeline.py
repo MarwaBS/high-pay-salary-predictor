@@ -411,6 +411,18 @@ class TestEngineerFeaturesGuards:
             engineer_features(self._frame(**{"State Abbreviation": "ZZ"}), self.EDU, self.REGION)
 
 
+def test_compute_fallback_means_raises_on_empty():
+    """HP-M2: averaging an empty group-means dict yields NaN, which the API
+    would inject as the fallback feature for every unseen occupation/state.
+    Fail loud instead."""
+    from pipeline import compute_fallback_means
+
+    with pytest.raises(ValueError, match="empty"):
+        compute_fallback_means({"occ_means": {}, "state_means": {"CA": 1.0}})
+    occ, state = compute_fallback_means({"occ_means": {"a": 100.0, "b": 200.0}, "state_means": {"CA": 150.0}})
+    assert occ == 150.0 and state == 150.0
+
+
 # ── Config Schema Validation ─────────────────────────────────────────────────
 
 

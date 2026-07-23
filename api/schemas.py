@@ -149,10 +149,21 @@ class PredictResponse(BaseModel):
         ge=0,
         le=100,
         description=(
-            "Percentage of similar workers (same state + education level) "
-            "in the dataset who earn less than the predicted salary."
+            "Percentage of the reference distribution that earns less than the "
+            "predicted salary. See ``percentile_scope`` for which reference "
+            "was used."
         ),
         examples=[62.4],
+    )
+    percentile_scope: str = Field(
+        default="group",
+        description=(
+            "Which distribution ``percentile_in_group`` was computed against: "
+            "``group`` = the same (state, education) cell had data; ``dataset`` "
+            "= the cell was unseen, so the whole-dataset distribution was used "
+            "(not a fabricated 50th percentile)."
+        ),
+        examples=["group"],
     )
     group_median: float = Field(
         ...,

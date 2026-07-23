@@ -37,7 +37,7 @@ model:
   learning_rate: 0.045
   subsample: 0.741
   colsample_bytree: 0.829
-  reg_lambda: 9.88      # L2 regularisation — critical for high-variance income data
+  reg_lambda: 9.88      # L2 regularisation (hand-tuned, not from a logged search)
   # Target transformation: model is trained on log1p(Annual Income).
   # Callers must expm1() the raw prediction to get dollar values.
   log_transform_target: true

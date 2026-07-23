@@ -175,7 +175,9 @@ class TestBuildResponsePercentile:
         )
         assert resp.percentile_in_group == pytest.approx(66.7, abs=0.1)
 
-    def test_fallback_group_uses_50th_percentile_sentinel(self, sample_df):
+    def test_fallback_group_ranks_against_dataset_not_fabricated_50(self, sample_df):
+        """HP-M3: an unseen cell must rank against the whole-dataset income
+        distribution and label the scope — never return a fabricated 50.0."""
         lookup = build_benchmark_lookup(sample_df)
         fallback = lookup_benchmarks(lookup, "ZZ", "Unknown")
         resp = build_response(
@@ -185,8 +187,10 @@ class TestBuildResponsePercentile:
             p90=225_000.0,
             group_stats=fallback,
         )
-        # count=0 triggers the hard-coded 50.0 fallback
-        assert resp.percentile_in_group == 50.0
+        # All 7 incomes: [100k,120k,150k,180k,200k,240k,300k]; 4 strictly below
+        # 200k → 4/7 = 57.1%, computed against the dataset (not 50.0).
+        assert resp.percentile_in_group == pytest.approx(57.1, abs=0.1)
+        assert resp.percentile_scope == "dataset"
         assert resp.group_size == 0
 
     def test_quantile_fields_populated(self, sample_df):

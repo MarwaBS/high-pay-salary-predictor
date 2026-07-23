@@ -245,10 +245,11 @@ def build_response(
 ) -> PredictResponse:
     """Assemble the final PredictResponse from the model's quantile trio.
 
-    The percentile matches the previous behaviour exactly — it is
-    ``(group < predicted).mean() * 100`` — but computed via a binary
-    search on the precomputed sorted array instead of a per-request
-    DataFrame mask. Both methods count strictly-less-than values.
+    The percentile is ``(reference < predicted).mean() * 100`` via a binary
+    search on the precomputed sorted array. ``percentile_scope`` says which
+    reference was used: ``"group"`` when the (state, education) cell had rows,
+    ``"dataset"`` when the cell was unseen and the whole-dataset distribution
+    was used instead — never a fabricated 50th percentile.
 
     ``p_above_premium_threshold`` and ``premium_threshold`` come from the
     binary classifier head (Gap 1 Phase 1). Both default to ``None`` so
@@ -260,12 +261,17 @@ def build_response(
     p90_ord = max(p10, p50, p90)
     p50_ord = min(max(p50, p10_ord), p90_ord)
 
+    # The unseen-cell fallback (count == 0) still carries the full dataset
+    # income array, so rank against it and label the scope rather than invent
+    # a 50th percentile that would misrepresent an out-of-distribution query.
     sorted_incomes = group_stats["sorted_incomes"]
-    if group_stats["count"] > 0 and len(sorted_incomes) > 0:
+    if len(sorted_incomes) > 0:
         strictly_below = int(np.searchsorted(sorted_incomes, p50_ord, side="left"))
         percentile = float(strictly_below / len(sorted_incomes) * 100.0)
+        percentile_scope = "group" if group_stats["count"] > 0 else "dataset"
     else:
-        percentile = 50.0
+        percentile = 0.0
+        percentile_scope = "unavailable"
 
     return PredictResponse(
         predicted_salary=round(p50_ord, 2),  # backward-compat alias
@@ -275,6 +281,7 @@ def build_response(
         prediction_interval_low=round(p10_ord, 2),
         prediction_interval_high=round(p90_ord, 2),
         percentile_in_group=round(percentile, 1),
+        percentile_scope=percentile_scope,
         group_median=round(group_stats["median"], 2),
         group_mean=round(group_stats["mean"], 2),
         group_size=group_stats["count"],

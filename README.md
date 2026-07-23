@@ -1,7 +1,7 @@
 # High-Paying Jobs in the US — Salary Quantile Predictor
 
 [![Live Demo](https://img.shields.io/badge/%F0%9F%A4%97%20Live%20Demo-on%20Hugging%20Face-yellow)](https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/MarwaBS/high-pay-salary-predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/MarwaBS/high-pay-salary-predictor/actions/workflows/ci.yml)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](MODEL_CARD.md)
