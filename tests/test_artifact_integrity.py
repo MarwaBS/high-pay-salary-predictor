@@ -1,7 +1,7 @@
 """Committed serving artefacts must match the SHA-256 digests training recorded.
 
-CI retrains before pytest, so without this the committed artefacts the live
-demo serves are never checked. verify() content-addresses them against
+Without this, the committed artefacts the live demo serves are never checked
+against the digests training recorded. verify() content-addresses them against
 models/model_metrics.json::artifact_sha256 (HP-H4 / P1).
 """
 

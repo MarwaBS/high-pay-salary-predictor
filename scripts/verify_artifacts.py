@@ -1,7 +1,7 @@
 """Verify committed model artefacts against the SHA-256 digests training recorded.
 
-CI retrains a model on every run, but the live demo serves the artefacts
-committed to ``models/``. Nothing tied the two together, so a corrupt or
+The live demo serves the artefacts committed to ``models/``, but nothing tied
+those committed bytes to the digests training recorded, so a corrupt or
 desynced committed artefact could ship under a fully green pipeline. This
 script closes that gap: it recomputes the SHA-256 of each committed artefact
 and compares it to ``models/model_metrics.json::artifact_sha256``.

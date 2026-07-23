@@ -2,9 +2,9 @@ name: Train & Release Model
 
 # Scheduled model-registry pipeline.
 #
-# The regular CI workflow (``ci.yml``) re-trains the model on every run
-# for smoke-test purposes but does not persist the artefacts anywhere
-# durable. This workflow is the durable path: on a weekly cron (and
+# The regular CI workflow (``ci.yml``) verifies the committed artefacts and
+# runs the model tests but does not persist any artefacts durably. This
+# workflow is the durable path: on a weekly cron (and
 # on-demand via ``workflow_dispatch``) it trains the multi-quantile
 # XGBoost model, archives the exact artefacts, and publishes them as a
 # GitHub Release named ``model-{MODEL_VERSION}`` where MODEL_VERSION is

@@ -34,8 +34,8 @@
 > the API serves a **cross-conformal–calibrated** interval that hits the
 > target 0.80 (≈ 0.80 on held-out test) at a ≈ 3% wider median P10–P90 band
 > (≈ $117K); point-estimate R² ≈ 0.03. The
-> premium-tier classifier *ties* a logistic-regression baseline (AUC ≈
-> 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
+> premium-tier classifier *slightly trails* a logistic-regression baseline
+> (AUC 0.676 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
 > production-ML *engineering* around an honestly-hard problem: a
 > leakage-safe, calibrated, observable serving path that holds its
