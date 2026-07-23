@@ -203,6 +203,22 @@ def engineer_features(
     return out
 
 
+def train_test_positions(n_rows: int, *, test_size: float, random_state: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return (train, test) positional row indices for the project's single split.
+
+    The trainer and the Streamlit dashboard both derive *which rows are test*
+    from this one function, so a change to the split (adding stratification, a
+    different seed) moves them together — the dashboard can never silently
+    report residuals on a train-contaminated "test" set because it re-derived
+    the split a second, diverging way. sklearn is imported lazily so importing
+    ``pipeline`` on the serving hot path does not pull it in.
+    """
+    from sklearn.model_selection import train_test_split
+
+    train_pos, test_pos = train_test_split(np.arange(n_rows), test_size=test_size, random_state=random_state)
+    return np.asarray(train_pos), np.asarray(test_pos)
+
+
 def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
     """Compute occupation and state mean incomes from the *training set only*.
 

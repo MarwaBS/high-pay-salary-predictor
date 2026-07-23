@@ -99,6 +99,29 @@ def test_build_model_version_is_composite():
     assert "+" in version and "." in version.split("+", 1)[1]
 
 
+def test_trainer_test_split_matches_shared_primitive():
+    """HP-M13: the dashboard scores its residual plot on the test rows selected by
+    ``pipeline.train_test_positions``. The trainer must derive its own test set the
+    same way, or the dashboard silently reports residuals on a train-contaminated
+    split. Red if ``_prepare_split`` stops using the shared split primitive (e.g.
+    someone adds stratification to only one of the two)."""
+    from pipeline import train_test_positions
+
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    df_raw = pd.read_csv(REPO_ROOT / cfg["data"]["cleaned"])
+    region_map = {s: r for r, states in cfg["regions"].items() for s in states}
+    seed = cfg["model"]["random_state"]
+    test_size = cfg["model"]["test_size"]
+
+    _, df_test, _, _ = tq._prepare_split(
+        df_raw, seed=seed, test_size=test_size, edu_order=cfg["education_order"], region_map=region_map
+    )
+    _, test_pos = train_test_positions(len(df_raw), test_size=test_size, random_state=seed)
+    assert list(df_test.index) == list(df_raw.iloc[test_pos].index), (
+        "trainer test set diverged from the shared split primitive the dashboard uses"
+    )
+
+
 # ── HP-B1 regression: CV must not leak the validation target ────────────────────
 
 _TINY_PARAMS = {

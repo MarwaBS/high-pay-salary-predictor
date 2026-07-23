@@ -18,7 +18,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import yaml
-from sklearn.model_selection import train_test_split
 from xgboost import XGBRegressor
 
 from pipeline import (
@@ -27,6 +26,7 @@ from pipeline import (
     load_group_means,
     load_metrics,
     load_model,
+    train_test_positions,
 )
 
 warnings.filterwarnings("ignore")
@@ -494,12 +494,15 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
     with col_right:
         X = df[FEATURES_FULL]
         y = df["Annual Income"]
-        _, X_test, _, y_test = train_test_split(
-            X,
-            y,
+        # Use the trainer's split (shared primitive) so the residual plot scores
+        # the SAME held-out rows the model was evaluated on — not an independently
+        # re-derived split that would silently diverge if the trainer's changed.
+        _, test_pos = train_test_positions(
+            len(df),
             test_size=CFG["model"]["test_size"],
             random_state=CFG["model"]["random_state"],
         )
+        X_test, y_test = X.iloc[test_pos], y.iloc[test_pos]
         # Multi-quantile model outputs (n, 3). For the residual plot we
         # use the P50 column back-transformed to dollar space. Legacy
         # point models emit a 1-D shape and fall through the else branch.

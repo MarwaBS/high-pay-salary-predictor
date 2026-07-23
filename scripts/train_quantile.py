@@ -91,7 +91,7 @@ from sklearn.metrics import (
     r2_score,
     roc_auc_score,
 )
-from sklearn.model_selection import KFold, train_test_split
+from sklearn.model_selection import KFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBClassifier, XGBRegressor
@@ -109,6 +109,7 @@ from pipeline import (
     save_metrics,
     save_model,
     sha256_file,
+    train_test_positions,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -226,7 +227,8 @@ def _prepare_split(
     Also returns the raw train frame so cross-validation can re-derive
     per-fold target-encoding means from raw rows (see :func:`_cross_val_r2`).
     """
-    df_train_raw, df_test_raw = train_test_split(df_raw, test_size=test_size, random_state=seed)
+    train_pos, test_pos = train_test_positions(len(df_raw), test_size=test_size, random_state=seed)
+    df_train_raw, df_test_raw = df_raw.iloc[train_pos], df_raw.iloc[test_pos]
     group_means = compute_group_means(df_train_raw)
     df_train = engineer_features(
         df_train_raw, edu_order, region_map, occ_means=group_means["occ_means"], state_means=group_means["state_means"]
