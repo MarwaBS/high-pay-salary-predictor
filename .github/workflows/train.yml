@@ -165,6 +165,11 @@ jobs:
           # premium-tier classifier head and the API degraded p_above_premium to
           # null. tests/test_model_registry.py machine-checks this list against
           # config.yaml's loaded paths so the two can't drift again.
+          # The dataset is published alongside the model artefacts so the
+          # release is a self-contained deploy source: the k8s configmap points
+          # model-url AND data-url at this one gated release, closing the
+          # split-brain where serving surfaces pulled artefacts from three
+          # different places.
           files: |
             models/xgb_salary_model.ubj
             models/xgb_premium_classifier.ubj
@@ -173,3 +178,4 @@ jobs:
             models/group_means.json
             models/baseline_stats.json
             models/conformal_delta.json
+            Data/cleaned_high_pay_data.csv
