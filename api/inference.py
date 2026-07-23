@@ -224,13 +224,14 @@ def quantiles_crossed(p10: float, p50: float, p90: float) -> bool:
     return p10 > p50 or p50 > p90
 
 
-def run_model(model: Any, row: pd.DataFrame) -> tuple[float, float, float]:
+def run_model(model: Any, row: pd.DataFrame, *, conformal_delta: float = 0.0) -> tuple[float, float, float]:
     """Invoke the multi-quantile model and return (p10, p50, p90) dollars.
 
     See ``pipeline.predict_quantiles`` — a non-quantile model is refused at
-    startup, so this always returns a real interval.
+    startup, so this always returns a real interval. ``conformal_delta`` widens
+    P10/P90 to the calibrated coverage; P50 is unchanged.
     """
-    return predict_quantiles(model, row)
+    return predict_quantiles(model, row, conformal_delta=conformal_delta)
 
 
 def build_response(

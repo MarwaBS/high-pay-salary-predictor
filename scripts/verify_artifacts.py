@@ -41,6 +41,7 @@ def verify(config_path: str | Path | None = None) -> list[str]:
         "features": ROOT / model_cfg["features_path"],
         "group_means": ROOT / model_cfg["group_means_path"],
         "baseline_stats": models_dir / "baseline_stats.json",
+        "conformal": ROOT / model_cfg["conformal_path"],
     }
 
     problems: list[str] = []

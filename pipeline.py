@@ -352,6 +352,39 @@ def save_group_means(group_means: dict, path: str) -> None:
         json.dump(group_means, f, indent=2)
 
 
+def save_conformal(delta: float, path: str, *, target_coverage: float, n_scores: int) -> None:
+    """Persist the split-conformal interval margin (log space) plus its provenance."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "conformal_delta": delta,
+        "target_coverage": target_coverage,
+        "method": "cross-conformal (5-fold CQR, log1p space)",
+        "n_scores": n_scores,
+    }
+    with open(path, "w") as f:
+        json.dump(payload, f, indent=2)
+
+
+def load_conformal_delta(path: str) -> float:
+    """Load the split-conformal interval margin.
+
+    Raises
+    ------
+    FileNotFoundError  if *path* does not exist. The served interval claims a
+    calibrated coverage that only holds with this margin applied, so a missing
+    artefact is a hard failure, not a silent fall-back to the raw interval.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Conformal margin artefact not found: {p}. "
+            "Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
+        )
+    with open(p) as f:
+        payload = json.load(f)
+    return float(payload["conformal_delta"])
+
+
 def load_group_means(path: str) -> dict[str, dict[str, float]]:
     """Load occupation and state mean-income mappings from JSON.
 
@@ -380,24 +413,36 @@ def load_group_means(path: str) -> dict[str, dict[str, float]]:
 # and raise on anything else rather than silently degrading to a (p, p, p) point.
 
 
-def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame) -> np.ndarray:
+def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame, *, conformal_delta: float = 0.0) -> np.ndarray:
     """Return an (n, 3) array of (p10, p50, p90) dollar predictions for a frame.
 
     Single source of truth for parsing the multi-quantile output: expm1's the
     (n, 3) log-space prediction back to dollars. Raises on any other shape — a
     legacy point model is refused at startup, so a non-(n, 3) output here is a
     real fault, not a fallback.
+
+    ``conformal_delta`` widens the P10/P90 bounds symmetrically in log space by
+    the split-conformal margin (see ``scripts.train_quantile`` cross-conformal
+    calibration) so the served interval reaches its nominal coverage; the raw
+    quantiles under-cover by a couple of points. P50 is never shifted. The
+    default 0.0 leaves the raw interval unchanged.
     """
     raw = np.asarray(model.predict(rows))
     if raw.ndim != 2 or raw.shape[1] != 3:
         raise ValueError(f"Expected multi-quantile model output (n, 3), got shape {raw.shape}")
+    if conformal_delta:
+        raw = raw.copy()
+        raw[:, 0] -= conformal_delta
+        raw[:, 2] += conformal_delta
     dollars: np.ndarray = np.expm1(raw)
     return dollars
 
 
-def predict_quantiles(model: XGBRegressor, row: pd.DataFrame) -> tuple[float, float, float]:
+def predict_quantiles(
+    model: XGBRegressor, row: pd.DataFrame, *, conformal_delta: float = 0.0
+) -> tuple[float, float, float]:
     """Return (p10, p50, p90) dollar predictions for a single-row input."""
-    p10, p50, p90 = predict_quantiles_batch(model, row)[0]
+    p10, p50, p90 = predict_quantiles_batch(model, row, conformal_delta=conformal_delta)[0]
     return float(p10), float(p50), float(p90)
 
 

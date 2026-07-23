@@ -103,6 +103,7 @@ from pipeline import (
     compute_group_means,
     engineer_features,
     save_classifier,
+    save_conformal,
     save_features,
     save_group_means,
     save_metrics,
@@ -273,6 +274,51 @@ def _cross_val_r2(
         cv_scores.append(fold_r2)
         logger.info("  fold %d: P50 R²=%.4f", fold_idx, fold_r2)
     return float(np.mean(cv_scores)), float(np.std(cv_scores))
+
+
+def _cross_conformal_delta(
+    df_train_raw: pd.DataFrame,
+    *,
+    seed: int,
+    n_splits: int,
+    edu_order: dict[str, int],
+    region_map: dict[str, str],
+    params: dict,
+    target_coverage: float,
+) -> tuple[float, int]:
+    """Cross-conformal (CQR) interval margin in log1p space.
+
+    Each fold trains the quantile model on the fold's TRAIN rows (per-fold
+    target-encoding means, leakage-free — same protocol as :func:`_cross_val_r2`)
+    and scores the held-out rows with the CQR conformity score
+    ``max(q_lo - y, y - q_hi)``. The margin is the finite-sample-corrected
+    empirical quantile of the pooled scores. The shipped model still trains on
+    ALL of train, so its bytes are unchanged; this only estimates how far to
+    widen its raw P10/P90 interval — which under-covers by a couple of points —
+    to reach the nominal coverage. Returns (delta, n_scores).
+    """
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    raw = df_train_raw.reset_index(drop=True)
+    scores: list[np.ndarray] = []
+    for tr_idx, va_idx in kf.split(raw):
+        gm = compute_group_means(raw.iloc[tr_idx])
+        fold_train = engineer_features(
+            raw.iloc[tr_idx], edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
+        )
+        fold_val = engineer_features(
+            raw.iloc[va_idx], edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
+        )
+        fold_model = _train_quantile_regressor(
+            fold_train[FEATURES_FULL], np.log1p(fold_train["Annual Income"]), params=params, seed=seed
+        )
+        q = fold_model.predict(fold_val[FEATURES_FULL])
+        y_log = np.log1p(fold_val["Annual Income"].to_numpy())
+        scores.append(np.maximum(q[:, 0] - y_log, y_log - q[:, 2]))
+    pooled = np.concatenate(scores)
+    n = len(pooled)
+    k = min(int(np.ceil((n + 1) * target_coverage)), n)
+    delta = float(np.sort(pooled)[k - 1])
+    return delta, n
 
 
 def _train_quantile_regressor(
@@ -466,6 +512,32 @@ def main() -> None:
     )
     logger.info("CV R² (P50, dollar, train-only, per-fold means) = %.4f ± %.4f", cv_r2_mean, cv_r2_std)
 
+    # ── Cross-conformal interval calibration (CQR) ──────────────────────────
+    # The raw P10/P90 interval under-covers its nominal 80% by ~2 points. A
+    # cross-conformal margin, estimated from train-only folds so the shipped
+    # model's bytes are untouched, widens the served interval to target.
+    target_coverage = float(QUANTILE_ALPHAS[2] - QUANTILE_ALPHAS[0])
+    conformal_delta, n_conf_scores = _cross_conformal_delta(
+        df_train_raw,
+        seed=random_state,
+        n_splits=model_cfg.get("cv_folds", 5),
+        edu_order=edu_order,
+        region_map=region_map,
+        params=params,
+        target_coverage=target_coverage,
+    )
+    p10_conf = np.expm1(preds_log[:, 0] - conformal_delta)
+    p90_conf = np.expm1(preds_log[:, 2] + conformal_delta)
+    coverage_80_conformal = float(((y_test.values >= p10_conf) & (y_test.values <= p90_conf)).mean())
+    width_median_conformal = float(np.median(p90_conf - p10_conf))
+    logger.info(
+        "Conformal: delta=%.4f target=%.2f test_coverage=%.3f width_median=$%d",
+        conformal_delta,
+        target_coverage,
+        coverage_80_conformal,
+        int(width_median_conformal),
+    )
+
     # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
     # Binary XGBoost classifier trained on the same engineered feature
     # matrix as the quantile regressor. Label: Annual Income >= the
@@ -598,6 +670,9 @@ def main() -> None:
     save_features(FEATURES_FULL, str(ROOT / cfg["model"]["features_path"]))
     save_group_means(group_means, str(ROOT / cfg["model"]["group_means_path"]))
 
+    conformal_path = ROOT / cfg["model"]["conformal_path"]
+    save_conformal(conformal_delta, str(conformal_path), target_coverage=target_coverage, n_scores=n_conf_scores)
+
     # ── Drift baseline from training features ───────────────────────────────
     # Written before the metrics file so its bytes can be content-addressed
     # alongside the other artefacts below.
@@ -624,6 +699,7 @@ def main() -> None:
         "features": sha256_file(features_path),
         "group_means": sha256_file(group_means_path),
         "baseline_stats": sha256_file(baseline_path),
+        "conformal": sha256_file(conformal_path),
     }
 
     metrics = {
@@ -643,6 +719,13 @@ def main() -> None:
         "quantile_coverage_80": round(coverage_80, 4),
         "quantile_width_median": round(interval_width_median, 2),
         "quantile_crossings": crossings,
+        # Cross-conformal calibration: the raw interval under-covers, so the API
+        # serves the conformalized bounds. Both raw and conformalized coverage
+        # are recorded so the gain is auditable.
+        "conformal_delta": round(conformal_delta, 6),
+        "conformal_target_coverage": round(target_coverage, 4),
+        "conformal_coverage_80": round(coverage_80_conformal, 4),
+        "conformal_width_median": round(width_median_conformal, 2),
         "subgroup_coverage_80": subgroup_coverage,
         **pinballs_dollar,
         "n_train": len(X_train),

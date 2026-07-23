@@ -172,3 +172,4 @@ jobs:
             models/feature_names.json
             models/group_means.json
             models/baseline_stats.json
+            models/conformal_delta.json

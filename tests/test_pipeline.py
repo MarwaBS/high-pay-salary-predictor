@@ -251,6 +251,27 @@ class TestModelPrediction:
         with pytest.raises(ValueError, match=r"\(n, 3\)"):
             predict_quantiles(_PointModel(), row)
 
+    def test_conformal_delta_widens_interval_and_preserves_p50(self, production_model, df_engineered):
+        """HP-P7: the conformal margin widens P10/P90 symmetrically in log space
+        (so the dollar interval grows) while leaving the P50 point untouched."""
+        from pipeline import predict_quantiles_batch
+
+        X = df_engineered[FEATURES_FULL].head(100)
+        raw = predict_quantiles_batch(production_model, X, conformal_delta=0.0)
+        conf = predict_quantiles_batch(production_model, X, conformal_delta=0.02)
+        assert np.allclose(raw[:, 1], conf[:, 1]), "P50 must not move under conformal widening"
+        assert (conf[:, 0] <= raw[:, 0]).all() and (conf[:, 2] >= raw[:, 2]).all()
+        assert np.median(conf[:, 2] - conf[:, 0]) > np.median(raw[:, 2] - raw[:, 0])
+
+    def test_load_conformal_delta_raises_on_missing(self, tmp_path):
+        """A configured-but-absent margin is a deploy error: the served interval
+        claims a coverage that only holds with the margin, so loading must fail
+        loud rather than silently fall back to the under-covering raw interval."""
+        from pipeline import load_conformal_delta
+
+        with pytest.raises(FileNotFoundError):
+            load_conformal_delta(str(tmp_path / "does_not_exist.json"))
+
     def test_saved_metrics_within_expected_range(self, cfg):
         """Saved model metrics must fall inside explicit regression windows.
 
@@ -288,6 +309,20 @@ class TestModelPrediction:
             )
             assert crossings == 0, (
                 f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
+            )
+
+        # Cross-conformal calibration: the served (conformalized) interval must
+        # land near its nominal target and beat the raw interval's coverage.
+        if "conformal_coverage_80" in metrics:
+            raw_cov = metrics["quantile_coverage_80"]
+            conf_cov = metrics["conformal_coverage_80"]
+            target = metrics["conformal_target_coverage"]
+            assert metrics["conformal_delta"] > 0, "conformal margin must be positive to widen the interval"
+            assert abs(conf_cov - target) <= 0.03, (
+                f"Conformalized coverage {conf_cov:.3f} not within 0.03 of target {target:.2f}"
+            )
+            assert conf_cov >= raw_cov, (
+                f"Conformalized coverage {conf_cov:.3f} should not under-cover the raw interval {raw_cov:.3f}"
             )
 
     def test_saved_cv_matches_test(self, cfg):

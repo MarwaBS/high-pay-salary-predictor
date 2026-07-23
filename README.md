@@ -30,8 +30,10 @@
 > a quantile loss.
 >
 > **The honest numbers** (full detail + baselines in
-> [MODEL_CARD.md](MODEL_CARD.md)): 80% interval coverage ≈ 0.77 (target
-> 0.80), median P10–P90 width ≈ $113K, point-estimate R² ≈ 0.03. The
+> [MODEL_CARD.md](MODEL_CARD.md)): the raw quantile interval covers ≈ 0.77;
+> the API serves a **cross-conformal–calibrated** interval that hits the
+> target 0.80 (≈ 0.80 on held-out test) at a ≈ 3% wider median P10–P90 band
+> (≈ $117K); point-estimate R² ≈ 0.03. The
 > premium-tier classifier *ties* a logistic-regression baseline (AUC ≈
 > 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
@@ -201,8 +203,9 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| 80% empirical coverage | **~0.77** | Fraction of test targets inside `[P10, P90]`. Target 0.80 ± 0.05. |
-| Median PI width | ~$112K | Typical 80% interval spread in dollar space. |
+| 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
+| 80% coverage — **served (conformal)** | **~0.80** | The API widens `[P10, P90]` by a cross-conformal margin so the served interval hits target. |
+| Median PI width (served) | ~$117K | ~3% wider than raw after the conformal margin; the price of honest 0.80 coverage. |
 | Quantile crossings | **0** | P10 > P50 or P50 > P90 — must stay zero. |
 | P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** — P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
 | CV R² (5-fold, train-only, dollar) | ~0.02 ± 0.02 | Leakage-free per-fold target encoding; same space as test R² — no overfitting, no space mismatch. |
@@ -214,7 +217,7 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 >
 > The v1.0.0 value of R² = 0.077 (with MLflow + Optuna HPO) was not higher because of better modelling — it was higher because it was trained with squared-error loss and scored with a squared-error metric. That's a tautology, not progress.
 
-**Prediction intervals** are emitted directly by the multi-quantile XGBoost model. The API response includes explicit `predicted_p10`, `predicted_p50`, `predicted_p90` fields; `predicted_salary` is kept as an alias for `predicted_p50` for backward compatibility with v1 clients.
+**Prediction intervals** come from the multi-quantile XGBoost model, widened by a cross-conformal margin (estimated from train-only folds, so the shipped model's bytes are unchanged) so the served `[P10, P90]` reaches its nominal 80% coverage rather than the raw quantiles' ~77%. The API response includes explicit `predicted_p10`, `predicted_p50`, `predicted_p90` fields; `predicted_salary` is kept as an alias for `predicted_p50` for backward compatibility with v1 clients.
 
 ### API performance benchmarks
 
@@ -281,7 +284,7 @@ Grouped by the engineering discipline they demonstrate.
 
 - **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+cd1037dac48a.e927845864e2`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The training commit of the currently shipped model is additionally pinned by the annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0), so the SHA in `model_version` stays reachable even after feature branches are deleted.
 - **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
-- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
+- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`, `conformal_delta.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
 - **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases) and redeployed without re-training. Reproducibility rests on the pinned environment, not on a bare checkout: install `requirements-lock.txt` (the exact library set the release was trained under — recorded per release in `model_metrics.json::library_versions`), then `python -m scripts.train_quantile` with the fixed `random_state` and the same input CSV (pinned by `data_sha256`) regenerates identical metrics. Byte-identical artefacts are demonstrated under that lock in CI. See [MODEL_CARD.md](MODEL_CARD.md) for why a post-squash `git checkout <sha>` is not the reproduction path.
 - **Why not MLflow Model Registry?** Free, versioned, rollback-able, and one fewer service to operate. A real production system would graduate to MLflow or SageMaker Model Registry; for a portfolio-scale project, GitHub Releases is the pragmatic choice and the trade-off is documented here on purpose.
 - **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote — so the provenance contract cannot silently regress.

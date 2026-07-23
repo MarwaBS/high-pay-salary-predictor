@@ -1,12 +1,13 @@
 {
-  "model_version": "2.0.0+7f06f9495039.e927845864e2",
+  "model_version": "2.0.0+2e361b29bde9.e927845864e2",
   "service_version": "2.0.0",
   "artifact_sha256": {
     "model": "7acfd2545d2530416573d8de05c6e09e546cc62b70d0c6f2be3fbf3a78c65431",
     "classifier": "94e790b10231415b24df8f496019f6854bf871e87fcf0945777fff04b6d568a0",
     "features": "90b8bf38ee333069a874a89dd01480aa94716260027ccc45d987c190d47604dc",
     "group_means": "5a764a4894875f2b2d0c758663f1c40f10a8372fee056adf7aa15124e5746cb1",
-    "baseline_stats": "0cd68f349cf8b9e06b60d5ecc688402e63951db6f4a3bab357409631daaa4f47"
+    "baseline_stats": "0cd68f349cf8b9e06b60d5ecc688402e63951db6f4a3bab357409631daaa4f47",
+    "conformal": "ec4b3b5e8b849d7c84c1bde0ebbbf8d4a2852c51af0bfd584662afc6c68461c2"
   },
   "library_versions": {
     "xgboost": "3.2.0",
@@ -28,6 +29,10 @@
   "quantile_coverage_80": 0.7723,
   "quantile_width_median": 112998.77,
   "quantile_crossings": 0,
+  "conformal_delta": 0.010776,
+  "conformal_target_coverage": 0.8,
+  "conformal_coverage_80": 0.802,
+  "conformal_width_median": 116527.41,
   "subgroup_coverage_80": {
     "Gender=Female": 0.7803,
     "Gender=Male": 0.7668,

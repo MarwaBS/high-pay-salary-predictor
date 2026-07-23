@@ -89,6 +89,7 @@ from pipeline import (
     engineer_features,
     is_quantile_model,
     load_classifier,
+    load_conformal_delta,
     load_group_means,
     load_metrics,
     load_model,
@@ -292,6 +293,8 @@ class AppState:
     quantile_coverage_80: float = 0.0
     model_version: str = "unknown"
     artifact_sha256: dict[str, str] = field(default_factory=dict)
+    # Split-conformal interval margin (log space). 0.0 ⇒ raw interval.
+    conformal_delta: float = 0.0
 
 
 state = AppState()
@@ -350,6 +353,15 @@ async def lifespan(app: FastAPI):
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
     state.region_codes = REGION_CODES
 
+    # Split-conformal interval margin. Configured ⇒ required: the served
+    # interval claims a calibrated 80% coverage that only holds with this margin
+    # applied, so a missing file is a hard startup failure (load_conformal_delta
+    # raises), not a silent fall-back to the under-covering raw interval. A
+    # config without the key (legacy) leaves the margin at 0.0.
+    if VALIDATED_CFG.model.conformal_path:
+        state.conformal_delta = load_conformal_delta(str(ROOT / VALIDATED_CFG.model.conformal_path))
+        logger.info("Conformal interval margin loaded (delta=%.4f, log space)", state.conformal_delta)
+
     # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
     # Optional on purpose: pre-Phase-1 artefacts (any model trained before
     # the classifier was added) do not ship a classifier, and the API must
@@ -392,7 +404,11 @@ async def lifespan(app: FastAPI):
     # reads residual-based PI offsets; intervals come from the model's
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
-    state.quantile_coverage_80 = float(metrics.get("quantile_coverage_80", 0.0))
+    # Report the coverage of the interval the API actually serves. With a
+    # conformal margin applied that is the conformalized coverage, not the raw
+    # quantile coverage — surfacing the raw number would understate the served
+    # interval. Falls back to the raw coverage when no margin is calibrated.
+    state.quantile_coverage_80 = float(metrics.get("conformal_coverage_80") or metrics.get("quantile_coverage_80", 0.0))
     # Model provenance string (``{service_version}+{git_sha}.{data_sha}``)
     # emitted by scripts/train_quantile.py. Falls back to "unknown" on
     # pre-provenance artefacts so the API is backwards-compatible.
@@ -418,6 +434,8 @@ async def lifespan(app: FastAPI):
         }
         if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
             artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
+        if VALIDATED_CFG.model.conformal_path:
+            artefact_files["conformal"] = ROOT / VALIDATED_CFG.model.conformal_path
         mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
         if mismatches:
             raise RuntimeError(
@@ -730,7 +748,7 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     if cached is not None:
         return PredictResponse(**cached)
 
-    p10, p50, p90 = run_model(state.model, row)
+    p10, p50, p90 = run_model(state.model, row, conformal_delta=state.conformal_delta)
     if quantiles_crossed(p10, p50, p90):
         QUANTILE_CROSSINGS.inc()
     group_stats = lookup_benchmarks(state.benchmark_lookup, req.state, req.education_level)
@@ -820,7 +838,7 @@ def predict_batch(
     # 4. Single vectorised model call for the un-cached items.
     if rows_to_score:
         batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
-        preds_dollar = predict_quantiles_batch(state.model, batch_df)
+        preds_dollar = predict_quantiles_batch(state.model, batch_df, conformal_delta=state.conformal_delta)
 
         # Batched classifier call — one predict_proba for the whole batch
         # keeps overhead amortised. ``None`` when the classifier isn't

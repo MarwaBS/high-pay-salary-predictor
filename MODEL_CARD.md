@@ -109,8 +109,10 @@ shown in `models/model_metrics.json::train_date`.
 
 | Metric | Value | What it means |
 |---|---|---|
-| 80% empirical coverage | **~0.77** | Fraction of test targets that fall inside `[P10, P90]`. Target = 0.80 ± 0.05. |
-| Median PI width | ~$112K | Typical spread of the 80% interval in dollar space. |
+| 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
+| 80% coverage — **served (cross-conformal)** | **~0.80** | The API widens the interval by a conformal margin (below) so the served band hits target. |
+| Median PI width — served | ~$117K | ~3% wider than the raw interval; the cost of honest 0.80 coverage. |
+| Conformal margin (log space) | ~0.011 | Symmetric widening added to P10/P90; estimated by 5-fold cross-conformal on train (§ below). |
 | Quantile crossings | **0** | Number of test rows where P10 > P50 or P50 > P90. Must be zero. |
 | P10 pinball loss | ~$6.6K | Quantile loss at α=0.10. |
 | P50 pinball loss | ~$25K | Quantile loss at α=0.50 (equals `0.5 × MAE`). |
@@ -248,6 +250,17 @@ The API endpoint `POST /predict` and the Streamlit dashboard now return:
 | `predicted_p90` | 90th-percentile salary prediction (high end of 80% PI) |
 | `predicted_salary` | Alias for `predicted_p50`, kept for v1 clients |
 | `prediction_interval_low` / `prediction_interval_high` | Same as `p10` / `p90` |
+
+**Cross-conformal calibration.** The raw quantile interval under-covers its
+nominal 80% by ~3 points, so the served `p10`/`p90` are widened symmetrically
+in log space by a conformal margin. The margin is estimated by 5-fold
+cross-conformal (CQR) on the training set — each fold scores the held-out rows
+with `max(q_lo − y, y − q_hi)` and the margin is the finite-sample-corrected
+0.80 quantile of the pooled scores — so the shipped model still trains on all
+of train and its bytes are unchanged. The margin is persisted to
+`models/conformal_delta.json` (content-addressed alongside the other
+artefacts) and applied at serve time; P50 is never shifted. Result: served
+coverage ≈ 0.80 at ~3% wider intervals.
 
 Quantile crossings (P10 > P90) are clamped defensively inside
 `api/inference.build_response`, so clients never see an inverted range
