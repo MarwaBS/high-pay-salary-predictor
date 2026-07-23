@@ -10,9 +10,10 @@ Run: pytest tests/ -v
 import json
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from pipeline import FEATURES_FULL, REGION_CODES
+from pipeline import FEATURES_FULL, REGION_CODES, engineer_features
 
 # ── Config Tests ──────────────────────────────────────────────────────────────
 
@@ -332,6 +333,49 @@ class TestModelPrediction:
 
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)
+
+
+# ── Feature-engineering guards (HP-H2) ─────────────────────────────────────────
+
+
+class TestEngineerFeaturesGuards:
+    """engineer_features must fail loud on unmapped categoricals rather than
+    encode them as a silent NaN (education/gender) or a Region_Code-0 collision
+    (state) — a config typo must surface, not ship a quietly-degraded model."""
+
+    EDU = {"Bachelor's degree": 1, "Master's degree": 2}
+    REGION = {"CA": "West", "NY": "Northeast"}
+
+    def _frame(self, **overrides) -> pd.DataFrame:
+        base = {
+            "Education Level": "Bachelor's degree",
+            "Gender": "Male",
+            "State Abbreviation": "CA",
+            "Occupation": "Engineer",
+            "Annual Income": 150_000.0,
+        }
+        base.update(overrides)
+        return pd.DataFrame([base])
+
+    def test_clean_frame_encodes(self):
+        out = engineer_features(self._frame(), self.EDU, self.REGION)
+        assert out["Education_Ord"].iloc[0] == 1
+        assert out["Gender_Bin"].iloc[0] == 1
+        assert out["Region_Code"].iloc[0] == REGION_CODES["West"]
+
+    def test_unmapped_education_raises_naming_the_label(self):
+        with pytest.raises(ValueError) as exc:
+            engineer_features(self._frame(**{"Education Level": "Some College"}), self.EDU, self.REGION)
+        assert "Education Level" in str(exc.value) and "Some College" in str(exc.value)
+
+    def test_unknown_gender_raises(self):
+        # Wrong case must not silently fold into the Female bucket.
+        with pytest.raises(ValueError, match="Gender"):
+            engineer_features(self._frame(Gender="male"), self.EDU, self.REGION)
+
+    def test_unmapped_state_raises(self):
+        with pytest.raises(ValueError, match="State Abbreviation"):
+            engineer_features(self._frame(**{"State Abbreviation": "ZZ"}), self.EDU, self.REGION)
 
 
 # ── Config Schema Validation ─────────────────────────────────────────────────

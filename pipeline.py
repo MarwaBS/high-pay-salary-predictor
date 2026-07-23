@@ -105,6 +105,11 @@ _REQUIRED_COLUMNS: list[str] = [
     "Annual Income",
 ]
 
+#: Gender_Bin is a binary Male/Female encoding — the only two values in the
+#: training distribution. Anything else is rejected rather than silently folded
+#: into the Female bucket by the ``== "Male"`` comparison.
+_KNOWN_GENDERS: frozenset[str] = frozenset({"Male", "Female"})
+
 
 def engineer_features(
     df: pd.DataFrame,
@@ -137,17 +142,34 @@ def engineer_features(
 
     Raises
     ------
-    ValueError  if any required column is missing from *df*.
+    ValueError  if any required column is missing, or if any Education Level,
+                Gender, or State Abbreviation value has no mapping — encoding
+                an unknown category silently (NaN, or a Region_Code 0 collision)
+                would ship a quietly-degraded model on a config typo.
     """
     missing = [c for c in _REQUIRED_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"engineer_features: missing required columns: {missing}")
 
+    bad_edu = sorted(set(df["Education Level"].unique()) - set(edu_order), key=str)
+    if bad_edu:
+        raise ValueError(
+            f"engineer_features: unmapped Education Level values {bad_edu}; expected one of {sorted(edu_order)}"
+        )
+    bad_gender = sorted(set(df["Gender"].unique()) - _KNOWN_GENDERS, key=str)
+    if bad_gender:
+        raise ValueError(
+            f"engineer_features: unexpected Gender values {bad_gender}; expected one of {sorted(_KNOWN_GENDERS)}"
+        )
+    bad_states = sorted(set(df["State Abbreviation"].unique()) - set(region_map), key=str)
+    if bad_states:
+        raise ValueError(f"engineer_features: unmapped State Abbreviation values {bad_states}")
+
     out = df.copy()
     out["Education_Ord"] = out["Education Level"].map(edu_order)
     out["Gender_Bin"] = (out["Gender"] == "Male").astype(int)
     out["Region"] = out["State Abbreviation"].map(region_map)
-    out["Region_Code"] = out["Region"].map(REGION_CODES).fillna(0).astype(int)
+    out["Region_Code"] = out["Region"].map(REGION_CODES).astype(int)
 
     if occ_means is not None:
         occ_fallback = float(np.mean(list(occ_means.values()))) if occ_means else 0.0
