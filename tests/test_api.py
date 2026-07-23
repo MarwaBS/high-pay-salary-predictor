@@ -53,6 +53,13 @@ class TestHealth:
         data = client.get("/health").json()
         assert data["dataset_rows"] > 1000
 
+    def test_health_exposes_artifact_hashes(self, client):
+        """The API verifies served bytes against these on load; a non-empty map
+        proves the running process is serving the audited artefacts (HP-H4/P1)."""
+        data = client.get("/health").json()
+        assert data["artifact_sha256"], "artifact hashes missing from /health"
+        assert "model" in data["artifact_sha256"]
+
     def test_root_returns_docs_link(self, client):
         data = client.get("/").json()
         assert "docs" in data

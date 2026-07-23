@@ -107,6 +107,7 @@ from pipeline import (
     save_group_means,
     save_metrics,
     save_model,
+    sha256_file,
 )
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -196,6 +197,19 @@ def build_model_version(data_path: Path) -> str:
     git_sha = _resolve_git_sha()
     data_sha = _hash_training_data(data_path)
     return f"{SERVICE_VERSION}+{git_sha}.{data_sha}"
+
+
+def _library_versions() -> dict[str, str]:
+    """Versions of the libraries that determine the trained artifact bytes.
+
+    Stamped into the metrics file so it states the environment its numbers were
+    produced under — the reproducibility claim rests on the lock, and this
+    records what the lock actually resolved to at train time.
+    """
+    import sklearn
+    import xgboost
+
+    return {"xgboost": xgboost.__version__, "numpy": np.__version__, "sklearn": sklearn.__version__}
 
 
 def _prepare_split(
@@ -584,6 +598,15 @@ def main() -> None:
     save_features(FEATURES_FULL, str(ROOT / cfg["model"]["features_path"]))
     save_group_means(group_means, str(ROOT / cfg["model"]["group_means_path"]))
 
+    # ── Drift baseline from training features ───────────────────────────────
+    # Written before the metrics file so its bytes can be content-addressed
+    # alongside the other artefacts below.
+    features_path = ROOT / cfg["model"]["features_path"]
+    group_means_path = ROOT / cfg["model"]["group_means_path"]
+    baseline_path = primary_model_path.parent / "baseline_stats.json"
+    baseline_data = {feat: X_train[feat].tolist() for feat in FEATURES_FULL}
+    save_baseline_stats(baseline_data, str(baseline_path))
+
     # ── Model provenance: service version + code SHA + data SHA ────────────
     # The composite version is the reproducibility primitive: any operator
     # investigating a production incident can recover the exact training
@@ -592,9 +615,22 @@ def main() -> None:
     model_version = build_model_version(data_path)
     logger.info("Model version: %s", model_version)
 
+    # Content-address every served artefact. The API re-hashes on load and
+    # crashes on mismatch, and CI verifies committed bytes against these — so a
+    # corrupt or desynced artefact cannot ship under green.
+    artifact_sha256 = {
+        "model": sha256_file(primary_model_path),
+        "classifier": sha256_file(classifier_path),
+        "features": sha256_file(features_path),
+        "group_means": sha256_file(group_means_path),
+        "baseline_stats": sha256_file(baseline_path),
+    }
+
     metrics = {
         "model_version": model_version,
         "service_version": SERVICE_VERSION,
+        "artifact_sha256": artifact_sha256,
+        "library_versions": _library_versions(),
         "r2": round(r2, 4),
         "rmse": round(rmse, 2),
         "mae": round(mae, 2),
@@ -640,13 +676,6 @@ def main() -> None:
         **stability_metrics,
     }
     save_metrics(metrics, str(ROOT / cfg["model"]["metrics_path"]))
-
-    # ── Drift baseline from training features ───────────────────────────────
-    # Write next to the other artefacts (config-driven models dir) instead of
-    # a hardcoded ``models/`` so all outputs honour config.yaml::model paths.
-    baseline_path = primary_model_path.parent / "baseline_stats.json"
-    baseline_data = {feat: X_train[feat].tolist() for feat in FEATURES_FULL}
-    save_baseline_stats(baseline_data, str(baseline_path))
 
     logger.info("Artefacts saved:")
     logger.info("  Model       : %s", primary_model_path)

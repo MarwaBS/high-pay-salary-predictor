@@ -36,12 +36,29 @@ Shared across the entire project:
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier, XGBRegressor
+
+
+def sha256_file(path: str | Path) -> str:
+    """Full SHA-256 hex digest of a file's bytes.
+
+    The content address used to pin a served artefact to the exact bytes
+    training recorded: the trainer stamps these into model_metrics.json, the
+    API re-hashes on load and crashes on mismatch, and CI verifies committed
+    bytes against them.
+    """
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Feature sets

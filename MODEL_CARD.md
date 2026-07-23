@@ -138,10 +138,10 @@ the `data_sha256` is what actually binds a metric set to its input.
 
 | Metric | Value | Honesty note |
 |---|---|---|
-| Test R² (P50) | ~0.026 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
+| Test R² (P50) | ~0.028 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
 | Test MAE | ~$50K | |
 | Test RMSE | ~$108K | |
-| CV R² (5-fold, train only, dollar space) | ~0.029 ± 0.018 | Close to test R² — no overfitting, no space mismatch. |
+| CV R² (5-fold, train only, dollar space) | ~0.022 ± 0.015 | Leakage-free per-fold target encoding; close to test R² — no overfitting, no space mismatch. |
 
 ### CV alignment
 

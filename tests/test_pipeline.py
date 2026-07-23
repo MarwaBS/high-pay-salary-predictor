@@ -8,12 +8,29 @@ Run: pytest tests/ -v
 """
 
 import json
+import os
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from pipeline import FEATURES_FULL, REGION_CODES, engineer_features
+
+
+def _require(condition: bool, reason: str) -> None:
+    """Skip locally when an artefact is absent, but FAIL under CI.
+
+    In CI the committed artefacts are always present, so a skip there would be
+    a silent green — the metric-band gates would certify nothing on a deleted
+    or wrong-format metrics file. Locally, a skip keeps the suite runnable
+    before the first ``python -m scripts.train_quantile``.
+    """
+    if condition:
+        return
+    if os.getenv("CI"):
+        pytest.fail(reason)
+    pytest.skip(reason)
+
 
 # ── Config Tests ──────────────────────────────────────────────────────────────
 
@@ -239,8 +256,7 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        if not metrics_path.exists():
-            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
@@ -281,18 +297,16 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        if not metrics_path.exists():
-            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
 
-        if metrics.get("cv_space") != "dollar":
-            pytest.skip(
-                "model_metrics.json predates the dollar-space CV change "
-                "(no cv_space flag). Re-run `python -m scripts.train_quantile` "
-                "to regenerate metrics with train-only, dollar-space CV."
-            )
+        _require(
+            metrics.get("cv_space") == "dollar",
+            "model_metrics.json predates the dollar-space CV change (no cv_space flag). "
+            "Re-run `python -m scripts.train_quantile` to regenerate metrics with train-only, dollar-space CV.",
+        )
 
         gap = abs(metrics["cv_r2_mean"] - metrics["r2"])
         assert gap <= 0.15, (
@@ -312,18 +326,17 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        if not metrics_path.exists():
-            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
 
         subgroup_coverage = metrics.get("subgroup_coverage_80")
-        if not subgroup_coverage:
-            pytest.skip(
-                "model_metrics.json predates the subgroup_coverage_80 field. "
-                "Re-run `python -m scripts.train_quantile` to regenerate metrics."
-            )
+        _require(
+            bool(subgroup_coverage),
+            "model_metrics.json predates the subgroup_coverage_80 field. "
+            "Re-run `python -m scripts.train_quantile` to regenerate metrics.",
+        )
 
         bad = {k: v for k, v in subgroup_coverage.items() if not (0.60 <= v <= 0.95)}
         assert not bad, (
@@ -333,6 +346,18 @@ class TestModelPrediction:
 
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)
+
+    def test_metric_gates_fail_not_skip_under_ci(self, monkeypatch):
+        """HP-M12: a missing/wrong-format metrics file must FAIL under CI, not
+        skip — a skip there would let the metric-band gates certify nothing."""
+        monkeypatch.setenv("CI", "1")
+        with pytest.raises(pytest.fail.Exception):
+            _require(False, "missing metrics")
+
+    def test_metric_gates_skip_locally(self, monkeypatch):
+        monkeypatch.delenv("CI", raising=False)
+        with pytest.raises(pytest.skip.Exception):
+            _require(False, "missing metrics")
 
 
 # ── Feature-engineering guards (HP-H2) ─────────────────────────────────────────

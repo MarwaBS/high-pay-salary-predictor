@@ -92,6 +92,7 @@ from pipeline import (
     load_group_means,
     load_metrics,
     load_model,
+    sha256_file,
 )
 
 # ── Structured JSON Logging ──────────────────────────────────────────────────
@@ -289,12 +290,26 @@ class AppState:
     bls_defaults_lookup: dict[tuple[str, str], BlsDefaults] = field(default_factory=dict)
     quantile_coverage_80: float = 0.0
     model_version: str = "unknown"
+    artifact_sha256: dict[str, str] = field(default_factory=dict)
 
 
 state = AppState()
 
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
+
+
+def _artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
+    """Return a mismatch string for every artefact whose bytes differ from the
+    recorded SHA-256. Empty list ⇒ every present, recorded artefact verified."""
+    problems = []
+    for key, path in artefact_files.items():
+        want = recorded.get(key)
+        if want and path.exists():
+            got = sha256_file(path)
+            if got != want:
+                problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
+    return problems
 
 
 @asynccontextmanager
@@ -374,6 +389,31 @@ async def lifespan(app: FastAPI):
     # Namespace the prediction cache by model version so a retrain never
     # serves a previous model's cached predictions from a shared Redis.
     cache.version = state.model_version
+
+    # ── Artifact integrity: served bytes must match what training recorded ───
+    # /health reports model_version from the metrics sidecar, but nothing tied
+    # that string to the actual .ubj/.json files on disk — a swapped or
+    # partially-copied artefact would serve under a /health that still claims
+    # the trained version. Re-hash each loaded artefact against the recorded
+    # SHA-256 and crash the probe on mismatch, same fail-loud posture as the
+    # threshold check below.
+    state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
+    if state.artifact_sha256:
+        artefact_files = {
+            "model": ROOT / VALIDATED_CFG.model.model_path,
+            "features": ROOT / VALIDATED_CFG.model.features_path,
+            "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
+            "baseline_stats": ROOT / "models" / "baseline_stats.json",
+        }
+        if state.classifier is not None:
+            artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
+        mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
+        if mismatches:
+            raise RuntimeError(
+                "Artifact integrity check failed at startup — served files do not match "
+                f"models/model_metrics.json: {'; '.join(mismatches)}. Refusing to serve a "
+                "mislabeled model; re-deploy the audited artefacts or retrain."
+            )
 
     # Classifier ↔ config threshold consistency check. The trainer writes
     # the exact ``classifier_threshold`` it was fitted against into
@@ -614,6 +654,7 @@ async def health():
         model_loaded=state.model is not None,
         dataset_rows=len(state.df) if state.df is not None else 0,
         model_version=state.model_version,
+        artifact_sha256=state.artifact_sha256,
     )
 
 

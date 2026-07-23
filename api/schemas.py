@@ -259,6 +259,16 @@ class HealthResponse(BaseModel):
             "for pre-provenance artefacts."
         ),
     )
+    artifact_sha256: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "SHA-256 digest of each served artefact (model, classifier, "
+            "features, group_means, baseline_stats), recorded by the trainer "
+            "in ``models/model_metrics.json``. The API verifies these on load "
+            "and crashes on mismatch, so a non-empty map here is proof the "
+            "running process is serving exactly the audited bytes."
+        ),
+    )
 
 
 class MetaResponse(BaseModel):

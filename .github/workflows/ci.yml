@@ -101,18 +101,25 @@ jobs:
           pip install mypy pandas-stubs
           mypy api pipeline.py scripts
 
-      - name: Train quantile model (required by API + TestModelPrediction)
+      - name: Verify committed model artefacts (integrity gate)
         run: |
-          # Produces models/xgb_salary_model.ubj as a multi-quantile XGBoost
-          # model. Tests expect the quantile output shape (n, 3) — see
-          # tests/test_pipeline.py::test_model_outputs_quantile_triple.
-          python -m scripts.train_quantile
+          # CI must TEST THE COMMITTED ARTEFACTS the live demo serves — not a
+          # model it retrained over them. They are committed to models/, so a
+          # fresh checkout already has them; retrain only if one is missing.
+          # Then verify each committed artefact matches the SHA-256 the trainer
+          # recorded in model_metrics.json, so a corrupt or desynced commit to
+          # models/ fails here instead of shipping under green.
+          test -f models/xgb_salary_model.ubj || python -m scripts.train_quantile
+          python -m scripts.verify_artifacts
 
       - name: Run pytest (with enforced coverage gate)
+        env:
+          CI: "true"
         run: |
           # --cov activates coverage; the fail_under=88 threshold in
           # pyproject.toml ([tool.coverage.report]) is then enforced and
-          # fails the job if total coverage regresses below it.
+          # fails the job if total coverage regresses below it. CI=true makes
+          # the metric-band gates fail (not skip) on a missing metrics file.
           pytest tests/ -v --tb=short \
             --cov --cov-report=term-missing --cov-report=xml
 
@@ -198,12 +205,6 @@ jobs:
           ignore-unfixed: true
           vuln-type: "os,library"
           trivyignores: .trivyignore
-
-      - name: Train quantile model for smoke test
-        run: |
-          pip install -r requirements.txt
-          pip install -e .
-          python -m scripts.train_quantile
 
       - name: Smoke test API image (health + real /predict on the shipped stack)
         # Runs against the locally LOADED image BEFORE the push, so a functionally

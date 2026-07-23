@@ -1,11 +1,23 @@
 {
-  "model_version": "2.0.0+1c5e9d896ee5.e927845864e2",
+  "model_version": "2.0.0+7f06f9495039.e927845864e2",
   "service_version": "2.0.0",
+  "artifact_sha256": {
+    "model": "7acfd2545d2530416573d8de05c6e09e546cc62b70d0c6f2be3fbf3a78c65431",
+    "classifier": "94e790b10231415b24df8f496019f6854bf871e87fcf0945777fff04b6d568a0",
+    "features": "90b8bf38ee333069a874a89dd01480aa94716260027ccc45d987c190d47604dc",
+    "group_means": "5a764a4894875f2b2d0c758663f1c40f10a8372fee056adf7aa15124e5746cb1",
+    "baseline_stats": "0cd68f349cf8b9e06b60d5ecc688402e63951db6f4a3bab357409631daaa4f47"
+  },
+  "library_versions": {
+    "xgboost": "3.2.0",
+    "numpy": "2.4.6",
+    "sklearn": "1.9.0"
+  },
   "r2": 0.0282,
   "rmse": 107999.16,
   "mae": 50175.62,
-  "cv_r2_mean": 0.029,
-  "cv_r2_std": 0.0163,
+  "cv_r2_mean": 0.0215,
+  "cv_r2_std": 0.0151,
   "cv_space": "dollar",
   "cv_train_only": true,
   "quantile_alphas": [
@@ -30,7 +42,7 @@
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
-  "train_date": "2026-06-16",
+  "train_date": "2026-07-23",
   "hyperparameters": {
     "n_estimators": 169,
     "max_depth": 3,
