@@ -108,6 +108,15 @@ class TestClassifierArtefact:
         auc = metrics["classifier_roc_auc"]
         assert 0.55 <= auc < 0.99, f"Unexpected classifier ROC-AUC: {auc}"
 
+    def test_classifier_beats_base_rate_brier(self, metrics: dict) -> None:
+        # The served product is a probability, so calibration is the metric
+        # that matters. A head whose Brier score does not beat predicting the
+        # base rate for everyone carries no calibrated signal — this gate goes
+        # red if the classifier silently degrades to that no-skill floor.
+        brier = metrics["classifier_brier"]
+        base_rate_brier = metrics["classifier_brier_base_rate"]
+        assert brier < base_rate_brier, f"Classifier Brier {brier} does not beat the base-rate floor {base_rate_brier}"
+
     def test_classifier_subgroup_auc_sane(self, metrics: dict) -> None:
         # Every subgroup in the fairness guardrail must be inside (0.5, 0.95).
         # A subgroup AUC of 0.50 means the classifier is no better than a
