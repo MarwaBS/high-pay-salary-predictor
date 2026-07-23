@@ -205,8 +205,12 @@ def _prepare_split(
     test_size: float,
     edu_order: dict[str, int],
     region_map: dict[str, str],
-) -> tuple[pd.DataFrame, pd.DataFrame, dict[str, dict[str, float]]]:
-    """Split, then engineer features using TRAIN-only group means (no leakage)."""
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict[str, dict[str, float]]]:
+    """Split, then engineer features using TRAIN-only group means (no leakage).
+
+    Also returns the raw train frame so cross-validation can re-derive
+    per-fold target-encoding means from raw rows (see :func:`_cross_val_r2`).
+    """
     df_train_raw, df_test_raw = train_test_split(df_raw, test_size=test_size, random_state=seed)
     group_means = compute_group_means(df_train_raw)
     df_train = engineer_features(
@@ -215,7 +219,46 @@ def _prepare_split(
     df_test = engineer_features(
         df_test_raw, edu_order, region_map, occ_means=group_means["occ_means"], state_means=group_means["state_means"]
     )
-    return df_train, df_test, group_means
+    return df_train, df_test, df_train_raw, group_means
+
+
+def _cross_val_r2(
+    df_train_raw: pd.DataFrame,
+    *,
+    seed: int,
+    n_splits: int,
+    edu_order: dict[str, int],
+    region_map: dict[str, str],
+    params: dict,
+) -> tuple[float, float]:
+    """K-fold CV P50 R² with per-fold target encoding (leakage-free).
+
+    Group means are recomputed from each fold's TRAIN rows only, so a
+    validation row is never encoded with a mean that saw its own target.
+    Encoding once from all of train and folding over that matrix leaks:
+    every validation fold's targets sit inside the means baked into its own
+    ``Occ_Mean_Income`` / ``State_Mean_Income`` features. Returns (mean, std)
+    of the per-fold dollar-space R².
+    """
+    kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    raw = df_train_raw.reset_index(drop=True)
+    cv_scores: list[float] = []
+    for fold_idx, (tr_idx, va_idx) in enumerate(kf.split(raw)):
+        gm = compute_group_means(raw.iloc[tr_idx])
+        fold_train = engineer_features(
+            raw.iloc[tr_idx], edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
+        )
+        fold_val = engineer_features(
+            raw.iloc[va_idx], edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
+        )
+        fold_model = _train_quantile_regressor(
+            fold_train[FEATURES_FULL], np.log1p(fold_train["Annual Income"]), params=params, seed=seed
+        )
+        fold_preds = np.expm1(fold_model.predict(fold_val[FEATURES_FULL]))[:, 1]  # P50
+        fold_r2 = float(r2_score(fold_val["Annual Income"], fold_preds))
+        cv_scores.append(fold_r2)
+        logger.info("  fold %d: P50 R²=%.4f", fold_idx, fold_r2)
+    return float(np.mean(cv_scores)), float(np.std(cv_scores))
 
 
 def _train_quantile_regressor(
@@ -279,7 +322,7 @@ def _headline_metrics_for_seed(
     numbers carry a mean±std, not a single-split point estimate — the
     difference between "R²=0.82" and "R²=0.82±0.01 over 5 seeds".
     """
-    df_train, df_test, _ = _prepare_split(
+    df_train, df_test, _, _ = _prepare_split(
         df_raw, seed=seed, test_size=test_size, edu_order=edu_order, region_map=region_map
     )
     X_train, y_train = df_train[FEATURES_FULL], df_train["Annual Income"]
@@ -317,7 +360,7 @@ def main() -> None:
     logger.info("Raw dataset: %d rows × %d cols", *df_raw.shape)
 
     # ── Train / test split + leakage-safe feature engineering ────────────────
-    df_train, df_test, group_means = _prepare_split(
+    df_train, df_test, df_train_raw, group_means = _prepare_split(
         df_raw,
         seed=random_state,
         test_size=model_cfg["test_size"],
@@ -397,28 +440,17 @@ def main() -> None:
             logger.info("  subgroup coverage_80 %-20s n=%4d cov=%.3f", f"{col}={val}", int(mask.sum()), cov)
 
     # ── 5-fold CV on training set only, dollar-space P50 R² ─────────────────
-    # CV and test R² are computed in the same (dollar) space so the numbers
-    # are directly comparable.
-    kf = KFold(n_splits=model_cfg.get("cv_folds", 5), shuffle=True, random_state=random_state)
-    cv_scores = []
-    for fold_idx, (tr_idx, va_idx) in enumerate(kf.split(X_train)):
-        fold_model = XGBRegressor(
-            objective="reg:quantileerror",
-            quantile_alpha=QUANTILE_ALPHAS,
-            tree_method="hist",
-            random_state=random_state,
-            n_jobs=-1,
-            verbosity=0,
-            **params,
-        )
-        fold_model.fit(X_train.iloc[tr_idx], y_train_log.iloc[tr_idx])
-        fold_preds = np.expm1(fold_model.predict(X_train.iloc[va_idx]))[:, 1]  # P50
-        fold_r2 = float(r2_score(y_train.iloc[va_idx], fold_preds))
-        cv_scores.append(fold_r2)
-        logger.info("  fold %d: P50 R²=%.4f", fold_idx, fold_r2)
-    cv_r2_mean = float(np.mean(cv_scores))
-    cv_r2_std = float(np.std(cv_scores))
-    logger.info("CV R² (P50, dollar, train-only) = %.4f ± %.4f", cv_r2_mean, cv_r2_std)
+    # Per-fold target-encoding means (leakage-free) — see _cross_val_r2. CV and
+    # test R² are computed in the same dollar space so the numbers compare.
+    cv_r2_mean, cv_r2_std = _cross_val_r2(
+        df_train_raw,
+        seed=random_state,
+        n_splits=model_cfg.get("cv_folds", 5),
+        edu_order=edu_order,
+        region_map=region_map,
+        params=params,
+    )
+    logger.info("CV R² (P50, dollar, train-only, per-fold means) = %.4f ± %.4f", cv_r2_mean, cv_r2_std)
 
     # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
     # Binary XGBoost classifier trained on the same engineered feature
