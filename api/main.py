@@ -298,7 +298,7 @@ class AppState:
     quantile_coverage_80: float = 0.0
     model_version: str = "unknown"
     artifact_sha256: dict[str, str] = field(default_factory=dict)
-    # Split-conformal interval margin (log space). 0.0 ⇒ raw interval.
+    # Cross-conformal interval margin (log space). 0.0 ⇒ raw interval.
     conformal_delta: float = 0.0
 
 
@@ -359,7 +359,7 @@ async def lifespan(app: FastAPI):
     state.occupation_set = frozenset(state.occupations)
     state.region_codes = REGION_CODES
 
-    # Split-conformal interval margin. Configured ⇒ required: the served
+    # Cross-conformal interval margin. Configured ⇒ required: the served
     # interval claims a calibrated 80% coverage that only holds with this margin
     # applied, so a missing file is a hard startup failure (load_conformal_delta
     # raises), not a silent fall-back to the under-covering raw interval. A

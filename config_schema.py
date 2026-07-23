@@ -47,7 +47,7 @@ class ModelConfig(BaseModel):
     features_path: str
     metrics_path: str
     group_means_path: str
-    # Split-conformal interval margin. Optional for back-compat with configs
+    # Cross-conformal interval margin. Optional for back-compat with configs
     # written before conformal calibration was added; when absent the API
     # serves the raw (uncalibrated) interval.
     conformal_path: str | None = None

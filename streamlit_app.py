@@ -414,8 +414,8 @@ def tab_predictor(df: pd.DataFrame) -> None:
             )
         else:
             st.caption(
-                "No directly comparable records in the dataset for this "
-                "(state, education) cell — percentile falls back to 50%."
+                "No records for this exact (state, education) cell, so the "
+                f"percentile (**{pct:.1f}%**) is computed against the full dataset."
             )
 
         # ── Premium-tier probability (Gap 1 Phase 1 classifier head) ────

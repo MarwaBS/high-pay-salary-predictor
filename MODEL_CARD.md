@@ -216,7 +216,7 @@ At HEAD, on the held-out test split:
 | Baseline | Value | Verdict |
 |---|---|---|
 | Majority-class accuracy | ~0.61 | XGBoost accuracy (~0.65) beats it, but only modestly. |
-| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head only ties a scaled logistic regression.** |
+| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head slightly trails a scaled logistic regression (0.676 vs ~0.68).** |
 
 The honest conclusion: on this feature set the gradient-booster buys
 nothing over linear logistic regression — the signal ceiling is the
@@ -255,9 +255,11 @@ The API endpoint `POST /predict` and the Streamlit dashboard now return:
 nominal 80% by ~3 points, so the served `p10`/`p90` are widened symmetrically
 in log space by a conformal margin. The margin is estimated by 5-fold
 cross-conformal (CQR) on the training set — each fold scores the held-out rows
-with `max(q_lo − y, y − q_hi)` and the margin is the finite-sample-corrected
-0.80 quantile of the pooled scores — so the shipped model still trains on all
-of train and its bytes are unchanged. The margin is persisted to
+with `max(q_lo − y, y − q_hi)` and the margin is the 0.80 quantile of the
+pooled scores (with the standard `(n+1)` small-sample lift). Because the fold
+models differ from the served full-data model, coverage is approximate —
+validated empirically at ≈0.80 on the held-out test set. The shipped model
+still trains on all of train and its bytes are unchanged. The margin is persisted to
 `models/conformal_delta.json` (content-addressed alongside the other
 artefacts) and applied at serve time; P50 is never shifted. Result: served
 coverage ≈ 0.80 at ~3% wider intervals.

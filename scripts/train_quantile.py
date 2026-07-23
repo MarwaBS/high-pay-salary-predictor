@@ -293,8 +293,10 @@ def _cross_conformal_delta(
     Each fold trains the quantile model on the fold's TRAIN rows (per-fold
     target-encoding means, leakage-free — same protocol as :func:`_cross_val_r2`)
     and scores the held-out rows with the CQR conformity score
-    ``max(q_lo - y, y - q_hi)``. The margin is the finite-sample-corrected
-    empirical quantile of the pooled scores. The shipped model still trains on
+    ``max(q_lo - y, y - q_hi)``. The margin is the 0.80 empirical quantile of
+    the pooled scores (with the standard ``(n+1)`` small-sample lift); because
+    the fold models differ from the served full-data model the coverage is
+    approximate, validated at ~0.80 on the held-out test set. The shipped model still trains on
     ALL of train, so its bytes are unchanged; this only estimates how far to
     widen its raw P10/P90 interval — which under-covers by a couple of points —
     to reach the nominal coverage. Returns (delta, n_scores).

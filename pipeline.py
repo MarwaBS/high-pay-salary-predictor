@@ -369,7 +369,7 @@ def save_group_means(group_means: dict, path: str) -> None:
 
 
 def save_conformal(delta: float, path: str, *, target_coverage: float, n_scores: int) -> None:
-    """Persist the split-conformal interval margin (log space) plus its provenance."""
+    """Persist the cross-conformal interval margin (log space) plus its provenance."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     payload = {
         "conformal_delta": delta,
@@ -382,7 +382,7 @@ def save_conformal(delta: float, path: str, *, target_coverage: float, n_scores:
 
 
 def load_conformal_delta(path: str) -> float:
-    """Load the split-conformal interval margin.
+    """Load the cross-conformal interval margin.
 
     Raises
     ------
@@ -438,7 +438,7 @@ def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame, *, conforma
     real fault, not a fallback.
 
     ``conformal_delta`` widens the P10/P90 bounds symmetrically in log space by
-    the split-conformal margin (see ``scripts.train_quantile`` cross-conformal
+    the cross-conformal margin (see ``scripts.train_quantile`` cross-conformal
     calibration) so the served interval reaches its nominal coverage; the raw
     quantiles under-cover by a couple of points. P50 is never shifted. The
     default 0.0 leaves the raw interval unchanged.

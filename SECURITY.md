@@ -46,8 +46,10 @@ Expect acknowledgement within 72 hours.
 
 None. The `security` CI step runs `pip-audit` clean against both
 `requirements.txt` and the pinned `requirements-lock.txt`, and
-`.pip-audit-ignore.txt` is empty. Any future suppression must carry an inline
-rationale and a re-evaluation trigger in that file.
+`.pip-audit-ignore.txt` lists no suppressions. The CI gate carries no
+`--ignore-vuln` flags, so there is no active suppression path — a new CVE fails
+the build until it is fixed, or until an explicit, rationale-carrying
+`--ignore-vuln` is added to `ci.yml`.
 
 ### `.trivyignore`
 

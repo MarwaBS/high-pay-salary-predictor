@@ -48,7 +48,7 @@ model:
   features_path: "models/feature_names.json"
   metrics_path: "models/model_metrics.json"
   group_means_path: "models/group_means.json"
-  # Split-conformal interval margin (log space) — widens P10/P90 to nominal coverage.
+  # Cross-conformal interval margin (log space) — widens P10/P90 to nominal coverage.
   conformal_path: "models/conformal_delta.json"
   # Premium-tier classifier head — trained alongside the quantile
   # regressor on the same feature set. Predicts P(Annual Income >=

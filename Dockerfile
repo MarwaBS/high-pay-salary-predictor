@@ -21,7 +21,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements-api.txt
 
 # ── Stage 1b: Dashboard dependency builder ──────────────────────────────────
 # Separate builder for Streamlit + viz stack so the api image does not pull
-# shap/plotly/matplotlib it never uses.
+# streamlit/plotly/matplotlib it never uses.
 FROM python:3.12-slim-bookworm AS dashboard-builder
 
 WORKDIR /build
