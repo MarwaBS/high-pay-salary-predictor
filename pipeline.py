@@ -31,7 +31,7 @@ Shared across the entire project:
   - streamlit_app.py
   - scripts/train_quantile.py
   - tests/test_pipeline.py
-  - 04_salary_prediction_model.ipynb (historical v1 EDA)
+  - notebooks/04_salary_prediction_model.ipynb (historical v1 EDA)
 """
 
 from __future__ import annotations

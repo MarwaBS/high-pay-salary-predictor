@@ -144,10 +144,10 @@ The project is organized across four notebooks and two deployable services:
 
 | Notebook | Purpose |
 |----------|---------|
-| `high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
-| `high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
-| `us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
-| `04_salary_prediction_model.ipynb` | **ML: historical v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
+| `notebooks/high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
+| `notebooks/high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
+| `notebooks/us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
+| `notebooks/04_salary_prediction_model.ipynb` | **ML: historical v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
 
 All figures are saved automatically to `Images/` at 300 DPI.
 
@@ -314,7 +314,7 @@ Data are used for educational and analytical purposes only. Consult each provide
 
 ## Data cleaning and preparation
 
-Implemented in `high_pay_jobs_data_cleaning.ipynb`:
+Implemented in `notebooks/high_pay_jobs_data_cleaning.ipynb`:
 
 **BLS cleaning:**
 - Normalize strings; strip whitespace and title-case state/occupation names
@@ -507,11 +507,11 @@ high-pay-salary-predictor/
 ├── pipeline.py                                # ★ Single source of truth: FEATURES + engineer_features + shared helpers
 ├── config_schema.py                           # ★ Pydantic validation for config.yaml (fail-fast on typos)
 │
-├── Notebooks
+├── notebooks/
 │   ├── high_pay_jobs_data_cleaning.ipynb      # Pipeline: BLS + Census → cleaned CSV
 │   ├── high_paying_jobs_data_visualization.ipynb  # EDA: distributions, rankings, correlations
 │   ├── us_high_income_jobs_mapping.ipynb      # Geospatial: choropleth maps
-│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests
+│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests (historical v1 EDA)
 │
 ├── streamlit_app.py                           # ★ Interactive dashboard (routes predictor tab through /predict)
 ├── config.yaml                                # ★ All thresholds, paths, color palettes, premium-tier threshold

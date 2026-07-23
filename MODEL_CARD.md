@@ -40,7 +40,7 @@ compensation benchmarking, or any consequential use.
 
 ### ⚠️ Data-prep caveat
 
-`high_pay_jobs_data_cleaning.ipynb` double-filters the cohort:
+`notebooks/high_pay_jobs_data_cleaning.ipynb` double-filters the cohort:
 - BLS rows are kept only if `A_MEAN ≥ $100K` or `H_MEAN ≥ $48` (cell 14)
 - Census rows are kept only if `INCTOT ≥ $100K` (cell 21)
 - The two are then inner-joined on `(OCC_CODE, STATE)` (cell 9)
