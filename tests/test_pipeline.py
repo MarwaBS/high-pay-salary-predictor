@@ -204,7 +204,7 @@ class TestModelPrediction:
     """Tests against the production model loaded from disk.
 
     The model is trained by scripts/train_quantile.py (run via 'make model').
-    CI runs that step before pytest so the artefact is always present.
+    The artefacts are committed, so a fresh checkout — and CI — always has them.
     Testing the production model (rather than re-training a toy one) catches
     hyperparameter regressions and artefact-format changes.
     """

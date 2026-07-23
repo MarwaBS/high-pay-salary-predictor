@@ -56,8 +56,8 @@ Artefacts saved
                                      losses, crossings), point-estimate
                                      metrics (P50 R²/MAE/RMSE), classifier
                                      metrics (ROC-AUC, PR-AUC, Brier +
-                                     majority/logistic baselines it must
-                                     beat), AND stability mean±std of the
+                                     majority/logistic reference
+                                     baselines), AND stability mean±std of the
                                      headline metrics across several seeds
   models/baseline_stats.json         drift-monitor baseline
   models/group_means.json            target-encoding lookup
@@ -584,12 +584,12 @@ def main() -> None:
         f1,
     )
 
-    # ── Baselines the head must beat + calibration (Brier) ──────────────────
-    # The first question a senior reviewer asks: "did it beat a dumb baseline?"
-    # Report majority-class accuracy and a scaled logistic-regression ROC-AUC
-    # so the XGB head's lift is explicit, not assumed. Brier score
-    # (lower=better) quantifies how honest the served probabilities are; the
-    # base-rate constant predictor is the no-skill reference it must beat.
+    # ── Baseline comparisons + calibration (Brier) ──────────────────────────
+    # The first question a senior reviewer asks: "how does it compare to a dumb
+    # baseline?" Report majority-class accuracy and a scaled logistic-regression
+    # ROC-AUC so the XGB head's lift (or shortfall) is explicit, not assumed.
+    # Brier score (lower=better) quantifies how honest the served probabilities
+    # are; the base-rate constant predictor is the no-skill reference it beats.
     baseline_majority_acc = float(max(pos_rate_test, 1.0 - pos_rate_test))
     logreg = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, random_state=random_state))
     logreg.fit(X_train, y_train_clf)
@@ -752,7 +752,8 @@ def main() -> None:
         "classifier_recall": round(recall, 4),
         "classifier_f1": round(f1, 4),
         # Calibration + baselines: the served probability is honest (Brier)
-        # and the head beats a dumb baseline (majority / logistic).
+        # and the head beats the majority / base-rate baselines (it trails the
+        # logistic on ROC-AUC).
         "classifier_brier": round(clf_brier, 4),
         "classifier_brier_base_rate": round(baseline_brier, 4),
         "classifier_baseline_majority_acc": round(baseline_majority_acc, 4),
