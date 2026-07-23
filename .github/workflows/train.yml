@@ -158,18 +158,11 @@ jobs:
           # Fail quietly and update the existing release if the tag
           # already exists — makes retry-on-flake safe.
           fail_on_unmatched_files: true
-          # Every artefact the API loads at startup MUST be published here —
-          # the release IS the model registry a rollback/redeploy pulls from.
-          # xgb_premium_classifier.ubj was missing, so any registry-based deploy
-          # (the k8s initContainer downloads from this release) silently lost the
-          # premium-tier classifier head and the API degraded p_above_premium to
-          # null. tests/test_model_registry.py machine-checks this list against
-          # config.yaml's loaded paths so the two can't drift again.
-          # The dataset is published alongside the model artefacts so the
-          # release is a self-contained deploy source: the k8s configmap points
-          # model-url AND data-url at this one gated release, closing the
-          # split-brain where serving surfaces pulled artefacts from three
-          # different places.
+          # Every artefact the API loads at startup MUST be published here — the
+          # release IS the model registry a rollback/redeploy pulls from.
+          # tests/test_model_registry.py checks this list against config.yaml's
+          # loaded paths so they can't drift. The dataset ships too, so the k8s
+          # configmap points both model-url and data-url at this one release.
           files: |
             models/xgb_salary_model.ubj
             models/xgb_premium_classifier.ubj

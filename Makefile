@@ -141,9 +141,9 @@ format: install
 .PHONY: type-check
 type-check: install
 	@echo ">>> Type-checking with mypy..."
-	$(MYPY) api/ pipeline.py scripts/ \
-	  --ignore-missing-imports \
-	  --no-error-summary
+	# No global --ignore-missing-imports: it is weaker than CI, which relies on
+	# the targeted per-module overrides in pyproject.toml. Keep them identical.
+	$(MYPY) api/ pipeline.py scripts/
 	@echo ">>> Type check complete."
 
 # ── Services ──────────────────────────────────────────────────────────────────

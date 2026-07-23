@@ -355,7 +355,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
         gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
 
     with col2:
-        age = st.slider("Age", min_value=22, max_value=75, value=35)
+        age = st.slider("Age", min_value=18, max_value=80, value=35)  # match the API's accepted range
         show_adv = st.checkbox("Show advanced inputs (BLS context)")
         if show_adv:
             employment = st.number_input("State-Occupation Employment", value=1000, min_value=0)
@@ -401,10 +401,10 @@ def tab_predictor(df: pd.DataFrame) -> None:
         st.success(f"Median estimate (P50): **${p50:,.0f}**")
         st.info(
             f"**80% prediction interval**: ${p10:,.0f} — ${p90:,.0f}  \n"
-            "_Interval comes from a multi-quantile XGBoost model served "
-            "by the FastAPI `/predict` endpoint. Calibrated to ~80% "
-            "empirical coverage on the held-out test set. See the "
-            "Model Insights tab and `MODEL_CARD.md` for details._"
+            "_Interval comes from a multi-quantile XGBoost model, widened by a "
+            "cross-conformal margin so it reaches ~80% empirical coverage on the "
+            "held-out test set, and served by the FastAPI `/predict` endpoint. "
+            "See the Model Insights tab and `MODEL_CARD.md` for details._"
         )
 
         if group_size > 0:

@@ -64,8 +64,9 @@ jobs:
       - name: Generate CycloneDX SBOM (API runtime surface)
         # Standard 2026 supply-chain artifact. Scans requirements-api.txt
         # (what ships in the API Docker image) and emits a CycloneDX 1.5
-        # JSON stored as a 90-day CI artifact for downstream SCA / SLSA
-        # tooling. Mirror of the Price_Prediction / ResumeForge pattern.
+        # JSON, uploaded as a CI artifact for downstream SCA / SLSA tooling.
+        # The 90-day retention below is a request — effective duration is
+        # bounded by the repository's artifact-retention policy.
         run: |
           pip-audit --requirement requirements-api.txt --skip-editable \
             --format=cyclonedx-json \
@@ -95,8 +96,7 @@ jobs:
           ruff format --check .
 
       - name: Type-check with mypy
-        # Matches the Makefile `type-check` target and the pre-commit hook,
-        # which previously had no CI enforcement.
+        # Matches the Makefile `type-check` target and the pre-commit hook.
         run: |
           pip install mypy pandas-stubs
           mypy api pipeline.py scripts

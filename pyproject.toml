@@ -54,18 +54,14 @@ warn_return_any     = true
 warn_unused_configs = true
 exclude             = [".venv", "build"]
 
-# Third-party packages without bundled stubs — ignore missing imports only for these.
-# Only the third-party imports the type-checked surface (api/ pipeline.py
-# scripts/) actually reaches. lightgbm/plotly/shap/statsmodels/streamlit were
-# listed but unused (mypy reported them as unused override sections) — the
-# dashboard/notebook libs aren't in the checked tree.
+# Third-party packages without bundled stubs — ignore missing imports only for
+# the ones the type-checked surface (api/ pipeline.py scripts/) actually reaches.
 [[tool.mypy.overrides]]
 module = [
     "xgboost.*",
     "sklearn.*",
     "yaml",
     "scipy.*",
-    "nbformat.*",
 ]
 ignore_missing_imports = true
 

@@ -262,6 +262,10 @@ REGION_MAP = {s: r for r, states in VALIDATED_CFG.regions.items() for s in state
 
 VALID_EDUCATION = list(EDU_ORDER.keys())
 VALID_STATES = sorted({s for states in VALIDATED_CFG.regions.values() for s in states})
+# Sorted lists above drive the /meta response; these frozensets back the
+# per-request domain checks so membership is O(1), not a list scan.
+VALID_EDUCATION_SET = frozenset(VALID_EDUCATION)
+VALID_STATES_SET = frozenset(VALID_STATES)
 
 # ── Application state (loaded once at startup) ────────────────────────────────
 
@@ -280,6 +284,7 @@ class AppState:
     classifier: Any = None
     premium_threshold: int | None = None
     occupations: list[str] = field(default_factory=list)
+    occupation_set: frozenset[str] = field(default_factory=frozenset)
     region_codes: dict[str, int] = field(default_factory=dict)
     occ_means: dict[str, float] = field(default_factory=dict)
     state_means: dict[str, float] = field(default_factory=dict)
@@ -351,6 +356,7 @@ async def lifespan(app: FastAPI):
             "model that would collapse every interval to a single value."
         )
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
+    state.occupation_set = frozenset(state.occupations)
     state.region_codes = REGION_CODES
 
     # Split-conformal interval margin. Configured ⇒ required: the served
@@ -644,17 +650,17 @@ QUANTILE_CROSSINGS = Counter(
 
 def _validate_domain(req: PredictRequest) -> None:
     """Domain validation against loaded data. Raises 422 on unknown values."""
-    if req.state not in VALID_STATES:
+    if req.state not in VALID_STATES_SET:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown state '{req.state}'. Use /meta to see valid values.",
         )
-    if req.occupation not in state.occupations:
+    if req.occupation not in state.occupation_set:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown occupation '{req.occupation}'. Use /meta to see valid values.",
         )
-    if req.education_level not in VALID_EDUCATION:
+    if req.education_level not in VALID_EDUCATION_SET:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown education_level '{req.education_level}'. Valid: {VALID_EDUCATION}",

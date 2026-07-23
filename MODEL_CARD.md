@@ -296,9 +296,10 @@ corrected.
 6. **Fairness**: group-level income disparities in the training data
    (by gender, region, occupation) are reflected in the quantile
    intervals. The model does not correct for historical discrimination
-   embedded in wages. Subgroup calibration should be checked
-   periodically — when the `quantile_coverage_80` metric is computed
-   per subgroup, add an assertion to `tests/test_pipeline.py`.
+   embedded in wages. Per-subgroup calibration is computed at train time
+   (`model_metrics.json::subgroup_coverage_80`) and gated by
+   `tests/test_pipeline.py::test_subgroup_coverage_within_band`, so a
+   fairness collapse in any tracked slice fails the build.
 
 ## How to Retrain
 

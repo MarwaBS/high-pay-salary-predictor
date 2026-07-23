@@ -28,14 +28,9 @@ numpy==1.26.4
 pandas==2.2.2
 
 # ── Model runtime ────────────────────────────────────────────────────────────
-# xgboost's sklearn wrapper (XGBRegressor / XGBClassifier) is a hard runtime
-# dependency in xgboost 3.x: the constructors themselves call into
-# sklearn.base and raise ImportError if scikit-learn is not installed.
-# pipeline.py::load_model and load_classifier instantiate both wrappers at
-# startup, so scikit-learn must be present in the API image — not just in
-# the dev image that trains the model. Pinning to 1.5.2 (Sep 2024) because
-# it is the last 1.5.x line, Python 3.11 wheels are on PyPI, and it has a
-# year of production bake time against xgboost 3.x.
+# xgboost 3.x's sklearn wrappers (XGBRegressor/XGBClassifier) call into sklearn
+# at construction, and pipeline.py instantiates both at startup, so scikit-learn
+# is a hard runtime dep of the API image, not just the dev image.
 xgboost==3.2.0
 scikit-learn==1.5.2
 
