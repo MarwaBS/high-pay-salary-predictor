@@ -213,35 +213,43 @@ class TestModelPrediction:
         """Multi-quantile XGBoost emits (n, 3) — P10, P50, P90 per row."""
         from pipeline import is_quantile_model, predict_quantiles
 
+        assert is_quantile_model(production_model), (
+            "production model must be multi-quantile (refused otherwise at startup)"
+        )
         row = df_engineered[FEATURES_FULL].iloc[[0]]
-        if is_quantile_model(production_model):
-            p10, p50, p90 = predict_quantiles(production_model, row)
-            assert isinstance(p50, float)
-            assert p10 <= p50 <= p90
-        else:
-            # Legacy point model — shape (n,)
-            pred = production_model.predict(row)
-            assert isinstance(pred[0], (float, np.floating))
+        p10, p50, p90 = predict_quantiles(production_model, row)
+        assert isinstance(p50, float)
+        assert p10 <= p50 <= p90
 
     def test_prediction_above_zero(self, production_model, df_engineered):
         X = df_engineered[FEATURES_FULL].head(50)
         preds = production_model.predict(X)
-        # For quantile model (n,3), all cells must be positive. For point (n,), all entries.
         assert np.asarray(preds).min() > 0
 
     def test_prediction_plausible_range(self, production_model, df_engineered):
         """Back-transformed P50 predictions must be in a plausible dollar range."""
-        from pipeline import is_quantile_model, predict_quantiles
+        from pipeline import predict_quantiles
 
         X = df_engineered[FEATURES_FULL].head(200)
-        if is_quantile_model(production_model):
-            p50s = [predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))]
-            p50_arr = np.asarray(p50s)
-        else:
-            p50_arr = np.expm1(production_model.predict(X))
-
+        p50_arr = np.asarray([predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))])
         assert p50_arr.min() > 10_000, "Predictions unrealistically low"
         assert p50_arr.max() < 5_000_000, "Predictions unrealistically high"
+
+    def test_predict_quantiles_batch_refuses_non_triple_output(self):
+        """HP-M5/M1: a non-(n, 3) model output must raise, not silently collapse
+        to a degenerate (p, p, p) interval. Single source of truth for both the
+        single-row and batch prediction paths."""
+        from pipeline import predict_quantiles, predict_quantiles_batch
+
+        class _PointModel:
+            def predict(self, rows):
+                return np.zeros(len(rows))  # 1-D point output
+
+        row = pd.DataFrame({"a": [1.0]})
+        with pytest.raises(ValueError, match=r"\(n, 3\)"):
+            predict_quantiles_batch(_PointModel(), row)
+        with pytest.raises(ValueError, match=r"\(n, 3\)"):
+            predict_quantiles(_PointModel(), row)
 
     def test_saved_metrics_within_expected_range(self, cfg):
         """Saved model metrics must fall inside explicit regression windows.

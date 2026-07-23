@@ -272,12 +272,14 @@ class TestEncodeFeatureValues:
         frame = build_feature_frame([values])
         assert list(frame.columns) == FEATURES_FULL
         assert len(frame) == 1
-        # Unseen occupation/state must fall back to the precomputed means.
+        # Unseen occupation and a state absent from the group means must fall
+        # back to the precomputed mean fallbacks (state stays in region_map — it
+        # is domain-validated upstream, so only the target-encoding means fall back).
         miss = encode_feature_values(
-            req.model_copy(update={"occupation": "Unknown Job", "state": "ZZ"}),
+            req.model_copy(update={"occupation": "Unknown Job", "state": "NY"}),
             edu_order={"Bachelor's degree": 3},
-            region_map={},
-            region_codes={},
+            region_map={"CA": "West", "NY": "Northeast"},
+            region_codes={"West": 3, "Northeast": 1},
             occ_means={"Software Developers": 175_000.0},
             state_means={"CA": 165_000.0},
             occ_fallback=150_000.0,
@@ -286,3 +288,25 @@ class TestEncodeFeatureValues:
         )
         assert miss["Occ_Mean_Income"] == 150_000.0
         assert miss["State_Mean_Income"] == 140_000.0
+        assert miss["Region_Code"] == 1  # NY → Northeast, encoded directly (no silent 0)
+
+    def test_unmapped_state_fails_loud(self, sample_bls_df: pd.DataFrame) -> None:
+        """HP-M8: an out-of-domain state must raise, not silently encode to
+        Region_Code 0 — the same fail-loud posture as engineer_features. This
+        path is unreachable via the API (state is domain-validated), so a
+        KeyError here means validation was bypassed."""
+        req = PredictRequest(
+            state="CA", occupation="Software Developers", education_level="Bachelor's degree", gender="Female", age=30
+        )
+        with pytest.raises(KeyError):
+            encode_feature_values(
+                req.model_copy(update={"state": "ZZ"}),
+                edu_order={"Bachelor's degree": 3},
+                region_map={"CA": "West"},
+                region_codes={"West": 3},
+                occ_means={},
+                state_means={},
+                occ_fallback=150_000.0,
+                state_fallback=150_000.0,
+                bls_defaults_lookup=build_bls_defaults_lookup(sample_bls_df),
+            )

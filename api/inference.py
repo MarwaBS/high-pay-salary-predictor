@@ -184,12 +184,16 @@ def encode_feature_values(
     from this dict — no DataFrame round-trip needed.
     """
     bls = _lookup_bls(bls_defaults_lookup, req.state, req.occupation)
-    region = region_map.get(req.state, "South")
+    # req.state / education / gender are validated to the known domain upstream,
+    # so index directly — a KeyError here means the request bypassed validation,
+    # which should fail loud, not silently encode to a wrong region (the
+    # divergence the training-side engineer_features also rejects).
+    region = region_map[req.state]
     return {
         "Age": req.age,
         "Education_Ord": edu_order[req.education_level],
         "Gender_Bin": 1 if req.gender == "Male" else 0,
-        "Region_Code": region_codes.get(region, 0),
+        "Region_Code": region_codes[region],
         "Employment": req.employment if req.employment is not None else bls["employment"],
         "Location Quotient": (req.location_quotient if req.location_quotient is not None else bls["location_quotient"]),
         "Jobs per 1000": req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"],
@@ -221,10 +225,10 @@ def quantiles_crossed(p10: float, p50: float, p90: float) -> bool:
 
 
 def run_model(model: Any, row: pd.DataFrame) -> tuple[float, float, float]:
-    """Invoke the (multi-quantile) model and return (p10, p50, p90) dollars.
+    """Invoke the multi-quantile model and return (p10, p50, p90) dollars.
 
-    Falls back to (point, point, point) if a legacy point-estimate model is
-    loaded. See ``pipeline.predict_quantiles`` for the details.
+    See ``pipeline.predict_quantiles`` — a non-quantile model is refused at
+    startup, so this always returns a real interval.
     """
     return predict_quantiles(model, row)
 

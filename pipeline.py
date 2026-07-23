@@ -6,7 +6,7 @@ Single source of truth for:
   - Feature-engineering function (engineer_features)
   - Group-means helpers (compute_group_means, save/load_group_means)
   - Model save / load helpers (no pickle — XGBoost native + JSON)
-  - build_feature_row helper (shared by API + dashboard)
+  - Quantile prediction helpers (predict_quantiles, predict_quantiles_batch)
 
 Design notes
 ------------
@@ -223,51 +223,6 @@ def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
 
 
 # ---------------------------------------------------------------------------
-# Shared prediction helper — eliminates duplication between API and dashboard
-# ---------------------------------------------------------------------------
-
-
-def build_feature_row(
-    *,
-    age: int,
-    edu_ord: int,
-    gender_bin: int,
-    region_code: int,
-    employment: float,
-    lq: float,
-    jobs_k: float,
-    hourly_mean: float,
-    occ_mean_income: float,
-    state_mean_income: float,
-) -> pd.DataFrame:
-    """Return a single-row DataFrame ready for model.predict().
-
-    All callers (api/main.py, streamlit_app.py) must go through this
-    function so the column order always matches FEATURES_FULL.
-
-    Note: the model is trained on log1p(Annual Income).  Callers must
-    apply ``numpy.expm1()`` to the raw prediction to get dollar values.
-    """
-    return pd.DataFrame(
-        [
-            [
-                age,
-                edu_ord,
-                gender_bin,
-                region_code,
-                employment,
-                lq,
-                jobs_k,
-                hourly_mean,
-                occ_mean_income,
-                state_mean_income,
-            ]
-        ],
-        columns=FEATURES_FULL,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Shared fallback helpers — eliminates duplication between API and dashboard
 # ---------------------------------------------------------------------------
 
@@ -407,32 +362,31 @@ def load_group_means(path: str) -> dict[str, dict[str, float]]:
 # Quantile prediction helpers
 # ---------------------------------------------------------------------------
 # The production model is trained with ``objective="reg:quantileerror"`` and
-# ``quantile_alpha=[0.1, 0.5, 0.9]`` by scripts/train_quantile.py. At inference
-# it returns a (n, 3) array where columns are P10, P50, P90 in log1p space.
-#
-# If a legacy point-estimate model is loaded (1-D output), ``predict_quantiles``
-# gracefully falls back to returning the same value for all three quantiles
-# so callers never crash — the API additionally surfaces a flag indicating
-# whether the range is real or a degenerate fallback.
+# ``quantile_alpha=[0.1, 0.5, 0.9]`` by scripts/train_quantile.py, so it emits a
+# (n, 3) array of P10/P50/P90 in log1p space. A non-quantile model is refused at
+# API startup (``is_quantile_model``), so these helpers require the (n, 3) shape
+# and raise on anything else rather than silently degrading to a (p, p, p) point.
+
+
+def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame) -> np.ndarray:
+    """Return an (n, 3) array of (p10, p50, p90) dollar predictions for a frame.
+
+    Single source of truth for parsing the multi-quantile output: expm1's the
+    (n, 3) log-space prediction back to dollars. Raises on any other shape — a
+    legacy point model is refused at startup, so a non-(n, 3) output here is a
+    real fault, not a fallback.
+    """
+    raw = np.asarray(model.predict(rows))
+    if raw.ndim != 2 or raw.shape[1] != 3:
+        raise ValueError(f"Expected multi-quantile model output (n, 3), got shape {raw.shape}")
+    dollars: np.ndarray = np.expm1(raw)
+    return dollars
 
 
 def predict_quantiles(model: XGBRegressor, row: pd.DataFrame) -> tuple[float, float, float]:
-    """Return (p10, p50, p90) dollar predictions for a single-row input.
-
-    Works with both the new multi-quantile model (preferred) and the legacy
-    point estimator (fallback — returns the point value for all three).
-    """
-    raw = np.asarray(model.predict(row))
-    if raw.ndim == 2 and raw.shape[1] == 3:
-        p10, p50, p90 = raw[0]
-    elif raw.ndim == 1:
-        # Legacy point model — degenerate interval
-        p50 = float(raw[0])
-        p10, p90 = p50, p50
-    else:
-        raise ValueError(f"Unexpected model.predict() shape: {raw.shape}")
-
-    return float(np.expm1(p10)), float(np.expm1(p50)), float(np.expm1(p90))
+    """Return (p10, p50, p90) dollar predictions for a single-row input."""
+    p10, p50, p90 = predict_quantiles_batch(model, row)[0]
+    return float(p10), float(p50), float(p90)
 
 
 def is_quantile_model(model: XGBRegressor) -> bool:

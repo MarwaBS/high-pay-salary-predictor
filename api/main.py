@@ -48,7 +48,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,10 +87,12 @@ from pipeline import (
     REGION_CODES,
     compute_fallback_means,
     engineer_features,
+    is_quantile_model,
     load_classifier,
     load_group_means,
     load_metrics,
     load_model,
+    predict_quantiles_batch,
     sha256_file,
 )
 
@@ -336,6 +337,16 @@ async def lifespan(app: FastAPI):
 
     state.df = df_eng
     state.model = load_model(str(ROOT / VALIDATED_CFG.model.model_path))
+    # Refuse a non-quantile (legacy point) model rather than silently serving a
+    # degenerate (p, p, p) interval as if it were an 80% band. The whole product
+    # is calibrated uncertainty; a point model here is a deploy error, not a
+    # graceful fallback.
+    if not is_quantile_model(state.model):
+        raise RuntimeError(
+            "Loaded model is not a multi-quantile model (objective != 'reg:quantileerror'). "
+            "The API serves P10/P50/P90 intervals; refusing to start with a point-estimate "
+            "model that would collapse every interval to a single value."
+        )
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
     state.region_codes = REGION_CODES
 
@@ -405,7 +416,7 @@ async def lifespan(app: FastAPI):
             "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
             "baseline_stats": ROOT / "models" / "baseline_stats.json",
         }
-        if state.classifier is not None:
+        if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
             artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
         mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
         if mismatches:
@@ -809,12 +820,7 @@ def predict_batch(
     # 4. Single vectorised model call for the un-cached items.
     if rows_to_score:
         batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
-
-        raw = np.asarray(state.model.predict(batch_df))
-        if raw.ndim != 2 or raw.shape[1] != 3:
-            # Legacy point model fallback — degenerate (p, p, p) trio per row.
-            raw = np.column_stack([raw, raw, raw])
-        preds_dollar = np.expm1(raw)
+        preds_dollar = predict_quantiles_batch(state.model, batch_df)
 
         # Batched classifier call — one predict_proba for the whole batch
         # keeps overhead amortised. ``None`` when the classifier isn't

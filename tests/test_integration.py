@@ -19,7 +19,6 @@ from sklearn.model_selection import train_test_split
 
 from pipeline import (
     FEATURES_FULL,
-    build_feature_row,
     compute_group_means,
     engineer_features,
     load_group_means,
@@ -111,27 +110,6 @@ class TestProductionModelEndToEnd:
         p50s = [predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))]
         assert all(p > 0 for p in p50s)
         assert min(p50s) > 50_000
-
-    def test_build_feature_row_matches_training_features(self, production_model):
-        """build_feature_row must produce exactly the columns the model expects."""
-        from pipeline import predict_quantiles
-
-        row = build_feature_row(
-            age=35,
-            edu_ord=2,
-            gender_bin=1,
-            region_code=1,
-            employment=1000.0,
-            lq=1.0,
-            jobs_k=2.0,
-            hourly_mean=60.0,
-            occ_mean_income=130_000.0,
-            state_mean_income=140_000.0,
-        )
-        assert list(row.columns) == FEATURES_FULL
-        assert row.shape == (1, len(FEATURES_FULL))
-        _, p50, _ = predict_quantiles(production_model, row)
-        assert p50 > 50_000
 
     def test_p50_r2_with_saved_group_means(self, production_model, df, cfg, edu_order, region_map):
         """End-to-end P50 R² with saved training group means must be non-negative.
