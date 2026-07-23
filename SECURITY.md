@@ -42,11 +42,12 @@ Expect acknowledgement within 72 hours.
 
 ## Handling of known managed risks
 
-### pip-audit ignore: `CVE-2025-69872`
+### pip-audit suppressions
 
-The `security` CI step ignores this CVE by design (documented inline in
-`.github/workflows/ci.yml`). Re-evaluate quarterly or when the upstream
-patch lands.
+None. The `security` CI step runs `pip-audit` clean against both
+`requirements.txt` and the pinned `requirements-lock.txt`, and
+`.pip-audit-ignore.txt` is empty. Any future suppression must carry an inline
+rationale and a re-evaluation trigger in that file.
 
 ### `.trivyignore`
 
