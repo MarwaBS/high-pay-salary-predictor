@@ -1,7 +1,7 @@
 # High-Paying Jobs in the US — Salary Quantile Predictor
 
 [![Live Demo](https://img.shields.io/badge/%F0%9F%A4%97%20Live%20Demo-on%20Hugging%20Face-yellow)](https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor)
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CI](https://github.com/MarwaBS/high-pay-salary-predictor/actions/workflows/ci.yml/badge.svg)](https://github.com/MarwaBS/high-pay-salary-predictor/actions/workflows/ci.yml)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](MODEL_CARD.md)
@@ -30,10 +30,12 @@
 > a quantile loss.
 >
 > **The honest numbers** (full detail + baselines in
-> [MODEL_CARD.md](MODEL_CARD.md)): 80% interval coverage ≈ 0.77 (target
-> 0.80), median P10–P90 width ≈ $113K, point-estimate R² ≈ 0.03. The
-> premium-tier classifier *ties* a logistic-regression baseline (AUC ≈
-> 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
+> [MODEL_CARD.md](MODEL_CARD.md)): the raw quantile interval covers ≈ 0.77;
+> the API serves a **cross-conformal–calibrated** interval that hits the
+> target 0.80 (≈ 0.80 on held-out test) at a ≈ 3% wider median P10–P90 band
+> (≈ $117K); point-estimate R² ≈ 0.03. The
+> premium-tier classifier *slightly trails* a logistic-regression baseline
+> (AUC 0.676 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
 > production-ML *engineering* around an honestly-hard problem: a
 > leakage-safe, calibrated, observable serving path that holds its
@@ -142,10 +144,10 @@ The project is organized across four notebooks and two deployable services:
 
 | Notebook | Purpose |
 |----------|---------|
-| `high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
-| `high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
-| `us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
-| `04_salary_prediction_model.ipynb` | **ML: historical v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
+| `notebooks/high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
+| `notebooks/high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
+| `notebooks/us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
+| `notebooks/04_salary_prediction_model.ipynb` | **ML: historical v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
 
 All figures are saved automatically to `Images/` at 300 DPI.
 
@@ -201,11 +203,12 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| 80% empirical coverage | **~0.77** | Fraction of test targets inside `[P10, P90]`. Target 0.80 ± 0.05. |
-| Median PI width | ~$112K | Typical 80% interval spread in dollar space. |
+| 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
+| 80% coverage — **served (conformal)** | **~0.80** | The API widens `[P10, P90]` by a cross-conformal margin so the served interval hits target. |
+| Median PI width (served) | ~$117K | ~3% wider than raw after the conformal margin; the price of honest 0.80 coverage. |
 | Quantile crossings | **0** | P10 > P50 or P50 > P90 — must stay zero. |
 | P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** — P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
-| CV R² (5-fold, train-only, dollar) | ~0.03 ± 0.02 | Same space as test R² — no overfitting, no space mismatch. |
+| CV R² (5-fold, train-only, dollar) | ~0.02 ± 0.02 | Leakage-free per-fold target encoding; same space as test R² — no overfitting, no space mismatch. |
 | Train / test | 8,204 / 2,051 | `random_state=42` |
 
 > **Why is the point-estimate R² so low?** Two reasons:
@@ -214,7 +217,7 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 >
 > The v1.0.0 value of R² = 0.077 (with MLflow + Optuna HPO) was not higher because of better modelling — it was higher because it was trained with squared-error loss and scored with a squared-error metric. That's a tautology, not progress.
 
-**Prediction intervals** are emitted directly by the multi-quantile XGBoost model. The API response includes explicit `predicted_p10`, `predicted_p50`, `predicted_p90` fields; `predicted_salary` is kept as an alias for `predicted_p50` for backward compatibility with v1 clients.
+**Prediction intervals** come from the multi-quantile XGBoost model, widened by a cross-conformal margin (estimated from train-only folds, so the shipped model's bytes are unchanged) so the served `[P10, P90]` reaches its nominal 80% coverage rather than the raw quantiles' ~77%. The API response includes explicit `predicted_p10`, `predicted_p50`, `predicted_p90` fields; `predicted_salary` is kept as an alias for `predicted_p50` for backward compatibility with v1 clients.
 
 ### API performance benchmarks
 
@@ -246,7 +249,7 @@ Grouped by the engineering discipline they demonstrate.
 - **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, **no `scale_pos_weight`** — at the cohort's mild ~40/60 class balance, reweighting would trade probability calibration for a negligible ranking gain, and the head is served as a calibrated probability; see [MODEL_CARD.md](MODEL_CARD.md)). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** — a true unfiltered `≥ $100K` membership classifier — is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
 - **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::test_no_occ_mean_leakage`) locks this in.
 - **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF = 5.44×10⁸ against `Hourly Mean`). 10 features total.
-- **CV = Test space.** 5-fold CV runs on the training set only, scored in dollar space via `make_scorer(expm1)`, so `cv_r2_mean` and test `r2` are directly comparable.
+- **CV = Test space, leakage-free.** 5-fold CV runs on the training set only; each fold recomputes its own target-encoding means from its train rows (`np.expm1` back to dollars, then `r2_score`), so a validation row is never encoded with a mean that saw its own target and `cv_r2_mean` is directly comparable to test `r2`.
 
 ### API
 
@@ -267,7 +270,7 @@ Grouped by the engineering discipline they demonstrate.
 ### Security & Reproducibility
 
 - **Blocking `pip-audit` CVE gate** in CI, run against both `requirements.txt` and the pinned `requirements-lock.txt`, with **no current suppressions** (`.pip-audit-ignore.txt` is the documented place for any future ones).
-- **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull `shap` / `lightgbm` / `streamlit` / `statsmodels` it never uses.
+- **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull the Streamlit/viz stack (`streamlit` / `plotly` / `matplotlib`) it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
 - **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
 
@@ -279,10 +282,10 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Model registry & versioning
 
-- **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+cd1037dac48a.e927845864e2`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The training commit of the currently shipped model is additionally pinned by the annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0), so the SHA in `model_version` stays reachable even after feature branches are deleted.
+- **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+<git-sha12>.<data-sha12>`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0) pins `1c5e9d896ee5`, the commit the 2.0.0 model release was trained at; when the metrics file is later regenerated (for example, the leakage-free CV recompute), `model_version` records the commit of that regeneration instead — the SHA inside `models/model_metrics.json` is always the authoritative one, and [MODEL_CARD.md](MODEL_CARD.md) explains why it stays fetchable without being a `main` ancestor.
 - **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
-- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
-- **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases) and redeployed without re-training. Because the tag encodes both the code SHA and the data hash, `git checkout <sha>` plus `python -m scripts.train_quantile` bit-reproduces the release.
+- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`, `conformal_delta.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
+- **Rollback path.** Any historical artefact can be pulled from the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases) and redeployed without re-training. Reproducibility rests on the pinned environment, not on a bare checkout: install `requirements-lock.txt` (the exact library set the release was trained under — recorded per release in `model_metrics.json::library_versions`), then `python -m scripts.train_quantile` with the fixed `random_state` and the same input CSV (pinned by `data_sha256`) regenerates identical metrics — the retrain is byte-identical under that lock. CI does not retrain to diff; it content-addresses every shipped artefact and fails if its bytes drift from the SHA-256 recorded in `model_metrics.json`. See [MODEL_CARD.md](MODEL_CARD.md) for why a post-squash `git checkout <sha>` is not the reproduction path.
 - **Why not MLflow Model Registry?** Free, versioned, rollback-able, and one fewer service to operate. A real production system would graduate to MLflow or SageMaker Model Registry; for a portfolio-scale project, GitHub Releases is the pragmatic choice and the trade-off is documented here on purpose.
 - **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote — so the provenance contract cannot silently regress.
 
@@ -311,7 +314,7 @@ Data are used for educational and analytical purposes only. Consult each provide
 
 ## Data cleaning and preparation
 
-Implemented in `high_pay_jobs_data_cleaning.ipynb`:
+Implemented in `notebooks/high_pay_jobs_data_cleaning.ipynb`:
 
 **BLS cleaning:**
 - Normalize strings; strip whitespace and title-case state/occupation names
@@ -504,11 +507,11 @@ high-pay-salary-predictor/
 ├── pipeline.py                                # ★ Single source of truth: FEATURES + engineer_features + shared helpers
 ├── config_schema.py                           # ★ Pydantic validation for config.yaml (fail-fast on typos)
 │
-├── Notebooks
+├── notebooks/
 │   ├── high_pay_jobs_data_cleaning.ipynb      # Pipeline: BLS + Census → cleaned CSV
 │   ├── high_paying_jobs_data_visualization.ipynb  # EDA: distributions, rankings, correlations
 │   ├── us_high_income_jobs_mapping.ipynb      # Geospatial: choropleth maps
-│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests
+│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests (historical v1 EDA)
 │
 ├── streamlit_app.py                           # ★ Interactive dashboard (routes predictor tab through /predict)
 ├── config.yaml                                # ★ All thresholds, paths, color palettes, premium-tier threshold
@@ -553,8 +556,7 @@ high-pay-salary-predictor/
 │   └── census_data.csv
 │
 ├── Resources/                                 # Raw source data
-│   ├── bls_state_data.xlsx
-│   └── census_data.csv
+│   └── bls_state_data.xlsx
 │
 ├── models/                                    # Saved ML model artefacts (generated, no pickle)
 │   ├── xgb_salary_model.ubj                   #   Multi-quantile XGBoost regressor (α = [0.10, 0.50, 0.90])

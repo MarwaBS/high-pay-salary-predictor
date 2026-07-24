@@ -48,7 +48,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,10 +87,14 @@ from pipeline import (
     REGION_CODES,
     compute_fallback_means,
     engineer_features,
+    is_quantile_model,
     load_classifier,
+    load_conformal_delta,
     load_group_means,
     load_metrics,
     load_model,
+    predict_quantiles_batch,
+    sha256_file,
 )
 
 # ── Structured JSON Logging ──────────────────────────────────────────────────
@@ -102,9 +105,7 @@ class _JSONFormatter(logging.Formatter):
 
     Any non-standard attributes attached via ``logger.info(..., extra={...})``
     (request_id, method, path, status, duration_ms, …) are merged into the
-    JSON object. Without this, every structured field is silently dropped and
-    access logs collapse to ``{"message": "request completed"}`` — making the
-    request-correlation story the README advertises impossible.
+    JSON object so structured fields survive into the emitted line.
     """
 
     #: Attributes the stdlib sets on every LogRecord; everything else on the
@@ -222,10 +223,9 @@ def _client_ip(request: Request) -> str:
     (werkzeug ``ProxyFix`` semantics). Every entry further left is
     client-supplied and therefore spoofable: reading it would let an attacker
     forge ``X-Forwarded-For`` to mint a fresh rate-limit bucket on every
-    request. The previous ``len - 1 - hops`` index was off by one and returned
-    exactly that attacker-controlled entry. If the header carries fewer entries
-    than we have trusted proxies, it cannot have come through our proxy chain,
-    so we ignore it and bind to the direct peer.
+    request. If the header carries fewer entries than we have trusted proxies,
+    it cannot have come through our proxy chain, so we ignore it and bind to
+    the direct peer.
     """
     xff = request.headers.get("X-Forwarded-For", "")
     if xff and TRUSTED_PROXY_HOPS > 0:
@@ -259,6 +259,10 @@ REGION_MAP = {s: r for r, states in VALIDATED_CFG.regions.items() for s in state
 
 VALID_EDUCATION = list(EDU_ORDER.keys())
 VALID_STATES = sorted({s for states in VALIDATED_CFG.regions.values() for s in states})
+# Sorted lists above drive the /meta response; these frozensets back the
+# per-request domain checks so membership is O(1), not a list scan.
+VALID_EDUCATION_SET = frozenset(VALID_EDUCATION)
+VALID_STATES_SET = frozenset(VALID_STATES)
 
 # ── Application state (loaded once at startup) ────────────────────────────────
 
@@ -277,6 +281,7 @@ class AppState:
     classifier: Any = None
     premium_threshold: int | None = None
     occupations: list[str] = field(default_factory=list)
+    occupation_set: frozenset[str] = field(default_factory=frozenset)
     region_codes: dict[str, int] = field(default_factory=dict)
     occ_means: dict[str, float] = field(default_factory=dict)
     state_means: dict[str, float] = field(default_factory=dict)
@@ -289,12 +294,28 @@ class AppState:
     bls_defaults_lookup: dict[tuple[str, str], BlsDefaults] = field(default_factory=dict)
     quantile_coverage_80: float = 0.0
     model_version: str = "unknown"
+    artifact_sha256: dict[str, str] = field(default_factory=dict)
+    # Cross-conformal interval margin (log space). 0.0 ⇒ raw interval.
+    conformal_delta: float = 0.0
 
 
 state = AppState()
 
 
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
+
+
+def _artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
+    """Return a mismatch string for every artefact whose bytes differ from the
+    recorded SHA-256. Empty list ⇒ every present, recorded artefact verified."""
+    problems = []
+    for key, path in artefact_files.items():
+        want = recorded.get(key)
+        if want and path.exists():
+            got = sha256_file(path)
+            if got != want:
+                problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
+    return problems
 
 
 @asynccontextmanager
@@ -321,8 +342,28 @@ async def lifespan(app: FastAPI):
 
     state.df = df_eng
     state.model = load_model(str(ROOT / VALIDATED_CFG.model.model_path))
+    # Refuse a non-quantile (legacy point) model rather than silently serving a
+    # degenerate (p, p, p) interval as if it were an 80% band. The whole product
+    # is calibrated uncertainty; a point model here is a deploy error, not a
+    # graceful fallback.
+    if not is_quantile_model(state.model):
+        raise RuntimeError(
+            "Loaded model is not a multi-quantile model (objective != 'reg:quantileerror'). "
+            "The API serves P10/P50/P90 intervals; refusing to start with a point-estimate "
+            "model that would collapse every interval to a single value."
+        )
     state.occupations = sorted(df_eng["Occupation"].unique().tolist())
+    state.occupation_set = frozenset(state.occupations)
     state.region_codes = REGION_CODES
+
+    # Cross-conformal interval margin. Configured ⇒ required: the served
+    # interval claims a calibrated 80% coverage that only holds with this margin
+    # applied, so a missing file is a hard startup failure (load_conformal_delta
+    # raises), not a silent fall-back to the under-covering raw interval. A
+    # config without the key (legacy) leaves the margin at 0.0.
+    if VALIDATED_CFG.model.conformal_path:
+        state.conformal_delta = load_conformal_delta(str(ROOT / VALIDATED_CFG.model.conformal_path))
+        logger.info("Conformal interval margin loaded (delta=%.4f, log space)", state.conformal_delta)
 
     # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
     # Optional on purpose: pre-Phase-1 artefacts (any model trained before
@@ -362,11 +403,14 @@ async def lifespan(app: FastAPI):
     logger.info("BLS defaults lookup built with %d (state, occupation) cells", len(state.bls_defaults_lookup))
 
     # Load model metrics — only the quantile coverage is surfaced at startup
-    # for a quick operator sanity check. The /predict route no longer
-    # reads residual-based PI offsets; intervals come from the model's
+    # for a quick operator sanity check; intervals come from the model's
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
-    state.quantile_coverage_80 = float(metrics.get("quantile_coverage_80", 0.0))
+    # Report the coverage of the interval the API actually serves. With a
+    # conformal margin applied that is the conformalized coverage, not the raw
+    # quantile coverage — surfacing the raw number would understate the served
+    # interval. Falls back to the raw coverage when no margin is calibrated.
+    state.quantile_coverage_80 = float(metrics.get("conformal_coverage_80") or metrics.get("quantile_coverage_80", 0.0))
     # Model provenance string (``{service_version}+{git_sha}.{data_sha}``)
     # emitted by scripts/train_quantile.py. Falls back to "unknown" on
     # pre-provenance artefacts so the API is backwards-compatible.
@@ -374,6 +418,33 @@ async def lifespan(app: FastAPI):
     # Namespace the prediction cache by model version so a retrain never
     # serves a previous model's cached predictions from a shared Redis.
     cache.version = state.model_version
+
+    # ── Artifact integrity: served bytes must match what training recorded ───
+    # /health reports model_version from the metrics sidecar, but nothing tied
+    # that string to the actual .ubj/.json files on disk — a swapped or
+    # partially-copied artefact would serve under a /health that still claims
+    # the trained version. Re-hash each loaded artefact against the recorded
+    # SHA-256 and crash the probe on mismatch, same fail-loud posture as the
+    # threshold check below.
+    state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
+    if state.artifact_sha256:
+        artefact_files = {
+            "model": ROOT / VALIDATED_CFG.model.model_path,
+            "features": ROOT / VALIDATED_CFG.model.features_path,
+            "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
+            "baseline_stats": ROOT / "models" / "baseline_stats.json",
+        }
+        if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
+            artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
+        if VALIDATED_CFG.model.conformal_path:
+            artefact_files["conformal"] = ROOT / VALIDATED_CFG.model.conformal_path
+        mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
+        if mismatches:
+            raise RuntimeError(
+                "Artifact integrity check failed at startup — served files do not match "
+                f"models/model_metrics.json: {'; '.join(mismatches)}. Refusing to serve a "
+                "mislabeled model; re-deploy the audited artefacts or retrain."
+            )
 
     # Classifier ↔ config threshold consistency check. The trainer writes
     # the exact ``classifier_threshold`` it was fitted against into
@@ -472,9 +543,9 @@ class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
                 # re-measuring.
                 return await call_next(request)
         # No Content-Length (e.g. Transfer-Encoding: chunked) or a malformed one
-        # bypasses the header check entirely — the original bug. Measure the real
-        # body with a running counter and abort the moment it exceeds the cap, so
-        # an unbounded chunked upload can't consume memory before validation.
+        # never reaches the header check. Measure the real body with a running
+        # counter and abort the moment it exceeds the cap, so an unbounded
+        # chunked upload can't consume memory before validation.
         chunks: list[bytes] = []
         size = 0
         async for chunk in request.stream():
@@ -569,23 +640,36 @@ QUANTILE_CROSSINGS = Counter(
     "Predictions where the model's raw quantiles crossed before clamping.",
 )
 
+# Counts requests whose occupation or state carried no training-set group mean,
+# so the dataset-wide fallback mean was injected instead. A rising rate means
+# traffic is drifting off the training support — surfaced, not absorbed.
+FALLBACK_MEANS_USED = Counter(
+    "salary_fallback_means_used_total",
+    "Predictions encoded with the dataset-wide fallback occupation/state mean.",
+)
+
+
+def _count_fallback_means(req: PredictRequest) -> None:
+    if req.occupation not in state.occ_means or req.state not in state.state_means:
+        FALLBACK_MEANS_USED.inc()
+
 
 # ── Validation helper ────────────────────────────────────────────────────────
 
 
 def _validate_domain(req: PredictRequest) -> None:
     """Domain validation against loaded data. Raises 422 on unknown values."""
-    if req.state not in VALID_STATES:
+    if req.state not in VALID_STATES_SET:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown state '{req.state}'. Use /meta to see valid values.",
         )
-    if req.occupation not in state.occupations:
+    if req.occupation not in state.occupation_set:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown occupation '{req.occupation}'. Use /meta to see valid values.",
         )
-    if req.education_level not in VALID_EDUCATION:
+    if req.education_level not in VALID_EDUCATION_SET:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown education_level '{req.education_level}'. Valid: {VALID_EDUCATION}",
@@ -614,6 +698,7 @@ async def health():
         model_loaded=state.model is not None,
         dataset_rows=len(state.df) if state.df is not None else 0,
         model_version=state.model_version,
+        artifact_sha256=state.artifact_sha256,
     )
 
 
@@ -668,6 +753,7 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
         bls_defaults_lookup=state.bls_defaults_lookup,
     )
     row = build_feature_frame([values])
+    _count_fallback_means(req)
 
     if state.drift_monitor is not None:
         state.drift_monitor.observe(values)
@@ -678,7 +764,7 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     if cached is not None:
         return PredictResponse(**cached)
 
-    p10, p50, p90 = run_model(state.model, row)
+    p10, p50, p90 = run_model(state.model, row, conformal_delta=state.conformal_delta)
     if quantiles_crossed(p10, p50, p90):
         QUANTILE_CROSSINGS.inc()
     group_stats = lookup_benchmarks(state.benchmark_lookup, req.state, req.education_level)
@@ -750,6 +836,8 @@ def predict_batch(
         )
         for item in req.items
     ]
+    for item in req.items:
+        _count_fallback_means(item)
     if state.drift_monitor is not None:
         for features in encoded_all:
             state.drift_monitor.observe(features)
@@ -768,12 +856,7 @@ def predict_batch(
     # 4. Single vectorised model call for the un-cached items.
     if rows_to_score:
         batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
-
-        raw = np.asarray(state.model.predict(batch_df))
-        if raw.ndim != 2 or raw.shape[1] != 3:
-            # Legacy point model fallback — degenerate (p, p, p) trio per row.
-            raw = np.column_stack([raw, raw, raw])
-        preds_dollar = np.expm1(raw)
+        preds_dollar = predict_quantiles_batch(state.model, batch_df, conformal_delta=state.conformal_delta)
 
         # Batched classifier call — one predict_proba for the whole batch
         # keeps overhead amortised. ``None`` when the classifier isn't

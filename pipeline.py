@@ -6,7 +6,7 @@ Single source of truth for:
   - Feature-engineering function (engineer_features)
   - Group-means helpers (compute_group_means, save/load_group_means)
   - Model save / load helpers (no pickle — XGBoost native + JSON)
-  - build_feature_row helper (shared by API + dashboard)
+  - Quantile prediction helpers (predict_quantiles, predict_quantiles_batch)
 
 Design notes
 ------------
@@ -31,17 +31,34 @@ Shared across the entire project:
   - streamlit_app.py
   - scripts/train_quantile.py
   - tests/test_pipeline.py
-  - 04_salary_prediction_model.ipynb (historical v1 EDA)
+  - notebooks/04_salary_prediction_model.ipynb (historical v1 EDA)
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier, XGBRegressor
+
+
+def sha256_file(path: str | Path) -> str:
+    """Full SHA-256 hex digest of a file's bytes.
+
+    The content address used to pin a served artefact to the exact bytes
+    training recorded: the trainer stamps these into model_metrics.json, the
+    API re-hashes on load and crashes on mismatch, and CI verifies committed
+    bytes against them.
+    """
+    hasher = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
 
 # ---------------------------------------------------------------------------
 # Feature sets
@@ -105,6 +122,11 @@ _REQUIRED_COLUMNS: list[str] = [
     "Annual Income",
 ]
 
+#: Gender_Bin is a binary Male/Female encoding — the only two values in the
+#: training distribution. Anything else is rejected rather than silently folded
+#: into the Female bucket by the ``== "Male"`` comparison.
+_KNOWN_GENDERS: frozenset[str] = frozenset({"Male", "Female"})
+
 
 def engineer_features(
     df: pd.DataFrame,
@@ -137,17 +159,34 @@ def engineer_features(
 
     Raises
     ------
-    ValueError  if any required column is missing from *df*.
+    ValueError  if any required column is missing, or if any Education Level,
+                Gender, or State Abbreviation value has no mapping — encoding
+                an unknown category silently (NaN, or a Region_Code 0 collision)
+                would ship a quietly-degraded model on a config typo.
     """
     missing = [c for c in _REQUIRED_COLUMNS if c not in df.columns]
     if missing:
         raise ValueError(f"engineer_features: missing required columns: {missing}")
 
+    bad_edu = sorted(set(df["Education Level"].unique()) - set(edu_order), key=str)
+    if bad_edu:
+        raise ValueError(
+            f"engineer_features: unmapped Education Level values {bad_edu}; expected one of {sorted(edu_order)}"
+        )
+    bad_gender = sorted(set(df["Gender"].unique()) - _KNOWN_GENDERS, key=str)
+    if bad_gender:
+        raise ValueError(
+            f"engineer_features: unexpected Gender values {bad_gender}; expected one of {sorted(_KNOWN_GENDERS)}"
+        )
+    bad_states = sorted(set(df["State Abbreviation"].unique()) - set(region_map), key=str)
+    if bad_states:
+        raise ValueError(f"engineer_features: unmapped State Abbreviation values {bad_states}")
+
     out = df.copy()
     out["Education_Ord"] = out["Education Level"].map(edu_order)
     out["Gender_Bin"] = (out["Gender"] == "Male").astype(int)
     out["Region"] = out["State Abbreviation"].map(region_map)
-    out["Region_Code"] = out["Region"].map(REGION_CODES).fillna(0).astype(int)
+    out["Region_Code"] = out["Region"].map(REGION_CODES).astype(int)
 
     if occ_means is not None:
         occ_fallback = float(np.mean(list(occ_means.values()))) if occ_means else 0.0
@@ -162,6 +201,22 @@ def engineer_features(
         out["State_Mean_Income"] = out.groupby("State Abbreviation")["Annual Income"].transform("mean")
 
     return out
+
+
+def train_test_positions(n_rows: int, *, test_size: float, random_state: int) -> tuple[np.ndarray, np.ndarray]:
+    """Return (train, test) positional row indices for the project's single split.
+
+    The trainer and the Streamlit dashboard both derive *which rows are test*
+    from this one function, so a change to the split (adding stratification, a
+    different seed) moves them together — the dashboard can never silently
+    report residuals on a train-contaminated "test" set because it re-derived
+    the split a second, diverging way. sklearn is imported lazily so importing
+    ``pipeline`` on the serving hot path does not pull it in.
+    """
+    from sklearn.model_selection import train_test_split
+
+    train_pos, test_pos = train_test_split(np.arange(n_rows), test_size=test_size, random_state=random_state)
+    return np.asarray(train_pos), np.asarray(test_pos)
 
 
 def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
@@ -184,51 +239,6 @@ def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
 
 
 # ---------------------------------------------------------------------------
-# Shared prediction helper — eliminates duplication between API and dashboard
-# ---------------------------------------------------------------------------
-
-
-def build_feature_row(
-    *,
-    age: int,
-    edu_ord: int,
-    gender_bin: int,
-    region_code: int,
-    employment: float,
-    lq: float,
-    jobs_k: float,
-    hourly_mean: float,
-    occ_mean_income: float,
-    state_mean_income: float,
-) -> pd.DataFrame:
-    """Return a single-row DataFrame ready for model.predict().
-
-    All callers (api/main.py, streamlit_app.py) must go through this
-    function so the column order always matches FEATURES_FULL.
-
-    Note: the model is trained on log1p(Annual Income).  Callers must
-    apply ``numpy.expm1()`` to the raw prediction to get dollar values.
-    """
-    return pd.DataFrame(
-        [
-            [
-                age,
-                edu_ord,
-                gender_bin,
-                region_code,
-                employment,
-                lq,
-                jobs_k,
-                hourly_mean,
-                occ_mean_income,
-                state_mean_income,
-            ]
-        ],
-        columns=FEATURES_FULL,
-    )
-
-
-# ---------------------------------------------------------------------------
 # Shared fallback helpers — eliminates duplication between API and dashboard
 # ---------------------------------------------------------------------------
 
@@ -240,10 +250,22 @@ def compute_fallback_means(
 
     Used when a specific occupation or state has no entry in the training-set
     group means (e.g. unseen at training time).
+
+    Raises
+    ------
+    ValueError  if either group-mean dict is empty — averaging an empty set
+                yields NaN, which the API would then inject as the fallback
+                feature value for every unseen occupation/state. Fail at
+                startup instead of serving silent NaNs.
     """
-    occ_fallback = float(np.mean(list(group_means["occ_means"].values())))
-    state_fallback = float(np.mean(list(group_means["state_means"].values())))
-    return occ_fallback, state_fallback
+    occ = list(group_means["occ_means"].values())
+    state = list(group_means["state_means"].values())
+    if not occ or not state:
+        raise ValueError(
+            "compute_fallback_means: group_means artefact has empty occ_means or state_means "
+            "— retrain (`python -m scripts.train_quantile`) to produce non-empty means."
+        )
+    return float(np.mean(occ)), float(np.mean(state))
 
 
 # ---------------------------------------------------------------------------
@@ -346,6 +368,40 @@ def save_group_means(group_means: dict, path: str) -> None:
         json.dump(group_means, f, indent=2)
 
 
+def save_conformal(delta: float, path: str, *, target_coverage: float, n_scores: int) -> None:
+    """Persist the cross-conformal interval margin (log space) plus its provenance."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "conformal_delta": delta,
+        "target_coverage": target_coverage,
+        "method": "cross-conformal (5-fold CQR, log1p space)",
+        "n_scores": n_scores,
+    }
+    # Force LF so the on-disk bytes match the committed content-addressed hash on any platform.
+    with open(path, "w", newline="\n") as f:
+        json.dump(payload, f, indent=2)
+
+
+def load_conformal_delta(path: str) -> float:
+    """Load the cross-conformal interval margin.
+
+    Raises
+    ------
+    FileNotFoundError  if *path* does not exist. The served interval claims a
+    calibrated coverage that only holds with this margin applied, so a missing
+    artefact is a hard failure, not a silent fall-back to the raw interval.
+    """
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Conformal margin artefact not found: {p}. "
+            "Run 'make model' (or 'python -m scripts.train_quantile') to generate it."
+        )
+    with open(p) as f:
+        payload = json.load(f)
+    return float(payload["conformal_delta"])
+
+
 def load_group_means(path: str) -> dict[str, dict[str, float]]:
     """Load occupation and state mean-income mappings from JSON.
 
@@ -368,32 +424,43 @@ def load_group_means(path: str) -> dict[str, dict[str, float]]:
 # Quantile prediction helpers
 # ---------------------------------------------------------------------------
 # The production model is trained with ``objective="reg:quantileerror"`` and
-# ``quantile_alpha=[0.1, 0.5, 0.9]`` by scripts/train_quantile.py. At inference
-# it returns a (n, 3) array where columns are P10, P50, P90 in log1p space.
-#
-# If a legacy point-estimate model is loaded (1-D output), ``predict_quantiles``
-# gracefully falls back to returning the same value for all three quantiles
-# so callers never crash — the API additionally surfaces a flag indicating
-# whether the range is real or a degenerate fallback.
+# ``quantile_alpha=[0.1, 0.5, 0.9]`` by scripts/train_quantile.py, so it emits a
+# (n, 3) array of P10/P50/P90 in log1p space. A non-quantile model is refused at
+# API startup (``is_quantile_model``), so these helpers require the (n, 3) shape
+# and raise on anything else rather than silently degrading to a (p, p, p) point.
 
 
-def predict_quantiles(model: XGBRegressor, row: pd.DataFrame) -> tuple[float, float, float]:
-    """Return (p10, p50, p90) dollar predictions for a single-row input.
+def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame, *, conformal_delta: float = 0.0) -> np.ndarray:
+    """Return an (n, 3) array of (p10, p50, p90) dollar predictions for a frame.
 
-    Works with both the new multi-quantile model (preferred) and the legacy
-    point estimator (fallback — returns the point value for all three).
+    Single source of truth for parsing the multi-quantile output: expm1's the
+    (n, 3) log-space prediction back to dollars. Raises on any other shape — a
+    legacy point model is refused at startup, so a non-(n, 3) output here is a
+    real fault, not a fallback.
+
+    ``conformal_delta`` widens the P10/P90 bounds symmetrically in log space by
+    the cross-conformal margin (see ``scripts.train_quantile`` cross-conformal
+    calibration) so the served interval reaches its nominal coverage; the raw
+    quantiles under-cover by a couple of points. P50 is never shifted. The
+    default 0.0 leaves the raw interval unchanged.
     """
-    raw = np.asarray(model.predict(row))
-    if raw.ndim == 2 and raw.shape[1] == 3:
-        p10, p50, p90 = raw[0]
-    elif raw.ndim == 1:
-        # Legacy point model — degenerate interval
-        p50 = float(raw[0])
-        p10, p90 = p50, p50
-    else:
-        raise ValueError(f"Unexpected model.predict() shape: {raw.shape}")
+    raw = np.asarray(model.predict(rows))
+    if raw.ndim != 2 or raw.shape[1] != 3:
+        raise ValueError(f"Expected multi-quantile model output (n, 3), got shape {raw.shape}")
+    if conformal_delta:
+        raw = raw.copy()
+        raw[:, 0] -= conformal_delta
+        raw[:, 2] += conformal_delta
+    dollars: np.ndarray = np.expm1(raw)
+    return dollars
 
-    return float(np.expm1(p10)), float(np.expm1(p50)), float(np.expm1(p90))
+
+def predict_quantiles(
+    model: XGBRegressor, row: pd.DataFrame, *, conformal_delta: float = 0.0
+) -> tuple[float, float, float]:
+    """Return (p10, p50, p90) dollar predictions for a single-row input."""
+    p10, p50, p90 = predict_quantiles_batch(model, row, conformal_delta=conformal_delta)[0]
+    return float(p10), float(p50), float(p90)
 
 
 def is_quantile_model(model: XGBRegressor) -> bool:

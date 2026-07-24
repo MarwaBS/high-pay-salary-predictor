@@ -26,15 +26,23 @@ project uses SemVer.
 - CI `schedule:` trigger (weekly, Mondays 05:00 UTC) re-running the full
   pipeline on `main` — including the Docker builds + Trivy scans — so
   newly published image CVEs are caught by time, not only by pushes.
-- Annotated tag `training/2.0.0` pinning training commit `1c5e9d896ee5`
-  (the exact code/data state behind the shipped
-  `model_version 2.0.0+1c5e9d896ee5.e927845864e2`), so provenance
-  survives feature-branch cleanup.
+- Annotated tag `training/2.0.0` pinning training commit `1c5e9d896ee5`,
+  the code/data state the 2.0.0 model release was trained at, so
+  provenance survives feature-branch cleanup. (The shipped
+  `model_metrics.json` has since been regenerated — see Fixed below —
+  so its `model_version` records the regeneration commit instead.)
 - Drift monitor ramp-up regression tests: familywise false-alarm bounds
   on stationary windows at n=30/n=100 (150 i.i.d. trials each) plus a
   mid-window (n=150) deaf-check on a genuine 0.5 σ shift.
 
 ### Fixed
+- Reported cross-validation R² was inflated by a target encoding
+  computed over the full training set before folding; each CV fold now
+  recomputes its own encoding means, so a validation row is never
+  encoded with a mean that saw its own target. `cv_r2_mean` drops from
+  0.029 to the honest 0.0215. Model artefact bytes are unchanged;
+  `model_metrics.json` was regenerated, so its `model_version` now
+  records commit `599f28a7c99a`.
 - Drift monitor no longer chronically false-alarms while its window
   fills: per-feature significance is now Šidák-corrected across the ~10
   monitored features and the 0.2 σ effect floor ramp-scales as

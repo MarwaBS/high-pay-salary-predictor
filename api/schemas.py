@@ -39,8 +39,6 @@ class PredictRequest(BaseModel):
     )
     gender: str = Field(
         ...,
-        min_length=2,
-        max_length=10,
         description=(
             "Gender ('Male' or 'Female'). "
             "**Limitation**: the training data (US Census CPS) uses a binary "
@@ -149,10 +147,21 @@ class PredictResponse(BaseModel):
         ge=0,
         le=100,
         description=(
-            "Percentage of similar workers (same state + education level) "
-            "in the dataset who earn less than the predicted salary."
+            "Percentage of the reference distribution that earns less than the "
+            "predicted salary. See ``percentile_scope`` for which reference "
+            "was used."
         ),
         examples=[62.4],
+    )
+    percentile_scope: str = Field(
+        default="group",
+        description=(
+            "Which distribution ``percentile_in_group`` was computed against: "
+            "``group`` = the same (state, education) cell had data; ``dataset`` "
+            "= the cell was unseen, so the whole-dataset distribution was used "
+            "(not a fabricated 50th percentile)."
+        ),
+        examples=["group"],
     )
     group_median: float = Field(
         ...,
@@ -257,6 +266,16 @@ class HealthResponse(BaseModel):
             "against a local re-hash of ``data/cleaned_high_pay_data.csv`` "
             'to prove the training data matches. Returns ``"unknown"`` '
             "for pre-provenance artefacts."
+        ),
+    )
+    artifact_sha256: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "SHA-256 digest of each served artefact (model, classifier, "
+            "features, group_means, baseline_stats), recorded by the trainer "
+            "in ``models/model_metrics.json``. The API verifies these on load "
+            "and crashes on mismatch, so a non-empty map here is proof the "
+            "running process is serving exactly the audited bytes."
         ),
     )
 

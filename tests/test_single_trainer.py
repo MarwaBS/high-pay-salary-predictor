@@ -30,21 +30,27 @@ def _python_modules_in_scripts() -> list[Path]:
     return sorted(p for p in SCRIPTS.glob("*.py") if p.name != "__init__.py")
 
 
-def test_exactly_one_trainer_module_exists():
-    """Only ``scripts/train_quantile.py`` should live under ``scripts/``.
+def _writes_model_artifact(module: Path) -> bool:
+    """A "trainer" writes the production model artefact via ``save_model()``.
 
-    Any new module here must either (a) not be a trainer, or (b) come
-    with an explicit update to this test and to the F-01 audit note
-    because shipping two trainers is the exact footgun this guard
-    prevents.
+    Non-trainer utilities under ``scripts/`` (e.g. the artefact integrity
+    verifier, which only reads and hashes) are not part of the F-01 footgun.
     """
-    modules = _python_modules_in_scripts()
-    names = [m.name for m in modules]
-    assert names == ["train_quantile.py"], (
-        f"Expected exactly one script under scripts/ "
-        f"('train_quantile.py'), found: {names}. "
-        f"Shipping multiple trainers that write to the same artefact "
-        f"path is audit gap F-01."
+    return "save_model(" in module.read_text(encoding="utf-8")
+
+
+def test_exactly_one_trainer_module_exists():
+    """Only ``scripts/train_quantile.py`` may WRITE the production model artefact.
+
+    The F-01 footgun is two *trainers* clobbering the same output path — not two
+    files under ``scripts/``. Non-trainer utilities are allowed; a new trainer
+    must come with an explicit update to this test and the F-01 audit note.
+    """
+    trainers = [m.name for m in _python_modules_in_scripts() if _writes_model_artifact(m)]
+    assert trainers == ["train_quantile.py"], (
+        f"Expected exactly one trainer (writing the model artefact) under scripts/ "
+        f"('train_quantile.py'), found: {trainers}. Shipping multiple trainers that "
+        f"write to the same artefact path is audit gap F-01."
     )
 
 

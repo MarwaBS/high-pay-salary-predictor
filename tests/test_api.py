@@ -53,6 +53,13 @@ class TestHealth:
         data = client.get("/health").json()
         assert data["dataset_rows"] > 1000
 
+    def test_health_exposes_artifact_hashes(self, client):
+        """The API verifies served bytes against these on load; a non-empty map
+        proves the running process is serving the same bytes the trainer recorded."""
+        data = client.get("/health").json()
+        assert data["artifact_sha256"], "artifact hashes missing from /health"
+        assert "model" in data["artifact_sha256"]
+
     def test_root_returns_docs_link(self, client):
         data = client.get("/").json()
         assert "docs" in data
@@ -343,3 +350,33 @@ class TestDriftEndpoint:
         data = r.json()
         assert data.get("observations", 0) >= 35
         assert "features" in data
+
+
+# ── Fallback-means counter ───────────────────────────────────────────────────
+
+
+class TestFallbackMeansCounter:
+    def test_unseen_occupation_mean_increments_counter(self, client, base_payload, monkeypatch):
+        """A valid occupation with no training-set group mean must be counted
+        on /metrics when the dataset-wide fallback mean is injected — traffic
+        drifting off the training support has to be visible, not absorbed."""
+        monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
+        before = api_main.FALLBACK_MEANS_USED._value.get()
+        r = client.post("/predict", json=base_payload)
+        assert r.status_code == 200
+        assert api_main.FALLBACK_MEANS_USED._value.get() == before + 1
+
+    def test_covered_occupation_and_state_do_not_increment(self, client, base_payload):
+        occ = next(o for o in api_main.state.occ_means if o in api_main.state.occupation_set)
+        payload = {**base_payload, "occupation": occ}
+        before = api_main.FALLBACK_MEANS_USED._value.get()
+        r = client.post("/predict", json=payload)
+        assert r.status_code == 200
+        assert api_main.FALLBACK_MEANS_USED._value.get() == before
+
+    def test_batch_counts_each_fallback_item(self, client, base_payload, monkeypatch):
+        monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
+        before = api_main.FALLBACK_MEANS_USED._value.get()
+        resp = client.post("/predict/batch", json={"items": [base_payload, base_payload]})
+        assert resp.status_code == 200
+        assert api_main.FALLBACK_MEANS_USED._value.get() == before + 2

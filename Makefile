@@ -77,12 +77,17 @@ data: install
 	@echo ">>> Running data cleaning notebook..."
 	@test -f Resources/bls_state_data.xlsx || \
 	  (echo "ERROR: Resources/bls_state_data.xlsx not found." && exit 1)
-	@test -f Data/census_data.csv || \
-	  (echo "ERROR: Data/census_data.csv not found." && exit 1)
+	@test -f Resources/census_data.csv || \
+	  (echo "ERROR: Resources/census_data.csv not found — this is the notebook's INPUT," && \
+	   echo "       a US Census CPS extract (variable INCTOT) that is not committed to the" && \
+	   echo "       repo (it exceeds the 5 MB pre-commit limit; see CONTRIBUTING.md § Data)." && \
+	   echo "       Download it into Resources/ before running 'make data'. The cleaned" && \
+	   echo "       OUTPUT (Data/cleaned_high_pay_data.csv) IS committed, so model training" && \
+	   echo "       and serving run from a fresh clone without this step." && exit 1)
 	$(JUPYTER) nbconvert --to notebook --execute \
 	  --ExecutePreprocessor.timeout=600 \
-	  --output high_pay_jobs_data_cleaning.ipynb \
-	  high_pay_jobs_data_cleaning.ipynb
+	  --output notebooks/high_pay_jobs_data_cleaning.ipynb \
+	  notebooks/high_pay_jobs_data_cleaning.ipynb
 	@echo ">>> Cleaned dataset saved to Data/cleaned_high_pay_data.csv"
 
 # ── Model training ────────────────────────────────────────────────────────────
@@ -136,9 +141,9 @@ format: install
 .PHONY: type-check
 type-check: install
 	@echo ">>> Type-checking with mypy..."
-	$(MYPY) api/ pipeline.py scripts/ \
-	  --ignore-missing-imports \
-	  --no-error-summary
+	# No global --ignore-missing-imports: it is weaker than CI, which relies on
+	# the targeted per-module overrides in pyproject.toml. Keep them identical.
+	$(MYPY) api/ pipeline.py scripts/
 	@echo ">>> Type check complete."
 
 # ── Services ──────────────────────────────────────────────────────────────────

@@ -1,0 +1,3 @@
+# Pin the conformal artefact to LF so its committed bytes match the recorded
+# content-addressed hash on every platform (the integrity gate re-hashes the file).
+models/conformal_delta.json text eol=lf

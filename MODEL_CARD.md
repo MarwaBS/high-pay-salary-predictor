@@ -40,7 +40,7 @@ compensation benchmarking, or any consequential use.
 
 ### ⚠️ Data-prep caveat
 
-`high_pay_jobs_data_cleaning.ipynb` double-filters the cohort:
+`notebooks/high_pay_jobs_data_cleaning.ipynb` double-filters the cohort:
 - BLS rows are kept only if `A_MEAN ≥ $100K` or `H_MEAN ≥ $48` (cell 14)
 - Census rows are kept only if `INCTOT ≥ $100K` (cell 21)
 - The two are then inner-joined on `(OCC_CODE, STATE)` (cell 9)
@@ -109,8 +109,10 @@ shown in `models/model_metrics.json::train_date`.
 
 | Metric | Value | What it means |
 |---|---|---|
-| 80% empirical coverage | **~0.77** | Fraction of test targets that fall inside `[P10, P90]`. Target = 0.80 ± 0.05. |
-| Median PI width | ~$112K | Typical spread of the 80% interval in dollar space. |
+| 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
+| 80% coverage — **served (cross-conformal)** | **~0.80** | The API widens the interval by a conformal margin (below) so the served band hits target. |
+| Median PI width — served | ~$117K | ~3% wider than the raw interval; the cost of honest 0.80 coverage. |
+| Conformal margin (log space) | ~0.011 | Symmetric widening added to P10/P90; estimated by 5-fold cross-conformal on train (§ below). |
 | Quantile crossings | **0** | Number of test rows where P10 > P50 or P50 > P90. Must be zero. |
 | P10 pinball loss | ~$6.6K | Quantile loss at α=0.10. |
 | P50 pinball loss | ~$25K | Quantile loss at α=0.50 (equals `0.5 × MAE`). |
@@ -119,13 +121,13 @@ shown in `models/model_metrics.json::train_date`.
 ### Provenance & reproducibility
 
 Each artefact carries a `model_version` of the form
-`{service_version}+{git_sha}.{data_sha256_prefix}` (e.g.
-`2.0.0+1c5e9d896ee5.e927845864e2`), recorded in `models/model_metrics.json`.
-The **git SHA is the exact training commit**. Training runs only on `main` (the
-weekly cron and `workflow_dispatch` in `train.yml`), so that commit is authored
-on main — but because PRs land via **squash-merge**, the training commit is a
-real, still-fetchable object that is **not an ancestor of `main`** after the
-squash (the squash creates a new commit with a different SHA). Do not expect
+`{service_version}+{git_sha}.{data_sha256_prefix}` — currently
+`2.0.0+599f28a7c99a.e927845864e2`, recorded in `models/model_metrics.json`.
+The **git SHA is the exact commit the metrics file was generated at** — either
+a scheduled `train.yml` run on `main`, or a working-branch commit whose
+regenerated metrics land via PR. Because PRs land via **squash-merge** (which
+creates a new commit with a different SHA), the recorded commit is a real,
+still-fetchable object that is generally **not an ancestor of `main`**. Do not expect
 `git checkout <git_sha>` from a shallow/gc'd clone to succeed. Reproducibility
 does **not** depend on checking out that commit: it rests on the committed
 artefacts, the exact-version `requirements-lock.txt`, the fixed training seed
@@ -138,10 +140,10 @@ the `data_sha256` is what actually binds a metric set to its input.
 
 | Metric | Value | Honesty note |
 |---|---|---|
-| Test R² (P50) | ~0.026 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
+| Test R² (P50) | ~0.028 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
 | Test MAE | ~$50K | |
 | Test RMSE | ~$108K | |
-| CV R² (5-fold, train only, dollar space) | ~0.029 ± 0.018 | Close to test R² — no overfitting, no space mismatch. |
+| CV R² (5-fold, train only, dollar space) | ~0.022 ± 0.015 | Leakage-free per-fold target encoding; close to test R² — no overfitting, no space mismatch. |
 
 ### CV alignment
 
@@ -214,7 +216,7 @@ At HEAD, on the held-out test split:
 | Baseline | Value | Verdict |
 |---|---|---|
 | Majority-class accuracy | ~0.61 | XGBoost accuracy (~0.65) beats it, but only modestly. |
-| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head only ties a scaled logistic regression.** |
+| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head slightly trails a scaled logistic regression (0.676 vs ~0.68).** |
 
 The honest conclusion: on this feature set the gradient-booster buys
 nothing over linear logistic regression — the signal ceiling is the
@@ -248,6 +250,19 @@ The API endpoint `POST /predict` and the Streamlit dashboard now return:
 | `predicted_p90` | 90th-percentile salary prediction (high end of 80% PI) |
 | `predicted_salary` | Alias for `predicted_p50`, kept for v1 clients |
 | `prediction_interval_low` / `prediction_interval_high` | Same as `p10` / `p90` |
+
+**Cross-conformal calibration.** The raw quantile interval under-covers its
+nominal 80% by ~3 points, so the served `p10`/`p90` are widened symmetrically
+in log space by a conformal margin. The margin is estimated by 5-fold
+cross-conformal (CQR) on the training set — each fold scores the held-out rows
+with `max(q_lo − y, y − q_hi)` and the margin is the 0.80 quantile of the
+pooled scores (with the standard `(n+1)` small-sample lift). Because the fold
+models differ from the served full-data model, coverage is approximate —
+validated empirically at ≈0.80 on the held-out test set. The shipped model
+still trains on all of train and its bytes are unchanged. The margin is persisted to
+`models/conformal_delta.json` (content-addressed alongside the other
+artefacts) and applied at serve time; P50 is never shifted. Result: served
+coverage ≈ 0.80 at ~3% wider intervals.
 
 Quantile crossings (P10 > P90) are clamped defensively inside
 `api/inference.build_response`, so clients never see an inverted range
@@ -283,9 +298,10 @@ corrected.
 6. **Fairness**: group-level income disparities in the training data
    (by gender, region, occupation) are reflected in the quantile
    intervals. The model does not correct for historical discrimination
-   embedded in wages. Subgroup calibration should be checked
-   periodically — when the `quantile_coverage_80` metric is computed
-   per subgroup, add an assertion to `tests/test_pipeline.py`.
+   embedded in wages. Per-subgroup calibration is computed at train time
+   (`model_metrics.json::subgroup_coverage_80`) and gated by
+   `tests/test_pipeline.py::test_subgroup_coverage_within_band`, so a
+   fairness collapse in any tracked slice fails the build.
 
 ## How to Retrain
 

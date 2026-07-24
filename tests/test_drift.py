@@ -467,6 +467,62 @@ class TestDriftMonitorRedisBackend:
         assert report["features"]["Age"]["drifted"] is True
 
 
+class _ReadFailingRedis(_FakeRedis):
+    """Writes succeed (shared list populates) but reads raise — models a Redis
+    partition where the authoritative window cannot be loaded."""
+
+    def lrange(self, key, start, end):
+        raise ConnectionError("simulated redis read failure")
+
+
+class _WriteFailingRedisPipeline(_FakeRedisPipeline):
+    def execute(self):
+        raise ConnectionError("simulated redis write failure")
+
+
+class _WriteFailingRedis(_FakeRedis):
+    def pipeline(self):
+        return _WriteFailingRedisPipeline(self._store)
+
+
+class TestDriftBackendFailureIsLoud:
+    """A configured Redis backend that fails must never yield a clean bill of
+    health from a window it could not read, nor mislabel which path served it."""
+
+    def test_read_failure_reports_unavailable_not_clean(self, baseline_stats):
+        fake = _ReadFailingRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=200, redis_client=fake)
+        # 200 extreme-drift observations land in Redis; the local deque stays empty.
+        for _ in range(200):
+            mon.observe({"Age": 999.0, "Education_Ord": 2.0})
+        report = mon.check_drift()
+        # The read fell back to the empty local deque: the verdict must be
+        # withheld, not a confident "no drift".
+        assert report["degraded"] is True
+        assert report["status"] == "unavailable"
+        assert report["backend"] == "memory", "must name the path that actually served the read"
+        assert report["any_drifted"] is None, "never a clean False from an unloadable window"
+        assert report["features"] == {}
+
+    def test_healthy_redis_read_is_not_degraded(self, baseline_stats):
+        fake = _FakeRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake)
+        for _ in range(40):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        report = mon.check_drift()
+        assert report["backend"] == "redis"
+        assert report["degraded"] is False
+        assert report["any_drifted"] is False
+
+    def test_write_failure_does_not_populate_local_deque(self, baseline_stats):
+        fake = _WriteFailingRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake)
+        for _ in range(50):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})  # every write fails
+        # Dropped, not mixed into the local plane — deque stays empty.
+        assert len(mon.buffer) == 0
+
+
 class TestBaselinePersistence:
     def test_save_and_load_round_trip(self, tmp_path):
         """save_baseline_stats() output should be loadable by DriftMonitor."""

@@ -34,7 +34,7 @@ pre-commit install    # installs git hooks (ruff, nbstripout, file hygiene)
    - General file hygiene (trailing whitespace, merge markers, large files)
 
 4. **Open a pull request** against `main`. The CI pipeline runs lint + tests
-   on Python 3.10 and 3.11 automatically.
+   on Python 3.11 and 3.12 automatically.
 
 ## Code conventions
 

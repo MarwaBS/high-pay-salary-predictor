@@ -33,8 +33,9 @@ cp "$REPO_DIR/deploy/huggingface/README.md" "$SPACE_DIR/README.md"
 mkdir -p "$SPACE_DIR/deploy/huggingface"
 cp "$REPO_DIR/deploy/huggingface/start.sh" "$SPACE_DIR/deploy/huggingface/start.sh"
 
-# ── Runtime dependency set (the only requirements file the image installs) ───
+# ── Runtime dependency sets (both files the image's pip installs consume) ────
 cp "$REPO_DIR/requirements-api.txt" "$SPACE_DIR/requirements-api.txt"
+cp "$REPO_DIR/deploy/huggingface/requirements-space.txt" "$SPACE_DIR/deploy/huggingface/requirements-space.txt"
 
 # ── Runtime code (fresh copy so deletions propagate) ─────────────────────────
 rm -rf "$SPACE_DIR/api" "$SPACE_DIR/scripts"

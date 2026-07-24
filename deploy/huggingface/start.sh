@@ -14,7 +14,9 @@ set -euo pipefail
 
 cd /home/user/app
 
-# Forward SIGTERM / SIGINT to both child processes on shutdown.
+# Reap the backgrounded API on shutdown. Only the API is a child here — the
+# Streamlit process is exec'd last (below), so it replaces this shell and
+# receives SIGTERM/SIGINT directly; this trap is gone after that exec.
 cleanup() {
     echo "[start.sh] shutting down API (pid=${API_PID:-?})"
     if [[ -n "${API_PID:-}" ]]; then
