@@ -54,7 +54,7 @@ numpy==2.4.6
 packaging==26.2
 pandas==3.0.3
 pillow==12.3.0
-plotly==6.8.0
+plotly==6.9.0
 protobuf==7.35.1
 pyarrow==24.0.0
 pydeck==0.9.3
