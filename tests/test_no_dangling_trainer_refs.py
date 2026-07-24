@@ -1,8 +1,8 @@
 """Guard against dangling references to the deleted legacy trainer.
 
 ``scripts/train_model.py`` (the v1 point-estimate trainer with MLflow +
-Optuna) was deleted in commit ``cd1037d`` as part of closing final-audit
-gap F-01 (two trainers sharing artefact paths). The file is gone from
+Optuna) was deleted in commit ``cd1037d`` after two trainers were found
+sharing the same artefact path. The file is gone from
 disk, but docstrings and user-facing error messages elsewhere in the
 repo kept mentioning it, so a user who hit the ``/drift`` disabled path
 was told to run a file that no longer exists.
@@ -10,8 +10,8 @@ was told to run a file that no longer exists.
 This test walks the repo and asserts the string ``train_model.py``
 appears nowhere in tracked, user-visible source — tests, docs, reports,
 Python modules, YAML workflows, Dockerfiles, and Makefile. Anything
-under ``private/`` or ``.git/`` is exempt (the private audit directory
-intentionally preserves historical audit notes).
+under ``private/`` or ``.git/`` is exempt (the private/ directory
+intentionally preserves historical notes).
 
 The guard is intentionally a plain substring search rather than an AST
 walk because the prior failure modes were in **comments and docstrings**
@@ -27,7 +27,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).parent.parent
 
 # Directories / files that are allowed to still mention `train_model.py`.
-# - private/                 : audit notes tracking historical decisions
+# - private/                 : notes tracking historical decisions
 # - .git/                    : git internals
 # - .venv/, venv/            : developer virtualenvs
 # - __pycache__/             : compiled caches

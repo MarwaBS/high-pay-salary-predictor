@@ -1,5 +1,5 @@
 """
-Regression guard for audit gap F-03: the service version string must come
+Regression guard: the service version string must come
 from a single source of truth (``api.__version__``) and must match across:
 
 1. ``FastAPI(version=...)`` declared in ``api/main.py``
@@ -7,7 +7,7 @@ from a single source of truth (``api.__version__``) and must match across:
 3. The default on ``HealthResponse.version`` in ``api/schemas.py``
 4. The ``[project].version`` field in ``pyproject.toml``
 
-Prior to F-03 the root endpoint returned a hardcoded ``"1.0.0"`` while
+Previously the root endpoint returned a hardcoded ``"1.0.0"`` while
 the FastAPI app advertised ``"2.0.0"`` — silent version skew across
 endpoints in the same service.
 """
@@ -45,8 +45,8 @@ def test_root_endpoint_version_matches_constant():
     body = resp.json()
     assert body["version"] == __version__, (
         f"GET / returned version={body.get('version')!r} but "
-        f"api.__version__={__version__!r}. This is audit gap F-03 — "
-        f"the root endpoint was hardcoded to a stale version string."
+        f"api.__version__={__version__!r}. The root endpoint "
+        f"was hardcoded to a stale version string."
     )
 
 

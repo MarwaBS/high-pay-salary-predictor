@@ -546,7 +546,7 @@ high-pay-salary-predictor/
 │   ├── test_classifier.py                     #   Premium-tier classifier head + API exposure guards
 │   ├── test_model_version.py                  #   Composite model_version provenance string + /health exposure
 │   ├── test_version_consistency.py            #   Single __version__ constant drives FastAPI, /, /health
-│   ├── test_single_trainer.py                 #   Guards that only one trainer script exists (F-01 regression)
+│   ├── test_single_trainer.py                 #   Guards that only one trainer script exists (single-trainer regression)
 │   ├── test_no_dangling_trainer_refs.py       #   Guards that no file references the deleted legacy trainer
 │   └── test_docker_image.py                   #   Dockerfile COPY completeness + API image has sklearn pinned
 │

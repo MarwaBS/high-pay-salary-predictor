@@ -1,5 +1,5 @@
 """
-Regression guard for audit gap F-01: ensure there is exactly ONE trainer
+Regression guard: ensure there is exactly ONE trainer
 under ``scripts/`` that writes the production ``models/xgb_salary_model.ubj``
 artefact.
 
@@ -12,7 +12,7 @@ trainer). Both wrote to the same output path. Running ``make hpo`` would
 silently clobber the production quantile model with a point estimator,
 degrading the API to ``(p, p, p)`` degenerate intervals.
 
-The legacy trainer was deleted in the F-01 remediation commit. This test
+The legacy trainer was deleted. This test
 prevents it (or any sibling) from silently coming back.
 """
 
@@ -34,7 +34,7 @@ def _writes_model_artifact(module: Path) -> bool:
     """A "trainer" writes the production model artefact via ``save_model()``.
 
     Non-trainer utilities under ``scripts/`` (e.g. the artefact integrity
-    verifier, which only reads and hashes) are not part of the F-01 footgun.
+    verifier, which only reads and hashes) are not part of the dual-trainer footgun.
     """
     return "save_model(" in module.read_text(encoding="utf-8")
 
@@ -42,15 +42,15 @@ def _writes_model_artifact(module: Path) -> bool:
 def test_exactly_one_trainer_module_exists():
     """Only ``scripts/train_quantile.py`` may WRITE the production model artefact.
 
-    The F-01 footgun is two *trainers* clobbering the same output path — not two
+    The footgun is two *trainers* clobbering the same output path — not two
     files under ``scripts/``. Non-trainer utilities are allowed; a new trainer
-    must come with an explicit update to this test and the F-01 audit note.
+    must come with an explicit update to this test.
     """
     trainers = [m.name for m in _python_modules_in_scripts() if _writes_model_artifact(m)]
     assert trainers == ["train_quantile.py"], (
         f"Expected exactly one trainer (writing the model artefact) under scripts/ "
         f"('train_quantile.py'), found: {trainers}. Shipping multiple trainers that "
-        f"write to the same artefact path is audit gap F-01."
+        f"write to the same artefact path is the dual-trainer footgun."
     )
 
 
@@ -67,7 +67,7 @@ def test_quantile_trainer_uses_quantile_objective():
     assert "reg:quantileerror" in literals, (
         "scripts/train_quantile.py must train with objective='reg:quantileerror'. "
         "Falling back to 'reg:squarederror' would re-introduce the v1 "
-        "point-estimate framing that the v2 audit explicitly killed."
+        "point-estimate framing that the v2 quantile reframe replaced."
     )
 
 
@@ -86,12 +86,10 @@ def test_no_mlflow_or_optuna_imports_in_scripts():
                 for alias in node.names:
                     root = alias.name.split(".")[0]
                     assert root not in forbidden, (
-                        f"{module.name} imports '{root}' — this was removed "
-                        f"as part of audit gap F-01 (legacy trainer deletion)."
+                        f"{module.name} imports '{root}' — this was removed as part of the legacy trainer deletion."
                     )
             elif isinstance(node, ast.ImportFrom) and node.module:
                 root = node.module.split(".")[0]
                 assert root not in forbidden, (
-                    f"{module.name} imports from '{root}' — this was removed "
-                    f"as part of audit gap F-01 (legacy trainer deletion)."
+                    f"{module.name} imports from '{root}' — this was removed as part of the legacy trainer deletion."
                 )
