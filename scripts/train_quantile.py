@@ -39,10 +39,10 @@ Phase 2 becomes a 2-hour follow-up to this trainer.
 
 No MLflow / Optuna dependencies — this trainer is deliberately lean so
 it can run on a CI worker or a dev machine without pulling an
-experiment-tracking stack. The regressor hyper-parameters are hand-tuned
-and pinned in ``config.yaml`` (informed by exploratory runs on the
-``reg:squarederror`` baseline, not a logged Optuna study); re-tuning
-against the quantile objective is out of scope for this trainer.
+experiment-tracking stack. The regressor hyper-parameters are pinned in
+``config.yaml`` — selected against the ``reg:squarederror`` baseline tuned
+in ``notebooks/04`` and reused unchanged; re-tuning against the quantile
+objective is out of scope for this trainer.
 
 Artefacts saved
 ---------------

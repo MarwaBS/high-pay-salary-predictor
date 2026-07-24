@@ -303,7 +303,7 @@ class TestModelPrediction:
         if "quantile_coverage_80" in metrics:
             coverage = metrics["quantile_coverage_80"]
             crossings = metrics.get("quantile_crossings", 0)
-            # 80% PI should empirically cover ~80% of test targets (±5%).
+            # 80% PI should empirically cover ~80% of test targets (band [0.72, 0.88]).
             assert 0.72 <= coverage <= 0.88, (
                 f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
             )
