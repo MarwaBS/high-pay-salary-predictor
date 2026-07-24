@@ -7,7 +7,7 @@
     "features": "90b8bf38ee333069a874a89dd01480aa94716260027ccc45d987c190d47604dc",
     "group_means": "5a764a4894875f2b2d0c758663f1c40f10a8372fee056adf7aa15124e5746cb1",
     "baseline_stats": "0cd68f349cf8b9e06b60d5ecc688402e63951db6f4a3bab357409631daaa4f47",
-    "conformal": "ec4b3b5e8b849d7c84c1bde0ebbbf8d4a2852c51af0bfd584662afc6c68461c2"
+    "conformal": "8d9a7becb9c0a04767803e5fdfd6cd03d6b81590521cd0b9e018f5b13e0a3b0e"
   },
   "library_versions": {
     "xgboost": "3.2.0",

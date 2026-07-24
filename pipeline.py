@@ -377,7 +377,8 @@ def save_conformal(delta: float, path: str, *, target_coverage: float, n_scores:
         "method": "cross-conformal (5-fold CQR, log1p space)",
         "n_scores": n_scores,
     }
-    with open(path, "w") as f:
+    # Force LF so the on-disk bytes match the committed content-addressed hash on any platform.
+    with open(path, "w", newline="\n") as f:
         json.dump(payload, f, indent=2)
 
 
