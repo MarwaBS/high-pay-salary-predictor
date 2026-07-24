@@ -42,7 +42,7 @@ income predictions for a given demographic and occupational profile.
 | **Overview** | EDA explorer — top occupations, education distribution, gender gap within the cohort |
 | **Geographic** | Choropleth of average income / location quotient / record count by state |
 | **Predictor** | Enter a profile → the dashboard POSTs to the FastAPI `/predict` endpoint and renders the P10/P50/P90 quantile trio with the percentile rank inside the comparable group |
-| **Model Insights** | XGBoost feature importance, permutation importance, residual plot, subgroup R² and MAE by gender and region |
+| **Model Insights** | Headline metrics incl. the served 80% interval, XGBoost feature importance (gain), residual plot, actual-vs-predicted scatter |
 
 ## How the prediction works under the hood
 
@@ -71,7 +71,7 @@ apply uniformly to any future consumer.
 
 ## Notes on the live environment
 
-- **This Space is deployed automatically from `main`** by the repo's Deploy workflow, and a weekly drift guard fails CI if the Space ever stops matching `main` (code **or** model artefacts). It was previously hand-deployed — and served a 3-month-stale revision. Never again.
+- **This Space is deployed automatically from `main`** by the repo's Deploy workflow, and a weekly drift guard fails CI if the Space ever stops matching `main` (code **or** model artefacts).
 - First load may take ~10 seconds while both uvicorn and Streamlit come up.
 - There is **no Redis cache** on the free tier — every prediction hits the model. The API falls back to a graceful no-op cache.
 - There is **no persistent storage** — state is lost on container restart.

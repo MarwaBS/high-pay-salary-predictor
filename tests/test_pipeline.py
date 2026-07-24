@@ -8,11 +8,29 @@ Run: pytest tests/ -v
 """
 
 import json
+import os
 
 import numpy as np
+import pandas as pd
 import pytest
 
-from pipeline import FEATURES_FULL, REGION_CODES
+from pipeline import FEATURES_FULL, REGION_CODES, engineer_features
+
+
+def _require(condition: bool, reason: str) -> None:
+    """Skip locally when an artefact is absent, but FAIL under CI.
+
+    In CI the committed artefacts are always present, so a skip there would be
+    a silent green — the metric-band gates would certify nothing on a deleted
+    or wrong-format metrics file. Locally, a skip keeps the suite runnable
+    before the first ``python -m scripts.train_quantile``.
+    """
+    if condition:
+        return
+    if os.getenv("CI"):
+        pytest.fail(reason)
+    pytest.skip(reason)
+
 
 # ── Config Tests ──────────────────────────────────────────────────────────────
 
@@ -186,7 +204,7 @@ class TestModelPrediction:
     """Tests against the production model loaded from disk.
 
     The model is trained by scripts/train_quantile.py (run via 'make model').
-    CI runs that step before pytest so the artefact is always present.
+    The artefacts are committed, so a fresh checkout — and CI — always has them.
     Testing the production model (rather than re-training a toy one) catches
     hyperparameter regressions and artefact-format changes.
     """
@@ -195,35 +213,64 @@ class TestModelPrediction:
         """Multi-quantile XGBoost emits (n, 3) — P10, P50, P90 per row."""
         from pipeline import is_quantile_model, predict_quantiles
 
+        assert is_quantile_model(production_model), (
+            "production model must be multi-quantile (refused otherwise at startup)"
+        )
         row = df_engineered[FEATURES_FULL].iloc[[0]]
-        if is_quantile_model(production_model):
-            p10, p50, p90 = predict_quantiles(production_model, row)
-            assert isinstance(p50, float)
-            assert p10 <= p50 <= p90
-        else:
-            # Legacy point model — shape (n,)
-            pred = production_model.predict(row)
-            assert isinstance(pred[0], (float, np.floating))
+        p10, p50, p90 = predict_quantiles(production_model, row)
+        assert isinstance(p50, float)
+        assert p10 <= p50 <= p90
 
     def test_prediction_above_zero(self, production_model, df_engineered):
         X = df_engineered[FEATURES_FULL].head(50)
         preds = production_model.predict(X)
-        # For quantile model (n,3), all cells must be positive. For point (n,), all entries.
         assert np.asarray(preds).min() > 0
 
     def test_prediction_plausible_range(self, production_model, df_engineered):
         """Back-transformed P50 predictions must be in a plausible dollar range."""
-        from pipeline import is_quantile_model, predict_quantiles
+        from pipeline import predict_quantiles
 
         X = df_engineered[FEATURES_FULL].head(200)
-        if is_quantile_model(production_model):
-            p50s = [predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))]
-            p50_arr = np.asarray(p50s)
-        else:
-            p50_arr = np.expm1(production_model.predict(X))
-
+        p50_arr = np.asarray([predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))])
         assert p50_arr.min() > 10_000, "Predictions unrealistically low"
         assert p50_arr.max() < 5_000_000, "Predictions unrealistically high"
+
+    def test_predict_quantiles_batch_refuses_non_triple_output(self):
+        """A non-(n, 3) model output must raise, not silently collapse
+        to a degenerate (p, p, p) interval. Single source of truth for both the
+        single-row and batch prediction paths."""
+        from pipeline import predict_quantiles, predict_quantiles_batch
+
+        class _PointModel:
+            def predict(self, rows):
+                return np.zeros(len(rows))  # 1-D point output
+
+        row = pd.DataFrame({"a": [1.0]})
+        with pytest.raises(ValueError, match=r"\(n, 3\)"):
+            predict_quantiles_batch(_PointModel(), row)
+        with pytest.raises(ValueError, match=r"\(n, 3\)"):
+            predict_quantiles(_PointModel(), row)
+
+    def test_conformal_delta_widens_interval_and_preserves_p50(self, production_model, df_engineered):
+        """The conformal margin widens P10/P90 symmetrically in log space
+        (so the dollar interval grows) while leaving the P50 point untouched."""
+        from pipeline import predict_quantiles_batch
+
+        X = df_engineered[FEATURES_FULL].head(100)
+        raw = predict_quantiles_batch(production_model, X, conformal_delta=0.0)
+        conf = predict_quantiles_batch(production_model, X, conformal_delta=0.02)
+        assert np.allclose(raw[:, 1], conf[:, 1]), "P50 must not move under conformal widening"
+        assert (conf[:, 0] <= raw[:, 0]).all() and (conf[:, 2] >= raw[:, 2]).all()
+        assert np.median(conf[:, 2] - conf[:, 0]) > np.median(raw[:, 2] - raw[:, 0])
+
+    def test_load_conformal_delta_raises_on_missing(self, tmp_path):
+        """A configured-but-absent margin is a deploy error: the served interval
+        claims a coverage that only holds with the margin, so loading must fail
+        loud rather than silently fall back to the under-covering raw interval."""
+        from pipeline import load_conformal_delta
+
+        with pytest.raises(FileNotFoundError):
+            load_conformal_delta(str(tmp_path / "does_not_exist.json"))
 
     def test_saved_metrics_within_expected_range(self, cfg):
         """Saved model metrics must fall inside explicit regression windows.
@@ -238,8 +285,7 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        if not metrics_path.exists():
-            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
@@ -265,6 +311,20 @@ class TestModelPrediction:
                 f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
             )
 
+        # Cross-conformal calibration: the served (conformalized) interval must
+        # land near its nominal target and beat the raw interval's coverage.
+        if "conformal_coverage_80" in metrics:
+            raw_cov = metrics["quantile_coverage_80"]
+            conf_cov = metrics["conformal_coverage_80"]
+            target = metrics["conformal_target_coverage"]
+            assert metrics["conformal_delta"] > 0, "conformal margin must be positive to widen the interval"
+            assert abs(conf_cov - target) <= 0.03, (
+                f"Conformalized coverage {conf_cov:.3f} not within 0.03 of target {target:.2f}"
+            )
+            assert conf_cov >= raw_cov, (
+                f"Conformalized coverage {conf_cov:.3f} should not under-cover the raw interval {raw_cov:.3f}"
+            )
+
     def test_saved_cv_matches_test(self, cfg):
         """CV R² and Test R² must agree within ~0.15.
 
@@ -280,18 +340,16 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        if not metrics_path.exists():
-            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
 
-        if metrics.get("cv_space") != "dollar":
-            pytest.skip(
-                "model_metrics.json predates the dollar-space CV change "
-                "(no cv_space flag). Re-run `python -m scripts.train_quantile` "
-                "to regenerate metrics with train-only, dollar-space CV."
-            )
+        _require(
+            metrics.get("cv_space") == "dollar",
+            "model_metrics.json predates the dollar-space CV change (no cv_space flag). "
+            "Re-run `python -m scripts.train_quantile` to regenerate metrics with train-only, dollar-space CV.",
+        )
 
         gap = abs(metrics["cv_r2_mean"] - metrics["r2"])
         assert gap <= 0.15, (
@@ -311,18 +369,17 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        if not metrics_path.exists():
-            pytest.skip("model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
 
         subgroup_coverage = metrics.get("subgroup_coverage_80")
-        if not subgroup_coverage:
-            pytest.skip(
-                "model_metrics.json predates the subgroup_coverage_80 field. "
-                "Re-run `python -m scripts.train_quantile` to regenerate metrics."
-            )
+        _require(
+            bool(subgroup_coverage),
+            "model_metrics.json predates the subgroup_coverage_80 field. "
+            "Re-run `python -m scripts.train_quantile` to regenerate metrics.",
+        )
 
         bad = {k: v for k, v in subgroup_coverage.items() if not (0.60 <= v <= 0.95)}
         assert not bad, (
@@ -332,6 +389,73 @@ class TestModelPrediction:
 
     def test_feature_count_matches(self, production_model):
         assert production_model.n_features_in_ == len(FEATURES_FULL)
+
+    def test_metric_gates_fail_not_skip_under_ci(self, monkeypatch):
+        """A missing/wrong-format metrics file must FAIL under CI, not
+        skip — a skip there would let the metric-band gates certify nothing."""
+        monkeypatch.setenv("CI", "1")
+        with pytest.raises(pytest.fail.Exception):
+            _require(False, "missing metrics")
+
+    def test_metric_gates_skip_locally(self, monkeypatch):
+        monkeypatch.delenv("CI", raising=False)
+        with pytest.raises(pytest.skip.Exception):
+            _require(False, "missing metrics")
+
+
+# ── Feature-engineering guards ──────────────────────────────────────────────────
+
+
+class TestEngineerFeaturesGuards:
+    """engineer_features must fail loud on unmapped categoricals rather than
+    encode them as a silent NaN (education/gender) or a Region_Code-0 collision
+    (state) — a config typo must surface, not ship a quietly-degraded model."""
+
+    EDU = {"Bachelor's degree": 1, "Master's degree": 2}
+    REGION = {"CA": "West", "NY": "Northeast"}
+
+    def _frame(self, **overrides) -> pd.DataFrame:
+        base = {
+            "Education Level": "Bachelor's degree",
+            "Gender": "Male",
+            "State Abbreviation": "CA",
+            "Occupation": "Engineer",
+            "Annual Income": 150_000.0,
+        }
+        base.update(overrides)
+        return pd.DataFrame([base])
+
+    def test_clean_frame_encodes(self):
+        out = engineer_features(self._frame(), self.EDU, self.REGION)
+        assert out["Education_Ord"].iloc[0] == 1
+        assert out["Gender_Bin"].iloc[0] == 1
+        assert out["Region_Code"].iloc[0] == REGION_CODES["West"]
+
+    def test_unmapped_education_raises_naming_the_label(self):
+        with pytest.raises(ValueError) as exc:
+            engineer_features(self._frame(**{"Education Level": "Some College"}), self.EDU, self.REGION)
+        assert "Education Level" in str(exc.value) and "Some College" in str(exc.value)
+
+    def test_unknown_gender_raises(self):
+        # Wrong case must not silently fold into the Female bucket.
+        with pytest.raises(ValueError, match="Gender"):
+            engineer_features(self._frame(Gender="male"), self.EDU, self.REGION)
+
+    def test_unmapped_state_raises(self):
+        with pytest.raises(ValueError, match="State Abbreviation"):
+            engineer_features(self._frame(**{"State Abbreviation": "ZZ"}), self.EDU, self.REGION)
+
+
+def test_compute_fallback_means_raises_on_empty():
+    """Averaging an empty group-means dict yields NaN, which the API
+    would inject as the fallback feature for every unseen occupation/state.
+    Fail loud instead."""
+    from pipeline import compute_fallback_means
+
+    with pytest.raises(ValueError, match="empty"):
+        compute_fallback_means({"occ_means": {}, "state_means": {"CA": 1.0}})
+    occ, state = compute_fallback_means({"occ_means": {"a": 100.0, "b": 200.0}, "state_means": {"CA": 150.0}})
+    assert occ == 150.0 and state == 150.0
 
 
 # ── Config Schema Validation ─────────────────────────────────────────────────

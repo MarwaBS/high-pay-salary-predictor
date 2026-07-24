@@ -156,8 +156,14 @@ class DriftMonitor:
                 pipe.execute()
                 return
             except Exception as exc:
-                logger.warning("DriftMonitor Redis write failed (%s) — falling back to in-memory for this request", exc)
-                # Fall through to in-memory path on transient Redis errors.
+                # Drop the observation rather than write it to the local deque:
+                # on a Redis deployment that deque is NOT the authoritative
+                # window (reads come from the shared list), so mixing planes
+                # would leave a misleading partial window behind for a later
+                # read-failure to serve. The capped shared list refills from
+                # healthy traffic.
+                logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
+                return
 
         self.buffer.append(features)
         self._observation_count += 1
@@ -166,18 +172,26 @@ class DriftMonitor:
     # Read side
     # ------------------------------------------------------------------ #
 
-    def _read_window(self) -> tuple[list[dict[str, float]], int]:
-        """Return (observations, total_count) from whichever backend is active."""
+    def _read_window(self) -> tuple[list[dict[str, float]], int, str, bool]:
+        """Return (observations, total_count, backend_used, degraded).
+
+        ``backend_used`` names the path that actually served this read, not the
+        one configured. ``degraded`` is True only when a configured Redis
+        backend was unreachable: the shared window lives in Redis, so the local
+        deque is empty on a Redis deployment and the returned window is NOT
+        authoritative — the caller must withhold any drift verdict.
+        """
         if self._redis is not None:
             try:
                 raw = self._redis.lrange(REDIS_DRIFT_KEY, 0, -1)
                 observations = [json.loads(item) for item in raw]
                 count_raw = self._redis.get(f"{REDIS_DRIFT_KEY}:count") or "0"
-                return observations, int(count_raw)
+                return observations, int(count_raw), "redis", False
             except Exception as exc:
-                logger.warning("DriftMonitor Redis read failed (%s) — returning in-memory window", exc)
+                logger.warning("DriftMonitor Redis read failed (%s) — window unavailable", exc)
+                return list(self.buffer), self._observation_count, "memory", True
 
-        return list(self.buffer), self._observation_count
+        return list(self.buffer), self._observation_count, "memory", False
 
     def check_drift(self) -> dict:
         """Compare current window against baseline.
@@ -187,21 +201,41 @@ class DriftMonitor:
         dict with keys:
             observations : total observations recorded (cluster-wide in Redis mode)
             window_size  : current buffer length
-            backend      : "redis" | "memory"
+            backend      : "redis" | "memory" — the path that actually served
+                           this read, not merely the configured backend
+            degraded     : True if a configured Redis window could not be loaded
             features     : {feature: {z_score, effect_size, p_value, current_mean,
                             baseline_mean, n_observed, drifted}}
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
-                           the (ramp-scaled) practical effect-size floor
+                           the (ramp-scaled) practical effect-size floor; ``None``
+                           when ``degraded`` (verdict withheld — never a clean
+                           False from a window we could not read)
         """
-        observations, total_count = self._read_window()
-        backend = "redis" if self._redis is not None else "memory"
+        observations, total_count, backend, degraded = self._read_window()
+
+        if degraded:
+            # The configured Redis window could not be loaded. Returning
+            # ``any_drifted: False`` here would be a clean bill of health from a
+            # window we never read — the exact false negative this guards. Emit
+            # ``None`` under an explicit unavailable status instead.
+            return {
+                "observations": total_count,
+                "window_size": len(observations),
+                "backend": backend,
+                "degraded": True,
+                "status": "unavailable",
+                "features": {},
+                "any_drifted": None,
+                "message": "Drift window unavailable: Redis backend unreachable — verdict withheld",
+            }
 
         if len(observations) < 30:
             return {
                 "observations": total_count,
                 "window_size": len(observations),
                 "backend": backend,
+                "degraded": False,
                 "features": {},
                 "any_drifted": False,
                 "message": f"Need at least 30 observations (have {len(observations)})",
@@ -316,6 +350,7 @@ class DriftMonitor:
             "observations": total_count,
             "window_size": len(observations),
             "backend": backend,
+            "degraded": False,
             "features": result,
             "any_drifted": any(v["drifted"] for v in result.values()),
         }

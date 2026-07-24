@@ -184,12 +184,16 @@ def encode_feature_values(
     from this dict — no DataFrame round-trip needed.
     """
     bls = _lookup_bls(bls_defaults_lookup, req.state, req.occupation)
-    region = region_map.get(req.state, "South")
+    # req.state / education / gender are validated to the known domain upstream,
+    # so index directly — a KeyError here means the request bypassed validation,
+    # which should fail loud, not silently encode to a wrong region (the
+    # divergence the training-side engineer_features also rejects).
+    region = region_map[req.state]
     return {
         "Age": req.age,
         "Education_Ord": edu_order[req.education_level],
         "Gender_Bin": 1 if req.gender == "Male" else 0,
-        "Region_Code": region_codes.get(region, 0),
+        "Region_Code": region_codes[region],
         "Employment": req.employment if req.employment is not None else bls["employment"],
         "Location Quotient": (req.location_quotient if req.location_quotient is not None else bls["location_quotient"]),
         "Jobs per 1000": req.jobs_per_1000 if req.jobs_per_1000 is not None else bls["jobs_per_1000"],
@@ -220,13 +224,14 @@ def quantiles_crossed(p10: float, p50: float, p90: float) -> bool:
     return p10 > p50 or p50 > p90
 
 
-def run_model(model: Any, row: pd.DataFrame) -> tuple[float, float, float]:
-    """Invoke the (multi-quantile) model and return (p10, p50, p90) dollars.
+def run_model(model: Any, row: pd.DataFrame, *, conformal_delta: float = 0.0) -> tuple[float, float, float]:
+    """Invoke the multi-quantile model and return (p10, p50, p90) dollars.
 
-    Falls back to (point, point, point) if a legacy point-estimate model is
-    loaded. See ``pipeline.predict_quantiles`` for the details.
+    See ``pipeline.predict_quantiles`` — a non-quantile model is refused at
+    startup, so this always returns a real interval. ``conformal_delta`` widens
+    P10/P90 to the calibrated coverage; P50 is unchanged.
     """
-    return predict_quantiles(model, row)
+    return predict_quantiles(model, row, conformal_delta=conformal_delta)
 
 
 def build_response(
@@ -241,10 +246,11 @@ def build_response(
 ) -> PredictResponse:
     """Assemble the final PredictResponse from the model's quantile trio.
 
-    The percentile matches the previous behaviour exactly — it is
-    ``(group < predicted).mean() * 100`` — but computed via a binary
-    search on the precomputed sorted array instead of a per-request
-    DataFrame mask. Both methods count strictly-less-than values.
+    The percentile is ``(reference < predicted).mean() * 100`` via a binary
+    search on the precomputed sorted array. ``percentile_scope`` says which
+    reference was used: ``"group"`` when the (state, education) cell had rows,
+    ``"dataset"`` when the cell was unseen and the whole-dataset distribution
+    was used instead — never a fabricated 50th percentile.
 
     ``p_above_premium_threshold`` and ``premium_threshold`` come from the
     binary classifier head (Gap 1 Phase 1). Both default to ``None`` so
@@ -256,12 +262,17 @@ def build_response(
     p90_ord = max(p10, p50, p90)
     p50_ord = min(max(p50, p10_ord), p90_ord)
 
+    # The unseen-cell fallback (count == 0) still carries the full dataset
+    # income array, so rank against it and label the scope rather than invent
+    # a 50th percentile that would misrepresent an out-of-distribution query.
     sorted_incomes = group_stats["sorted_incomes"]
-    if group_stats["count"] > 0 and len(sorted_incomes) > 0:
+    if len(sorted_incomes) > 0:
         strictly_below = int(np.searchsorted(sorted_incomes, p50_ord, side="left"))
         percentile = float(strictly_below / len(sorted_incomes) * 100.0)
+        percentile_scope = "group" if group_stats["count"] > 0 else "dataset"
     else:
-        percentile = 50.0
+        percentile = 0.0
+        percentile_scope = "unavailable"
 
     return PredictResponse(
         predicted_salary=round(p50_ord, 2),  # backward-compat alias
@@ -271,6 +282,7 @@ def build_response(
         prediction_interval_low=round(p10_ord, 2),
         prediction_interval_high=round(p90_ord, 2),
         percentile_in_group=round(percentile, 1),
+        percentile_scope=percentile_scope,
         group_median=round(group_stats["median"], 2),
         group_mean=round(group_stats["mean"], 2),
         group_size=group_stats["count"],

@@ -37,7 +37,7 @@ model:
   learning_rate: 0.045
   subsample: 0.741
   colsample_bytree: 0.829
-  reg_lambda: 9.88      # L2 regularisation — critical for high-variance income data
+  reg_lambda: 9.88      # L2 regularisation (hand-tuned, not from a logged search)
   # Target transformation: model is trained on log1p(Annual Income).
   # Callers must expm1() the raw prediction to get dollar values.
   log_transform_target: true
@@ -48,6 +48,8 @@ model:
   features_path: "models/feature_names.json"
   metrics_path: "models/model_metrics.json"
   group_means_path: "models/group_means.json"
+  # Cross-conformal interval margin (log space) — widens P10/P90 to nominal coverage.
+  conformal_path: "models/conformal_delta.json"
   # Premium-tier classifier head — trained alongside the quantile
   # regressor on the same feature set. Predicts P(Annual Income >=
   # premium_threshold) *within the existing high-pay cohort*. This is
@@ -56,6 +58,14 @@ model:
   # requires raw IPUMS Census microdata that is not in the repo.
   classifier_path: "models/xgb_premium_classifier.ubj"
   premium_threshold: 150000
+  # Classifier head hyper-parameters — lighter than the regressor on purpose
+  # (binary task with a larger margin; a deep booster overfits this 10K-row set).
+  classifier_n_estimators: 200
+  classifier_max_depth: 4
+  classifier_learning_rate: 0.05
+  classifier_subsample: 0.85
+  classifier_colsample_bytree: 0.85
+  classifier_reg_lambda: 1.0
 
 # ── Visualization ──────────────────────────────────────────
 visualization:

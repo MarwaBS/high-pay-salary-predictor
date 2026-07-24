@@ -87,7 +87,8 @@ def production_model(cfg: dict):
     """The trained production XGBoost model loaded from disk.
 
     Requires 'make model' (or 'python -m scripts.train_quantile') to have
-    been run first. CI runs that step before pytest.
+    been run first. The artefacts are committed, so a fresh checkout — and CI —
+    already has them; CI retrains only if one is missing.
     """
     model_path = Path(__file__).parent.parent / cfg["model"]["model_path"]
     return load_model(str(model_path))

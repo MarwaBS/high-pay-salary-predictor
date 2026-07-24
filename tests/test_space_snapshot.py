@@ -32,10 +32,11 @@ def _dockerfile_copy_sources() -> list[str]:
         line = raw.strip()
         if not line.startswith("COPY"):
             continue
-        # tokens after COPY, minus flags (--chown=…); src is the first, dst last.
+        # tokens after COPY, minus flags (--chown=…); the last token is the
+        # destination, every other token is a source (COPY accepts several).
         toks = [t for t in line.split()[1:] if not t.startswith("--")]
         if len(toks) >= 2:
-            sources.append(toks[0])
+            sources.extend(toks[:-1])
     assert sources, "no COPY sources parsed from the Space Dockerfile"
     return sources
 

@@ -92,6 +92,38 @@ def test_k8s_initcontainer_downloads_every_serving_artifact() -> None:
     )
 
 
+def _configmap_urls() -> dict[str, str]:
+    """model-url / data-url from the salary-api ConfigMap."""
+    cm = yaml.safe_load((REPO_ROOT / "k8s" / "api-configmap.yaml").read_text(encoding="utf-8"))
+    return cm["data"]
+
+
+def test_configmap_points_at_the_gated_release_not_a_placeholder() -> None:
+    """The initContainer must pull from the gated GitHub Release (the model
+    registry train.yml publishes AFTER its test + integrity gate), not the dead
+    ``artifacts.example.com/v1.0.0`` placeholder that shipped originally — a
+    placeholder URL means every pod start ImagePull/curl-fails or, worse, serves
+    whatever an attacker parks at the example host."""
+    urls = _configmap_urls()
+    for key in ("model-url", "data-url"):
+        url = urls[key]
+        assert "example.com" not in url, f"{key} still points at the placeholder host: {url}"
+        assert "github.com/MarwaBS/high-pay-salary-predictor/releases/latest/download/" in url, (
+            f"{key} must resolve to the latest gated release: {url}"
+        )
+
+
+def test_dataset_is_published_in_the_release() -> None:
+    """The configmap's data-url resolves to a release asset, so the dataset it
+    names must actually be in the release ``files:`` list — otherwise the pod's
+    data fetch 404s on every start."""
+    data_asset = Path(_configmap_urls()["data-url"]).name
+    published = _release_artifacts()
+    assert data_asset in published, (
+        f"data-url names {data_asset!r} but train.yml does not publish it — add it to the release `files:` list."
+    )
+
+
 def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
     """Regression: the k8s manifests referenced the pre-rename GHCR path
     ``high_pay_analysis_us`` while CI pushes to ``ghcr.io/<repo>`` (i.e.

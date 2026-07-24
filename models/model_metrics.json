@@ -1,11 +1,24 @@
 {
-  "model_version": "2.0.0+1c5e9d896ee5.e927845864e2",
+  "model_version": "2.0.0+599f28a7c99a.e927845864e2",
   "service_version": "2.0.0",
+  "artifact_sha256": {
+    "model": "7acfd2545d2530416573d8de05c6e09e546cc62b70d0c6f2be3fbf3a78c65431",
+    "classifier": "94e790b10231415b24df8f496019f6854bf871e87fcf0945777fff04b6d568a0",
+    "features": "90b8bf38ee333069a874a89dd01480aa94716260027ccc45d987c190d47604dc",
+    "group_means": "5a764a4894875f2b2d0c758663f1c40f10a8372fee056adf7aa15124e5746cb1",
+    "baseline_stats": "0cd68f349cf8b9e06b60d5ecc688402e63951db6f4a3bab357409631daaa4f47",
+    "conformal": "8d9a7becb9c0a04767803e5fdfd6cd03d6b81590521cd0b9e018f5b13e0a3b0e"
+  },
+  "library_versions": {
+    "xgboost": "3.2.0",
+    "numpy": "2.4.6",
+    "sklearn": "1.9.0"
+  },
   "r2": 0.0282,
   "rmse": 107999.16,
   "mae": 50175.62,
-  "cv_r2_mean": 0.029,
-  "cv_r2_std": 0.0163,
+  "cv_r2_mean": 0.0215,
+  "cv_r2_std": 0.0151,
   "cv_space": "dollar",
   "cv_train_only": true,
   "quantile_alphas": [
@@ -16,6 +29,10 @@
   "quantile_coverage_80": 0.7723,
   "quantile_width_median": 112998.77,
   "quantile_crossings": 0,
+  "conformal_delta": 0.010776,
+  "conformal_target_coverage": 0.8,
+  "conformal_coverage_80": 0.802,
+  "conformal_width_median": 116527.41,
   "subgroup_coverage_80": {
     "Gender=Female": 0.7803,
     "Gender=Male": 0.7668,
@@ -30,7 +47,7 @@
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
-  "train_date": "2026-06-16",
+  "train_date": "2026-07-23",
   "hyperparameters": {
     "n_estimators": 169,
     "max_depth": 3,

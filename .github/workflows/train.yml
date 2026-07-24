@@ -2,9 +2,9 @@ name: Train & Release Model
 
 # Scheduled model-registry pipeline.
 #
-# The regular CI workflow (``ci.yml``) re-trains the model on every run
-# for smoke-test purposes but does not persist the artefacts anywhere
-# durable. This workflow is the durable path: on a weekly cron (and
+# The regular CI workflow (``ci.yml``) verifies the committed artefacts and
+# runs the model tests but does not persist any artefacts durably. This
+# workflow is the durable path: on a weekly cron (and
 # on-demand via ``workflow_dispatch``) it trains the multi-quantile
 # XGBoost model, archives the exact artefacts, and publishes them as a
 # GitHub Release named ``model-{MODEL_VERSION}`` where MODEL_VERSION is
@@ -50,16 +50,19 @@ jobs:
           # a real SHA rather than the shallow-checkout stub.
           fetch-depth: 0
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.13
         uses: actions/setup-python@v6
         with:
-          python-version: "3.11"
+          python-version: "3.13"
           cache: pip
 
-      - name: Install dependencies
+      - name: Install pinned dependencies (the reproducibility contract)
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # Train under the exact pinned set the release's reproducibility claim
+          # rests on (recorded per release in model_metrics.json::library_versions),
+          # not the loose floors — so a re-run regenerates identical metrics.
+          pip install -r requirements-lock.txt
           pip install -e .
 
       - name: Train quantile model
@@ -76,6 +79,20 @@ jobs:
           with open(os.environ["GITHUB_ENV"], "a") as env:
               env.write(f"MODEL_VERSION={version}\n")
           EOF
+
+      - name: Gate — verify artefacts and run the model test suite
+        env:
+          CI: "true"
+        run: |
+          # A release must not ship an untested model. Verify the freshly
+          # trained artefacts against their recorded SHA-256 digests, then run
+          # the artefact-contract test suite. CI=true makes the metric-band
+          # gates FAIL (not skip) on a missing/degenerate metrics file, so a
+          # broken model can never be published under a green release.
+          python -m scripts.verify_artifacts
+          pytest tests/test_pipeline.py tests/test_artifact_integrity.py \
+                 tests/test_classifier.py tests/test_model_registry.py \
+                 tests/test_model_version.py tests/test_train_quantile.py -q
 
       - name: Build release notes
         run: |
@@ -107,13 +124,18 @@ jobs:
           """).strip() + "\n"
           for k, v in sorted(m.get("subgroup_coverage_80", {}).items()):
               notes += f"- **{k}:** {v:.4f}\n"
-          notes += textwrap.dedent("""
+          libs = ", ".join(f"{k}=={v}" for k, v in sorted(m.get("library_versions", {}).items()))
+          notes += textwrap.dedent(f"""
           ## Reproducibility
-          The `model_version` string binds this release to the exact code
-          and data that produced it. To reproduce locally:
+          Trained under the pinned `requirements-lock.txt` ({libs}), the fixed
+          seed (`config.yaml::model.random_state`), and the input CSV pinned by
+          the `data_sha256` fragment of `model_version`. Installing that lock and
+          re-running the trainer regenerates identical metrics — the reproduction
+          path is the pinned environment, not a bare `git checkout` (post-squash
+          the training SHA is not a `main` ancestor; see MODEL_CARD).
 
           ```bash
-          git checkout <git_sha from model_version>
+          pip install -r requirements-lock.txt && pip install -e .
           python -m scripts.train_quantile
           # diff models/model_metrics.json against this release
           ```
@@ -136,13 +158,11 @@ jobs:
           # Fail quietly and update the existing release if the tag
           # already exists — makes retry-on-flake safe.
           fail_on_unmatched_files: true
-          # Every artefact the API loads at startup MUST be published here —
-          # the release IS the model registry a rollback/redeploy pulls from.
-          # xgb_premium_classifier.ubj was missing, so any registry-based deploy
-          # (the k8s initContainer downloads from this release) silently lost the
-          # premium-tier classifier head and the API degraded p_above_premium to
-          # null. tests/test_model_registry.py machine-checks this list against
-          # config.yaml's loaded paths so the two can't drift again.
+          # Every artefact the API loads at startup MUST be published here — the
+          # release IS the model registry a rollback/redeploy pulls from.
+          # tests/test_model_registry.py checks this list against config.yaml's
+          # loaded paths so they can't drift. The dataset ships too, so the k8s
+          # configmap points both model-url and data-url at this one release.
           files: |
             models/xgb_salary_model.ubj
             models/xgb_premium_classifier.ubj
@@ -150,3 +170,5 @@ jobs:
             models/feature_names.json
             models/group_means.json
             models/baseline_stats.json
+            models/conformal_delta.json
+            Data/cleaned_high_pay_data.csv
