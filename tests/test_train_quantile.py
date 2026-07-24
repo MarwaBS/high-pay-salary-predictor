@@ -100,7 +100,7 @@ def test_build_model_version_is_composite():
 
 
 def test_trainer_test_split_matches_shared_primitive():
-    """HP-M13: the dashboard scores its residual plot on the test rows selected by
+    """The dashboard scores its residual plot on the test rows selected by
     ``pipeline.train_test_positions``. The trainer must derive its own test set the
     same way, or the dashboard silently reports residuals on a train-contaminated
     split. Red if ``_prepare_split`` stops using the shared split primitive (e.g.
@@ -122,7 +122,7 @@ def test_trainer_test_split_matches_shared_primitive():
     )
 
 
-# ── HP-B1 regression: CV must not leak the validation target ────────────────────
+# ── Regression: CV must not leak the validation target ──────────────────────────
 
 _TINY_PARAMS = {
     "n_estimators": 40,
@@ -187,7 +187,7 @@ def _leaky_cv_reference(df_raw: pd.DataFrame) -> float:
 
 
 def test_cross_val_r2_is_leakage_free():
-    """HP-B1: per-fold target encoding must not leak the validation target.
+    """Per-fold target encoding must not leak the validation target.
 
     On a frame whose only signal is a high-cardinality encoding, encoding once
     over all of train (the pre-fix path) inflates CV R²; the honest per-fold

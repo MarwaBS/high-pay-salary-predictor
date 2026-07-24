@@ -105,9 +105,7 @@ class _JSONFormatter(logging.Formatter):
 
     Any non-standard attributes attached via ``logger.info(..., extra={...})``
     (request_id, method, path, status, duration_ms, …) are merged into the
-    JSON object. Without this, every structured field is silently dropped and
-    access logs collapse to ``{"message": "request completed"}`` — making the
-    request-correlation story the README advertises impossible.
+    JSON object so structured fields survive into the emitted line.
     """
 
     #: Attributes the stdlib sets on every LogRecord; everything else on the
@@ -225,10 +223,9 @@ def _client_ip(request: Request) -> str:
     (werkzeug ``ProxyFix`` semantics). Every entry further left is
     client-supplied and therefore spoofable: reading it would let an attacker
     forge ``X-Forwarded-For`` to mint a fresh rate-limit bucket on every
-    request. The previous ``len - 1 - hops`` index was off by one and returned
-    exactly that attacker-controlled entry. If the header carries fewer entries
-    than we have trusted proxies, it cannot have come through our proxy chain,
-    so we ignore it and bind to the direct peer.
+    request. If the header carries fewer entries than we have trusted proxies,
+    it cannot have come through our proxy chain, so we ignore it and bind to
+    the direct peer.
     """
     xff = request.headers.get("X-Forwarded-For", "")
     if xff and TRUSTED_PROXY_HOPS > 0:
@@ -406,8 +403,7 @@ async def lifespan(app: FastAPI):
     logger.info("BLS defaults lookup built with %d (state, occupation) cells", len(state.bls_defaults_lookup))
 
     # Load model metrics — only the quantile coverage is surfaced at startup
-    # for a quick operator sanity check. The /predict route no longer
-    # reads residual-based PI offsets; intervals come from the model's
+    # for a quick operator sanity check; intervals come from the model's
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
     # Report the coverage of the interval the API actually serves. With a
@@ -547,9 +543,9 @@ class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
                 # re-measuring.
                 return await call_next(request)
         # No Content-Length (e.g. Transfer-Encoding: chunked) or a malformed one
-        # bypasses the header check entirely — the original bug. Measure the real
-        # body with a running counter and abort the moment it exceeds the cap, so
-        # an unbounded chunked upload can't consume memory before validation.
+        # never reaches the header check. Measure the real body with a running
+        # counter and abort the moment it exceeds the cap, so an unbounded
+        # chunked upload can't consume memory before validation.
         chunks: list[bytes] = []
         size = 0
         async for chunk in request.stream():
@@ -643,6 +639,19 @@ QUANTILE_CROSSINGS = Counter(
     "salary_quantile_crossings_total",
     "Predictions where the model's raw quantiles crossed before clamping.",
 )
+
+# Counts requests whose occupation or state carried no training-set group mean,
+# so the dataset-wide fallback mean was injected instead. A rising rate means
+# traffic is drifting off the training support — surfaced, not absorbed.
+FALLBACK_MEANS_USED = Counter(
+    "salary_fallback_means_used_total",
+    "Predictions encoded with the dataset-wide fallback occupation/state mean.",
+)
+
+
+def _count_fallback_means(req: PredictRequest) -> None:
+    if req.occupation not in state.occ_means or req.state not in state.state_means:
+        FALLBACK_MEANS_USED.inc()
 
 
 # ── Validation helper ────────────────────────────────────────────────────────
@@ -744,6 +753,7 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
         bls_defaults_lookup=state.bls_defaults_lookup,
     )
     row = build_feature_frame([values])
+    _count_fallback_means(req)
 
     if state.drift_monitor is not None:
         state.drift_monitor.observe(values)
@@ -826,6 +836,8 @@ def predict_batch(
         )
         for item in req.items
     ]
+    for item in req.items:
+        _count_fallback_means(item)
     if state.drift_monitor is not None:
         for features in encoded_all:
             state.drift_monitor.observe(features)

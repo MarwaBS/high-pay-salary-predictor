@@ -28,21 +28,14 @@ RUN useradd -m -u 1000 user
 WORKDIR /home/user/app
 
 # ── Python deps ──────────────────────────────────────────────────────────────
-# Install the API runtime from the pinned lock first (smallest surface),
-# then layer the dashboard + viz extras on top. Order matters for Docker
-# layer caching — heavy wheels land before the source copy.
-COPY --chown=user:user requirements-api.txt .
+# Install the API runtime from the pinned set first (smallest surface), then
+# layer the dashboard + viz extras from requirements-space.txt (covered by the
+# CI pip-audit gate). Order matters for Docker layer caching — heavy wheels
+# land before the source copy.
+COPY --chown=user:user requirements-api.txt deploy/huggingface/requirements-space.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-api.txt \
-    && pip install --no-cache-dir \
-        "streamlit>=1.20.0" \
-        "plotly>=5.10.0" \
-        "matplotlib>=3.5.0" \
-        "seaborn>=0.11.0" \
-        "httpx>=0.27.0" \
-        "scikit-learn>=1.1.0" \
-        "scipy>=1.9.0" \
-        "statsmodels>=0.13.0"
+    && pip install --no-cache-dir -r requirements-space.txt
 
 # ── Project source ──────────────────────────────────────────────────────────
 # Explicit COPY list keeps the image lean and avoids pulling notebooks,
@@ -65,7 +58,9 @@ COPY --chown=user:user deploy/huggingface/start.sh /home/user/app/start.sh
 RUN chmod +x /home/user/app/start.sh
 
 # ── Install project as editable so `api.main:app` resolves cleanly ──────────
-RUN pip install --no-cache-dir --user -e .
+# Runs as root, so install into the system site-packages (no --user: that
+# would land in /root/.local, unreadable by the runtime uid-1000 user).
+RUN pip install --no-cache-dir -e .
 
 # ── Runtime user + env ──────────────────────────────────────────────────────
 USER user

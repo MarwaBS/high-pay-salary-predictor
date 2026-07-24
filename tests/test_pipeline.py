@@ -236,7 +236,7 @@ class TestModelPrediction:
         assert p50_arr.max() < 5_000_000, "Predictions unrealistically high"
 
     def test_predict_quantiles_batch_refuses_non_triple_output(self):
-        """HP-M5/M1: a non-(n, 3) model output must raise, not silently collapse
+        """A non-(n, 3) model output must raise, not silently collapse
         to a degenerate (p, p, p) interval. Single source of truth for both the
         single-row and batch prediction paths."""
         from pipeline import predict_quantiles, predict_quantiles_batch
@@ -252,7 +252,7 @@ class TestModelPrediction:
             predict_quantiles(_PointModel(), row)
 
     def test_conformal_delta_widens_interval_and_preserves_p50(self, production_model, df_engineered):
-        """HP-P7: the conformal margin widens P10/P90 symmetrically in log space
+        """The conformal margin widens P10/P90 symmetrically in log space
         (so the dollar interval grows) while leaving the P50 point untouched."""
         from pipeline import predict_quantiles_batch
 
@@ -391,7 +391,7 @@ class TestModelPrediction:
         assert production_model.n_features_in_ == len(FEATURES_FULL)
 
     def test_metric_gates_fail_not_skip_under_ci(self, monkeypatch):
-        """HP-M12: a missing/wrong-format metrics file must FAIL under CI, not
+        """A missing/wrong-format metrics file must FAIL under CI, not
         skip — a skip there would let the metric-band gates certify nothing."""
         monkeypatch.setenv("CI", "1")
         with pytest.raises(pytest.fail.Exception):
@@ -403,7 +403,7 @@ class TestModelPrediction:
             _require(False, "missing metrics")
 
 
-# ── Feature-engineering guards (HP-H2) ─────────────────────────────────────────
+# ── Feature-engineering guards ──────────────────────────────────────────────────
 
 
 class TestEngineerFeaturesGuards:
@@ -447,7 +447,7 @@ class TestEngineerFeaturesGuards:
 
 
 def test_compute_fallback_means_raises_on_empty():
-    """HP-M2: averaging an empty group-means dict yields NaN, which the API
+    """Averaging an empty group-means dict yields NaN, which the API
     would inject as the fallback feature for every unseen occupation/state.
     Fail loud instead."""
     from pipeline import compute_fallback_means

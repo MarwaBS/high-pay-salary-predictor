@@ -342,8 +342,10 @@ def _train_quantile_regressor(
     return model
 
 
-def _train_premium_classifier(X_train: pd.DataFrame, y_train_clf: pd.Series, *, seed: int) -> XGBClassifier:
-    """Fit the premium-tier head.
+def _train_premium_classifier(
+    X_train: pd.DataFrame, y_train_clf: pd.Series, *, params: dict, seed: int
+) -> XGBClassifier:
+    """Fit the premium-tier head with the ``classifier_*`` config hyper-parameters.
 
     No ``scale_pos_weight``: at the ~40/60 class balance of this cohort the
     imbalance is mild, and reweighting trades *probability calibration* (which
@@ -355,16 +357,11 @@ def _train_premium_classifier(X_train: pd.DataFrame, y_train_clf: pd.Series, *, 
     clf = XGBClassifier(
         objective="binary:logistic",
         eval_metric="logloss",
-        n_estimators=200,
-        max_depth=4,
-        learning_rate=0.05,
-        subsample=0.85,
-        colsample_bytree=0.85,
-        reg_lambda=1.0,
         tree_method="hist",
         random_state=seed,
         n_jobs=-1,
         verbosity=0,
+        **params,
     )
     clf.fit(X_train, y_train_clf)
     return clf
@@ -378,6 +375,7 @@ def _headline_metrics_for_seed(
     edu_order: dict[str, int],
     region_map: dict[str, str],
     params: dict,
+    clf_params: dict,
     premium_threshold: int,
 ) -> dict[str, float]:
     """Train both heads on one seed's split and return the headline metrics.
@@ -397,7 +395,7 @@ def _headline_metrics_for_seed(
     coverage = float(((y_test.to_numpy() >= preds[:, 0]) & (y_test.to_numpy() <= preds[:, 2])).mean())
 
     y_test_clf = (y_test >= premium_threshold).astype(int)
-    clf = _train_premium_classifier(X_train, (y_train >= premium_threshold).astype(int), seed=seed)
+    clf = _train_premium_classifier(X_train, (y_train >= premium_threshold).astype(int), params=clf_params, seed=seed)
     proba = clf.predict_proba(X_test)[:, 1]
     return {
         "p50_r2": float(r2_score(y_test, preds[:, 1])),
@@ -545,11 +543,17 @@ def main() -> None:
     # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
     # Binary XGBoost classifier trained on the same engineered feature
     # matrix as the quantile regressor. Label: Annual Income >= the
-    # premium threshold configured in config.yaml. Hyper-parameters are
-    # intentionally lighter than the regressor because the task is
-    # easier (binary, larger margin) and overfitting a 10K-row set on
-    # a 169-tree booster is a real risk.
+    # premium threshold configured in config.yaml; hyper-parameters come
+    # from config.yaml::model.classifier_* alongside the regressor's.
     premium_threshold = int(model_cfg.get("premium_threshold") or 150_000)
+    clf_params = {
+        "n_estimators": model_cfg["classifier_n_estimators"],
+        "max_depth": model_cfg["classifier_max_depth"],
+        "learning_rate": model_cfg["classifier_learning_rate"],
+        "subsample": model_cfg["classifier_subsample"],
+        "colsample_bytree": model_cfg["classifier_colsample_bytree"],
+        "reg_lambda": model_cfg["classifier_reg_lambda"],
+    }
     y_train_clf = (y_train >= premium_threshold).astype(int)
     y_test_clf = (y_test >= premium_threshold).astype(int)
     pos_rate_train = float(y_train_clf.mean())
@@ -560,7 +564,7 @@ def main() -> None:
         pos_rate_train * 100,
         pos_rate_test * 100,
     )
-    classifier = _train_premium_classifier(X_train, y_train_clf, seed=random_state)
+    classifier = _train_premium_classifier(X_train, y_train_clf, params=clf_params, seed=random_state)
 
     clf_proba_test = classifier.predict_proba(X_test)[:, 1]
     clf_pred_test = (clf_proba_test >= 0.5).astype(int)
@@ -639,6 +643,7 @@ def main() -> None:
             edu_order=edu_order,
             region_map=region_map,
             params=params,
+            clf_params=clf_params,
             premium_threshold=premium_threshold,
         )
         for s in stability_seeds

@@ -25,7 +25,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def verify(config_path: str | Path | None = None) -> list[str]:
     """Return a list of integrity problems (empty when everything matches)."""
-    cfg = yaml.safe_load(open(config_path or ROOT / "config.yaml"))
+    with open(config_path or ROOT / "config.yaml") as f:
+        cfg = yaml.safe_load(f)
     model_cfg = cfg["model"]
     metrics_path = ROOT / model_cfg["metrics_path"]
     metrics = json.loads(metrics_path.read_text())

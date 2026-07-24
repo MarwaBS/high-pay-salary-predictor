@@ -176,7 +176,7 @@ class TestBuildResponsePercentile:
         assert resp.percentile_in_group == pytest.approx(66.7, abs=0.1)
 
     def test_fallback_group_ranks_against_dataset_not_fabricated_50(self, sample_df):
-        """HP-M3: an unseen cell must rank against the whole-dataset income
+        """An unseen cell must rank against the whole-dataset income
         distribution and label the scope — never return a fabricated 50.0."""
         lookup = build_benchmark_lookup(sample_df)
         fallback = lookup_benchmarks(lookup, "ZZ", "Unknown")
@@ -295,7 +295,7 @@ class TestEncodeFeatureValues:
         assert miss["Region_Code"] == 1  # NY → Northeast, encoded directly (no silent 0)
 
     def test_unmapped_state_fails_loud(self, sample_bls_df: pd.DataFrame) -> None:
-        """HP-M8: an out-of-domain state must raise, not silently encode to
+        """An out-of-domain state must raise, not silently encode to
         Region_Code 0 — the same fail-loud posture as engineer_features. This
         path is unreachable via the API (state is domain-validated), so a
         KeyError here means validation was bypassed."""

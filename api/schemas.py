@@ -39,8 +39,6 @@ class PredictRequest(BaseModel):
     )
     gender: str = Field(
         ...,
-        min_length=2,
-        max_length=10,
         description=(
             "Gender ('Male' or 'Female'). "
             "**Limitation**: the training data (US Census CPS) uses a binary "

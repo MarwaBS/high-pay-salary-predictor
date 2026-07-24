@@ -121,13 +121,13 @@ shown in `models/model_metrics.json::train_date`.
 ### Provenance & reproducibility
 
 Each artefact carries a `model_version` of the form
-`{service_version}+{git_sha}.{data_sha256_prefix}` (e.g.
-`2.0.0+1c5e9d896ee5.e927845864e2`), recorded in `models/model_metrics.json`.
-The **git SHA is the exact training commit**. Training runs only on `main` (the
-weekly cron and `workflow_dispatch` in `train.yml`), so that commit is authored
-on main — but because PRs land via **squash-merge**, the training commit is a
-real, still-fetchable object that is **not an ancestor of `main`** after the
-squash (the squash creates a new commit with a different SHA). Do not expect
+`{service_version}+{git_sha}.{data_sha256_prefix}` — currently
+`2.0.0+599f28a7c99a.e927845864e2`, recorded in `models/model_metrics.json`.
+The **git SHA is the exact commit the metrics file was generated at** — either
+a scheduled `train.yml` run on `main`, or a working-branch commit whose
+regenerated metrics land via PR. Because PRs land via **squash-merge** (which
+creates a new commit with a different SHA), the recorded commit is a real,
+still-fetchable object that is generally **not an ancestor of `main`**. Do not expect
 `git checkout <git_sha>` from a shallow/gc'd clone to succeed. Reproducibility
 does **not** depend on checking out that commit: it rests on the committed
 artefacts, the exact-version `requirements-lock.txt`, the fixed training seed

@@ -28,8 +28,9 @@ class DataConfig(BaseModel):
 
 
 class ThresholdsConfig(BaseModel):
-    min_annual_income: int = Field(ge=50_000)
-    min_hourly_mean: float = Field(ge=20.0)
+    # Floors match the advertised ≥$100K cohort (hourly = 100000 / 2080).
+    min_annual_income: int = Field(ge=100_000)
+    min_hourly_mean: float = Field(ge=48.0)
 
 
 class ModelConfig(BaseModel):
@@ -57,6 +58,12 @@ class ModelConfig(BaseModel):
     # backwards-compatible against old config files.
     classifier_path: str | None = None
     premium_threshold: int | None = Field(default=None, ge=100_000)
+    classifier_n_estimators: int | None = Field(default=None, ge=1)
+    classifier_max_depth: int | None = Field(default=None, ge=1, le=20)
+    classifier_learning_rate: float | None = Field(default=None, gt=0, le=1.0)
+    classifier_subsample: float | None = Field(default=None, gt=0, le=1.0)
+    classifier_colsample_bytree: float | None = Field(default=None, gt=0, le=1.0)
+    classifier_reg_lambda: float | None = Field(default=None, ge=0)
 
 
 class VisualizationColors(BaseModel):

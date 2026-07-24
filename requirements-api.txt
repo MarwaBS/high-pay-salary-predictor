@@ -6,9 +6,10 @@
 # geopandas, matplotlib, seaborn, plotly.
 #
 # Why pinned (==) instead of floors (>=):
-#   - Reproducible images. A rebuild in 6 months pulls the exact same wheels.
-#   - Protects against silent upstream breakage (e.g. a 2026-06 xgboost patch
-#     that invalidates the saved .ubj model format).
+#   - Direct deps resolve identically across rebuilds, so an upstream patch
+#     release can't silently land (e.g. an xgboost change that invalidates
+#     the saved .ubj model format). Transitive deps still float at build
+#     time — requirements-lock.txt is the full exact-version freeze.
 #
 # How to regenerate:
 #   1. Make a clean venv: python -m venv .venv && .venv\Scripts\activate

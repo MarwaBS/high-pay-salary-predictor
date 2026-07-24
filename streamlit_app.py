@@ -12,7 +12,6 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -26,6 +25,7 @@ from pipeline import (
     load_group_means,
     load_metrics,
     load_model,
+    predict_quantiles_batch,
     train_test_positions,
 )
 
@@ -460,14 +460,16 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
         "The real SLO is empirical quantile coverage — see MODEL_CARD.md."
     )
 
-    # ── 80% prediction interval info ──────────────────────────────────────────
-    pi_w = metrics.get("quantile_width_median", metrics.get("pi_width", 0))
-    pi_cov = metrics.get("quantile_coverage_80", metrics.get("pi_coverage", 0))
+    # ── 80% prediction interval info (served = conformal-widened) ────────────
+    pi_w = metrics.get("conformal_width_median", metrics.get("quantile_width_median", 0))
+    pi_cov = metrics.get("conformal_coverage_80", metrics.get("quantile_coverage_80", 0))
+    raw_cov = metrics.get("quantile_coverage_80", 0)
     st.markdown(
-        f"**80% prediction interval** — median width **${pi_w:,.0f}**, "
+        f"**80% prediction interval (as served)** — median width **${pi_w:,.0f}**, "
         f"empirical coverage **{pi_cov * 100:.1f}%** on the held-out test set.  \n"
-        "_The interval comes directly from the multi-quantile model's P10 and "
-        "P90 outputs, not from residual offsets._"
+        f"_The API widens the model's raw P10/P90 band (raw coverage "
+        f"{raw_cov * 100:.1f}%) by a cross-conformal margin so the served "
+        "interval reaches the 80% target — the same interval the Predictor tab shows._"
     )
 
     st.markdown("---")
@@ -503,14 +505,9 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
             random_state=CFG["model"]["random_state"],
         )
         X_test, y_test = X.iloc[test_pos], y.iloc[test_pos]
-        # Multi-quantile model outputs (n, 3). For the residual plot we
-        # use the P50 column back-transformed to dollar space. Legacy
-        # point models emit a 1-D shape and fall through the else branch.
-        raw = np.asarray(model.predict(X_test))
-        if raw.ndim == 2 and raw.shape[1] == 3:
-            y_pred_dollar = np.expm1(raw[:, 1])  # P50 column
-        else:
-            y_pred_dollar = np.expm1(raw)
+        # P50 column of the multi-quantile output, already in dollars;
+        # predict_quantiles_batch raises on any non-(n, 3) model output.
+        y_pred_dollar = predict_quantiles_batch(model, X_test)[:, 1]
         residuals = y_test.values - y_pred_dollar
 
         fig = go.Figure()

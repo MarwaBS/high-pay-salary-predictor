@@ -69,10 +69,6 @@ ignore_missing_imports = true
 [tool.pytest.ini_options]
 testpaths   = ["tests"]
 addopts     = "-v --tb=short"
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::UserWarning",
-]
 
 # ── Coverage ──────────────────────────────────────────────────────────────────
 [tool.coverage.run]

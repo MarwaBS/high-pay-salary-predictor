@@ -42,8 +42,6 @@ jobs:
       - name: Security — audit dependencies for known CVEs
         run: |
           # Audit both the loose runtime set and the exact reproducible lock.
-          # No suppressions: the previous --ignore-vuln targeted a diskcache
-          # CVE for a package that isn't in the dependency tree at all.
           pip-audit --requirement requirements.txt --skip-editable
           pip-audit --requirement requirements-lock.txt
 
@@ -60,6 +58,13 @@ jobs:
         if: matrix.python-version == '3.12'
         run: |
           pip-audit --requirement requirements-dashboard.txt
+
+      - name: Security — audit the HF Space extras (3.11 only)
+        # The Space image is python:3.11-slim; audit its floor set on the
+        # matching interpreter so the resolved universe mirrors a real build.
+        if: matrix.python-version == '3.11'
+        run: |
+          pip-audit --requirement deploy/huggingface/requirements-space.txt
 
       - name: Generate CycloneDX SBOM (API runtime surface)
         # Standard 2026 supply-chain artifact. Scans requirements-api.txt
@@ -103,13 +108,10 @@ jobs:
 
       - name: Verify committed model artefacts (integrity gate)
         run: |
-          # CI must TEST THE COMMITTED ARTEFACTS the live demo serves — not a
-          # model it retrained over them. They are committed to models/, so a
-          # fresh checkout already has them; retrain only if one is missing.
-          # Then verify each committed artefact matches the SHA-256 the trainer
-          # recorded in model_metrics.json, so a corrupt or desynced commit to
-          # models/ fails here instead of shipping under green.
-          test -f models/xgb_salary_model.ubj || python -m scripts.train_quantile
+          # CI must test the committed artefacts the live demo serves — never a
+          # model retrained in-job. verify_artifacts recomputes each artefact's
+          # SHA-256 against model_metrics.json and fails on a missing, corrupt,
+          # or desynced artefact.
           python -m scripts.verify_artifacts
 
       - name: Run pytest (with enforced coverage gate)
