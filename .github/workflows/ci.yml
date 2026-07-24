@@ -201,7 +201,7 @@ jobs:
         # `.trivyignore` at repo root holds managed-risk CVE IDs. Fails
         # the job BEFORE the push step, so a vulnerable image never
         # reaches GHCR.
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
           format: table
@@ -288,7 +288,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Trivy scan Dashboard image
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
           format: table
