@@ -58,8 +58,8 @@ class TestDriftDetection:
 
     def test_small_consistent_mean_shift_alerts_once_window_filled(self, baseline_stats):
         """A consistent sub-σ shift in the mean must alert once enough data has
-        accumulated. Age→43 is only 0.3σ of the raw feature — the old σ-scaled
-        z-score (0.3) stayed silent forever; the standard-error z-score flags it
+        accumulated. Age→43 is only 0.3σ of the raw feature — a σ-scaled z-score
+        (0.3) never crosses threshold, but the standard-error z-score flags it
         (≈4.7 SE at n=250). During ramp-up the detector is deliberately
         conservative (ramp-scaled effect floor + Šidák correction — an
         uncorrected z>2 cut false-alarmed on ~37% of stationary n=30 windows),
