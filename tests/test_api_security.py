@@ -19,6 +19,7 @@ import importlib
 import os
 from contextlib import contextmanager
 
+import pytest
 from fastapi.testclient import TestClient
 from starlette.datastructures import Headers
 
@@ -206,19 +207,17 @@ class TestApiKeyAuth:
             assert codes[:3] == [401, 401, 401], codes
             assert codes[3:] == [429, 429, 429], codes
 
-    def test_non_ascii_key_accepted_when_it_is_the_configured_key(self):
-        """A configured key containing non-ASCII must still authenticate.
+    def test_non_ascii_configured_key_is_refused_at_startup(self):
+        """A non-ASCII API_KEY must fail loudly rather than 401 the correct key.
 
-        Header bytes decode as latin-1 while the environment supplies the key as
-        text, so a naive same-codec comparison rejects the correct key on every
-        request and locks the service out with no diagnostic.
+        HTTP header bytes carry no encoding and clients disagree: the stdlib's
+        http.client puts latin-1 on the wire where httpx puts UTF-8, so the same
+        key arrives as different bytes and one of those clients can never
+        authenticate. Refusing the configuration is the only unambiguous answer.
         """
-        secret = "café-secret"
-        with reloaded_module(API_KEY=secret) as m:
-            client = TestClient(m.app)
-            r = client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": secret.encode("utf-8")})
-            assert r.status_code != 401, "the correct key was rejected"
-            assert r.status_code == 422, r.text  # auth passed; body fails domain validation
+        with pytest.raises(RuntimeError, match="API_KEY must be ASCII"):
+            with reloaded_module(API_KEY="café-secret"):
+                pass
 
     def test_correct_key_accepted(self):
         with reloaded_module(API_KEY="s3cret") as m:

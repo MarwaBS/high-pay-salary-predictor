@@ -144,6 +144,19 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
+# A non-ASCII key cannot be matched reliably: HTTP header bytes carry no
+# encoding, and clients disagree — the stdlib's http.client (so requests and
+# urllib3) puts latin-1 on the wire where httpx puts UTF-8, so the same key
+# arrives as different bytes and one of them is rejected forever. Refuse it at
+# startup rather than serve an endpoint that 401s the correct key. This also
+# rejects the surrogates CPython produces from a non-UTF-8 environment
+# variable, which would otherwise raise on every request.
+if API_KEY and not API_KEY.isascii():
+    raise RuntimeError(
+        "API_KEY must be ASCII: HTTP clients disagree on how to encode non-ASCII "
+        "header values, so a non-ASCII key authenticates for some clients and is "
+        "rejected by others. Use an ASCII key (e.g. base64 or hex)."
+    )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Per-IP throttle for FAILED auth attempts. The main rate limiter runs inside the
@@ -201,10 +214,9 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
     # rejects non-ASCII str, so a key carrying any byte >= 0x80 would raise
     # past the throttle below instead of resolving to 401. Re-encoding the
     # header as latin-1 recovers the exact bytes the client sent (that is the
-    # codec the header was decoded with), which are then matched against the
-    # configured key as UTF-8 — so a non-ASCII API_KEY authenticates instead of
-    # rejecting every request forever.
-    if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("utf-8")):
+    # codec starlette decoded them with — and API_KEY is ASCII by the check at
+    # import, so its own encoding is unambiguous.
+    if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("ascii")):
         # Throttle brute-force key guessing per IP — the route-level limiter
         # never sees this request because the 401 short-circuits before it.
         within_budget = _auth_throttle.record_failure(_client_ip(request), time.monotonic())

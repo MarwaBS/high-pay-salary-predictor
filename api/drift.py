@@ -99,6 +99,10 @@ class DriftMonitor:
                          shared list so multi-replica Deployments aggregate
                          correctly.
         """
+        if window < 1:
+            # A zero window would cap the dropped-write backlog at zero, turning
+            # the verdict-withholding guard into a permanent all-clear.
+            raise ValueError(f"window must be >= 1, got {window}")
         self.baseline = baseline_stats
         self.window = window
         self.alert_threshold = alert_threshold
@@ -176,8 +180,10 @@ class DriftMonitor:
                 # healthy traffic. Counted so ``check_drift`` withholds its
                 # verdict while traffic is missing from the window, and capped
                 # at the window size: the shared list holds at most ``window``
-                # entries, so once that many fresh observations have landed no
-                # pre-outage data remains and there is nothing left to wait for.
+                # entries, so a backlog beyond that would keep the monitor dark
+                # after the window already held nothing but post-outage data.
+                # Under sustained partial failure the backlog stays at the cap,
+                # which is the safe direction — the verdict stays withheld.
                 self._dropped_writes = min(self._dropped_writes + 1, self.window)
                 logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
                 return
@@ -222,8 +228,9 @@ class DriftMonitor:
                            this read, not merely the configured backend
             degraded     : True if a configured Redis window could not be loaded,
                            or observations were dropped before reaching it
-            dropped_observations : observations lost to failed Redis writes and
-                           not yet replaced by fresh ones
+            dropped_observations : outstanding backlog of dropped observations,
+                           capped at ``window`` — how many more must land before
+                           the verdict resumes, not how many were lost
             features     : {feature: {z_score, effect_size, p_value, current_mean,
                             baseline_mean, n_observed, drifted}}
             any_drifted  : True if any feature is BOTH statistically significant
@@ -243,7 +250,9 @@ class DriftMonitor:
             # status instead. Dropped writes are the subtler case: reads still
             # succeed, so the stale window loads and looks healthy.
             reason = (
-                "Redis backend unreachable" if degraded else f"{dropped} observation(s) dropped by failed Redis writes"
+                "Redis backend unreachable"
+                if degraded
+                else f"{dropped} more observation(s) must land to replace ones dropped by failed Redis writes"
             )
             return {
                 "observations": total_count,

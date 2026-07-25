@@ -461,7 +461,7 @@ def test_compute_fallback_means_raises_on_empty():
 # ── Config Schema Validation ─────────────────────────────────────────────────
 
 
-class TestArtefactWritersEmitLf:
+class TestArtefactWritersRequestLf:
     """Content-addressed artefacts must be byte-identical across platforms.
 
     Their SHA-256 digests are recorded at training time and re-verified at
