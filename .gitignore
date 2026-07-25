@@ -168,14 +168,14 @@ private/
 # Deny-by-default: a private note is ignored because it was never allowed, not
 # because someone remembered to add a pattern matching its name.
 *.md
-!README.md
-!CHANGELOG.md
-!CONTRIBUTING.md
-!MODEL_CARD.md
-!SECURITY.md
-!DESIGN_DECISIONS.md
-!deploy/huggingface/DEPLOY.md
-!deploy/huggingface/README.md
+!/README.md
+!/CHANGELOG.md
+!/CONTRIBUTING.md
+!/MODEL_CARD.md
+!/SECURITY.md
+!/deploy/huggingface/DEPLOY.md
+!/deploy/huggingface/README.md
+!/.github/**/*.md
 Private_test/
 Private/
 internal/
@@ -184,11 +184,8 @@ sbom.cyclonedx.json
 sbom-api.cyclonedx.json
 
 # Detailed data-science / technical reports belong in private memory,
-# not in the public repo. Broad pattern so any future reports/ file is
-# also blocked.
+# not in the public repo.
 reports/
-*_report.md
-*_REPORT.md
 
 # Legacy pickle artefacts (project now uses XGBoost native .ubj + JSON — no pickle)
 models/*.pkl
