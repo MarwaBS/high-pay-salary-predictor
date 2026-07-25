@@ -1,7 +1,7 @@
 """
 tests/test_classifier.py
 ------------------------
-Regression guards for the premium-tier classifier head (Gap 1 Phase 1).
+Regression guards for the premium-tier classifier head.
 
 The classifier is trained alongside the quantile regressor by
 ``scripts/train_quantile.py`` and persisted to

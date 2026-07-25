@@ -194,9 +194,8 @@ class PredictResponse(BaseModel):
     gender: str
     age: int
 
-    # Premium-tier classifier head (Gap 1 Phase 1). Both fields are
-    # optional because pre-Phase-1 artefacts did not ship a classifier;
-    # the API degrades gracefully to ``None`` in that case.
+    # Premium-tier classifier head. Both fields are optional: when no
+    # classifier is loaded the API returns ``None`` for them.
     p_above_premium_threshold: float | None = Field(
         default=None,
         ge=0.0,
@@ -205,8 +204,8 @@ class PredictResponse(BaseModel):
             "Binary-classifier probability that ``Annual Income`` exceeds "
             "``premium_threshold`` for this profile. The classifier is a "
             "separate XGBoost head trained alongside the quantile regressor "
-            "on the same engineered feature matrix. ``None`` on pre-Phase-1 "
-            "artefacts where no classifier is available."
+            "on the same engineered feature matrix. ``None`` when no classifier "
+            "head is available."
         ),
         examples=[0.72],
     )
@@ -214,8 +213,8 @@ class PredictResponse(BaseModel):
         default=None,
         description=(
             "Dollar threshold used by the classifier head (from "
-            "``config.yaml::model.premium_threshold``). ``None`` on "
-            "pre-Phase-1 artefacts."
+            "``config.yaml::model.premium_threshold``). ``None`` when no "
+            "classifier head is available."
         ),
         examples=[150000],
     )

@@ -48,8 +48,7 @@ class GroupStats(TypedDict):
 
     ``sorted_incomes`` holds the Annual Income values sorted ascending so
     ``build_response`` can compute the exact percentile of a prediction
-    via ``np.searchsorted`` (O(log n) per request, identical output to
-    the previous ``(group < predicted).mean()`` scan).
+    via ``np.searchsorted`` (O(log n) per request).
     """
 
     median: float
@@ -207,8 +206,7 @@ def build_feature_frame(rows: list[dict[str, float]]) -> pd.DataFrame:
     """Pack one or more feature dicts into a model-ready DataFrame.
 
     Column order is pinned to ``FEATURES_FULL`` regardless of dict insertion
-    order, so a single construction replaces the previous
-    list-of-one-row-frames + ``pd.concat`` pattern on the batch path.
+    order; one construction builds the whole batch frame.
     """
     return pd.DataFrame(rows, columns=FEATURES_FULL)
 
@@ -253,8 +251,8 @@ def build_response(
     was used instead — never a fabricated 50th percentile.
 
     ``p_above_premium_threshold`` and ``premium_threshold`` come from the
-    binary classifier head (Gap 1 Phase 1). Both default to ``None`` so
-    pre-Phase-1 deployments keep a stable response shape.
+    binary classifier head. Both default to ``None`` so deployments without
+    the classifier keep a stable response shape.
     """
     # Defensive quantile ordering — XGBoost occasionally emits tiny
     # crossings near decision boundaries. Force non-decreasing.

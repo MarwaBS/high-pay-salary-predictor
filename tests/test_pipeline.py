@@ -333,9 +333,8 @@ class TestModelPrediction:
         close. A spurious gap would indicate CV leaked test rows or was
         computed in a different transformed space from the test metric.
 
-        Metrics files written before the dollar-space CV change do not
-        carry the ``cv_space`` flag and are skipped with a clear retrain
-        message.
+        Metrics files that lack the ``cv_space`` flag are skipped with a
+        clear retrain message.
         """
         from pathlib import Path
 

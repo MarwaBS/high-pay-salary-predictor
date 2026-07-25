@@ -52,10 +52,10 @@ model:
   conformal_path: "models/conformal_delta.json"
   # Premium-tier classifier head — trained alongside the quantile
   # regressor on the same feature set. Predicts P(Annual Income >=
-  # premium_threshold) *within the existing high-pay cohort*. This is
-  # "Gap 1 Phase 1" — the next-best-layered task the filtered dataset
-  # supports. Phase 2 (unfiltered >= $100K membership classifier)
-  # requires raw IPUMS Census microdata that is not in the repo.
+  # premium_threshold) *within the existing high-pay cohort*. It is the
+  # next-best-layered task the filtered dataset supports; a broader unfiltered
+  # >= $100K membership classifier would require raw IPUMS Census microdata
+  # that is not in the repo.
   classifier_path: "models/xgb_premium_classifier.ubj"
   premium_threshold: 150000
   # Classifier head hyper-parameters — lighter than the regressor on purpose

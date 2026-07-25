@@ -4,11 +4,10 @@ The GitHub Release published by ``.github/workflows/train.yml`` IS the model
 registry: the k8s initContainer (``k8s/api-deployment.yaml``) downloads the
 serving artefacts from it on every deploy/rollback. If an artefact the API
 loads at startup is absent from the release (or from the initContainer's
-download list), a registry-based deploy silently ships without it and the API
-degrades — this is exactly how ``xgb_premium_classifier.ubj`` went missing:
-present in git and baked into the Space image, but absent from the release and
-the k8s download list, so any rollback lost the premium-tier classifier head
-and every ``p_above_premium_threshold`` came back null.
+download list), a registry-based deploy silently ships without it: an artefact
+present in git and baked into the Space image but absent from the release and
+the k8s download list is lost on any rollback, so the premium-tier classifier
+head disappears and every ``p_above_premium_threshold`` returns null.
 
 These tests machine-check that the release list and the initContainer download
 list both cover the artefacts config.yaml tells the API to load, so the three
@@ -101,8 +100,8 @@ def _configmap_urls() -> dict[str, str]:
 def test_configmap_points_at_the_gated_release_not_a_placeholder() -> None:
     """The initContainer must pull from the gated GitHub Release (the model
     registry train.yml publishes AFTER its test + integrity gate), not the dead
-    ``artifacts.example.com/v1.0.0`` placeholder that shipped originally — a
-    placeholder URL means every pod start ImagePull/curl-fails or, worse, serves
+    ``artifacts.example.com/v1.0.0`` placeholder host — a placeholder URL means
+    every pod start ImagePull/curl-fails or, worse, serves
     whatever an attacker parks at the example host."""
     urls = _configmap_urls()
     for key in ("model-url", "data-url"):
