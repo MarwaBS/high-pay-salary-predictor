@@ -465,17 +465,31 @@ class TestArtefactWritersEmitLf:
     """Content-addressed artefacts must be byte-identical across platforms.
 
     Their SHA-256 digests are recorded at training time and re-verified at
-    startup and in CI, so a writer that emitted platform-native line endings
-    would produce a different digest on Windows than on Linux for identical
-    content. .gitattributes normalises what git stores; these tests pin what
-    the writers actually emit.
+    startup and in CI, so a writer left on the platform default would produce a
+    different digest on Windows than on Linux for identical content.
+
+    Asserting on the output bytes would only catch this on Windows: with
+    ``newline=None`` Python translates to ``os.linesep``, which on the Linux CI
+    runner already is ``\\n``. So the check is on the call itself — every
+    artefact writer must open its file with an explicit ``newline="\\n"``,
+    which fails identically on every platform.
     """
 
-    def test_all_json_artefact_writers_emit_lf(self, tmp_path):
+    def test_all_json_artefact_writers_request_lf(self, tmp_path, monkeypatch):
         from api.drift import save_baseline_stats
         from pipeline import save_conformal, save_features, save_group_means, save_metrics
 
-        written = {
+        real_open = open
+        newline_by_path: dict[str, object] = {}
+
+        def recording_open(file, mode="r", *args, **kwargs):
+            if "w" in str(mode):
+                newline_by_path[str(file)] = kwargs.get("newline", "<default>")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", recording_open)
+
+        writers = {
             "features": (save_features, (["Age", "Education_Ord"], str(tmp_path / "features.json")), {}),
             "metrics": (save_metrics, ({"r2": 0.5, "nested": {"a": 1}}, str(tmp_path / "metrics.json")), {}),
             "group_means": (
@@ -494,11 +508,14 @@ class TestArtefactWritersEmitLf:
                 {},
             ),
         }
-        for name, (writer, args, kwargs) in written.items():
+        for name, (writer, args, kwargs) in writers.items():
             writer(*args, **kwargs)
-            raw = Path(args[1]).read_bytes()
-            assert b"\r\n" not in raw, f"{name} writer emitted CRLF; its recorded digest would be platform-specific"
-            assert b"\n" in raw, f"{name} wrote no newlines at all — check the fixture, not the writer"
+            requested = newline_by_path.get(str(args[1]))
+            assert requested == "\n", (
+                f"{name} writer opened its artefact with newline={requested!r}; "
+                "on a CRLF platform its recorded digest would not reproduce"
+            )
+            assert b"\r\n" not in Path(args[1]).read_bytes()
 
 
 class TestConfigSchema:

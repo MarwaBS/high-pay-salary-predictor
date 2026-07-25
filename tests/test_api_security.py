@@ -206,6 +206,20 @@ class TestApiKeyAuth:
             assert codes[:3] == [401, 401, 401], codes
             assert codes[3:] == [429, 429, 429], codes
 
+    def test_non_ascii_key_accepted_when_it_is_the_configured_key(self):
+        """A configured key containing non-ASCII must still authenticate.
+
+        Header bytes decode as latin-1 while the environment supplies the key as
+        text, so a naive same-codec comparison rejects the correct key on every
+        request and locks the service out with no diagnostic.
+        """
+        secret = "café-secret"
+        with reloaded_module(API_KEY=secret) as m:
+            client = TestClient(m.app)
+            r = client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": secret.encode("utf-8")})
+            assert r.status_code != 401, "the correct key was rejected"
+            assert r.status_code == 422, r.text  # auth passed; body fails domain validation
+
     def test_correct_key_accepted(self):
         with reloaded_module(API_KEY="s3cret") as m:
             with TestClient(m.app) as client:  # lifespan → model loaded

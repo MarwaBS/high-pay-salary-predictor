@@ -105,9 +105,11 @@ class DriftMonitor:
         self.min_effect_size = min_effect_size
         self.buffer: deque[dict[str, float]] = deque(maxlen=window)
         self._observation_count = 0
-        #: Outstanding observations lost to failed Redis writes. Incremented on
-        #: each drop and worked off one per successful write; non-zero means the
-        #: shared window is still missing live traffic.
+        #: Outstanding observations lost to failed Redis writes, capped at
+        #: ``window``. Worked off one per successful write; non-zero means the
+        #: shared window is still missing live traffic. Per-process: a replica
+        #: that dropped withholds its own verdict while a sibling that did not
+        #: still serves one from the same shared window.
         self._dropped_writes = 0
         self._redis = redis_client or self._discover_redis()
         if self._redis is not None:
@@ -172,8 +174,11 @@ class DriftMonitor:
                 # would leave a misleading partial window behind for a later
                 # read-failure to serve. The capped shared list refills from
                 # healthy traffic. Counted so ``check_drift`` withholds its
-                # verdict while traffic is missing from the window.
-                self._dropped_writes += 1
+                # verdict while traffic is missing from the window, and capped
+                # at the window size: the shared list holds at most ``window``
+                # entries, so once that many fresh observations have landed no
+                # pre-outage data remains and there is nothing left to wait for.
+                self._dropped_writes = min(self._dropped_writes + 1, self.window)
                 logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
                 return
 

@@ -197,10 +197,14 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
     if not API_KEY:
         return None  # dev mode: no auth required
     # Constant-time comparison so a timing side-channel can't be used to
-    # recover the key byte by byte. Compared as UTF-8 bytes because header
-    # values decode as latin-1: compare_digest rejects non-ASCII str, and a
-    # wrong key must resolve to 401 rather than raise past the throttle below.
-    if key is None or not secrets.compare_digest(key.encode("utf-8"), API_KEY.encode("utf-8")):
+    # recover the key byte by byte. Compared as bytes, not str: compare_digest
+    # rejects non-ASCII str, so a key carrying any byte >= 0x80 would raise
+    # past the throttle below instead of resolving to 401. Re-encoding the
+    # header as latin-1 recovers the exact bytes the client sent (that is the
+    # codec the header was decoded with), which are then matched against the
+    # configured key as UTF-8 — so a non-ASCII API_KEY authenticates instead of
+    # rejecting every request forever.
+    if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("utf-8")):
         # Throttle brute-force key guessing per IP — the route-level limiter
         # never sees this request because the 401 short-circuits before it.
         within_budget = _auth_throttle.record_failure(_client_ip(request), time.monotonic())

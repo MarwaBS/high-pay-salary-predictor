@@ -119,8 +119,9 @@ jobs:
 
       - name: Type-check with mypy
         # Widest surface of the three: the Makefile target and the pre-commit
-        # hook cover api/, pipeline.py and scripts/. CI additionally checks
-        # config_schema.py and streamlit_app.py, which nothing imports.
+        # hook cover api/, pipeline.py and scripts/, which already pulls in
+        # config_schema.py through api.main. streamlit_app.py is the genuine
+        # addition — nothing imports it, so only naming it type-checks it.
         run: |
           # mypy is pinned in requirements.txt; only the stubs are added here.
           pip install pandas-stubs

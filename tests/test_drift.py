@@ -588,6 +588,31 @@ class TestDriftBackendFailureIsLoud:
         assert report["any_drifted"] is False
         assert report["dropped_observations"] == 0
 
+    def test_backlog_never_exceeds_the_window(self, baseline_stats):
+        """A long outage must not withhold the verdict longer than the window.
+
+        The shared list is trimmed to ``window``, so once that many fresh
+        observations have landed none of the pre-outage data remains and there
+        is nothing further to wait for. Without the cap the monitor stays dark
+        for as many requests as it dropped, however long the outage ran.
+        """
+        window = 50
+        fake = _WriteFailingReadsWorkingRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=window, redis_client=fake)
+
+        fake.writes_ok = False
+        for _ in range(10_000):  # a long outage
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        assert mon.check_drift()["dropped_observations"] == window
+
+        fake.writes_ok = True
+        for _ in range(window):  # exactly one full window of fresh traffic
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+
+        report = mon.check_drift()
+        assert report["dropped_observations"] == 0
+        assert report["degraded"] is False
+
 
 class TestBaselinePersistence:
     def test_save_and_load_round_trip(self, tmp_path):
