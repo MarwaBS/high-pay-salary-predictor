@@ -1,19 +1,13 @@
 """
-Regression guard: ensure there is exactly ONE trainer
-under ``scripts/`` that writes the production ``models/xgb_salary_model.ubj``
-artefact.
+Regression guard: exactly ONE trainer under ``scripts/`` may write the
+production ``models/xgb_salary_model.ubj`` artefact.
 
-Background
-----------
-Prior revisions of the repo shipped two trainers side by side:
-``scripts/train_model.py`` (point-estimate, ``reg:squarederror``, MLflow +
-Optuna) and ``scripts/train_quantile.py`` (multi-quantile, the production
-trainer). Both wrote to the same output path. Running ``make hpo`` would
-silently clobber the production quantile model with a point estimator,
-degrading the API to ``(p, p, p)`` degenerate intervals.
-
-The legacy trainer was deleted. This test
-prevents it (or any sibling) from silently coming back.
+Two trainers writing the same output path is the failure this guards
+against: a point-estimate trainer (``reg:squarederror``) sharing the path
+with the multi-quantile production trainer lets ``make hpo`` silently
+clobber the production model with a point estimator, degrading the API to
+``(p, p, p)`` degenerate intervals. This test fails if any sibling trainer
+writing that path appears.
 """
 
 from __future__ import annotations
@@ -72,11 +66,11 @@ def test_quantile_trainer_uses_quantile_objective():
 
 
 def test_no_mlflow_or_optuna_imports_in_scripts():
-    """MLflow / Optuna were deleted with the legacy trainer.
+    """No module under ``scripts/`` may import MLflow or Optuna.
 
-    If they come back, either the legacy trainer has been restored (bad)
-    or something else is pulling in an experiment-tracking stack the
-    lean trainer deliberately avoids.
+    The lean trainer deliberately avoids an experiment-tracking stack; a
+    reappearance means either a heavyweight trainer was reintroduced or
+    something else is pulling that stack in.
     """
     forbidden = {"mlflow", "optuna"}
     for module in _python_modules_in_scripts():
@@ -86,10 +80,10 @@ def test_no_mlflow_or_optuna_imports_in_scripts():
                 for alias in node.names:
                     root = alias.name.split(".")[0]
                     assert root not in forbidden, (
-                        f"{module.name} imports '{root}' — this was removed as part of the legacy trainer deletion."
+                        f"{module.name} imports '{root}' — scripts/ must not depend on an experiment-tracking stack."
                     )
             elif isinstance(node, ast.ImportFrom) and node.module:
                 root = node.module.split(".")[0]
                 assert root not in forbidden, (
-                    f"{module.name} imports from '{root}' — this was removed as part of the legacy trainer deletion."
+                    f"{module.name} imports from '{root}' — scripts/ must not depend on an experiment-tracking stack."
                 )

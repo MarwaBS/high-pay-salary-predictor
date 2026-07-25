@@ -2,11 +2,11 @@
 Static sanity checks on the root Dockerfile's API stage.
 
 These tests don't build or run Docker — they parse the Dockerfile text
-and the source of api/main.py to catch the exact class of bug that
-shipped in commit 390382a: api/main.py imports a top-level module
-(config_schema) that was never COPY'd into the API image, so the CI
-smoke test crashes with ModuleNotFoundError the first time the
-container tries to start.
+and the source of api/main.py to catch a class of bug that only surfaces
+at container start: api/main.py imports a top-level module (e.g.
+config_schema) that is never COPY'd into the API image, so the CI smoke
+test crashes with ModuleNotFoundError the first time the container tries
+to start.
 
 Guard is intentionally narrow: only top-level modules api/main.py
 imports by bare name (`from <name> import ...` where <name> is not

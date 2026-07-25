@@ -291,7 +291,7 @@ class TestBodySizeLimit:
 
             def big_chunks():
                 # An iterable body makes httpx use Transfer-Encoding: chunked with
-                # NO Content-Length — the exact bypass the old middleware missed.
+                # NO Content-Length — the case a Content-Length-only size cap misses.
                 for _ in range(8):
                     yield b"x" * 512  # 4096 bytes total, over the 1024 cap
 
