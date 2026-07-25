@@ -102,14 +102,15 @@ jobs:
 
       - name: Enforce the repo-safety pre-commit hooks
         # Otherwise these protect only contributors who ran `pre-commit
-        # install`. Lint/format/type hooks are omitted -- they run as their own
-        # steps, on the pinned versions.
+        # install`. ruff does not cover debug-statements: T201 is flake8-print,
+        # not flake8-debugger.
         if: matrix.python-version == '3.12'
         run: |
           pip install pre-commit
           pre-commit run --all-files detect-private-key
           pre-commit run --all-files check-added-large-files
           pre-commit run --all-files check-merge-conflict
+          pre-commit run --all-files debug-statements
 
       - name: Type-check with mypy
         # streamlit_app.py is imported by nothing, so it is only checked when

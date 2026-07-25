@@ -144,14 +144,14 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
-# Anything outside printable non-space ASCII either fails to survive an HTTP
-# header or is rejected by the parser, so the correct key would 401 forever.
+# Outside this range a key is altered in transit or refused by the parser, so
+# the correct one would 401 forever; spaces and tabs do work but are a quoting
+# accident often enough to refuse too.
 if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
-        "API_KEY must be printable ASCII with no spaces (0x21-0x7E); other "
-        "values cannot be matched reliably and would reject the correct key on "
-        "every request. Use base64 or hex, and check for a trailing newline if "
-        "the value came from a file."
+        "API_KEY must be printable ASCII with no spaces (0x21-0x7E). Use "
+        "base64 or hex, and check for a trailing newline if the value came "
+        "from a file."
     )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

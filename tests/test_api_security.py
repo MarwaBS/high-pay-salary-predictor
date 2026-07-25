@@ -220,11 +220,7 @@ class TestApiKeyAuth:
         ],
     )
     def test_unusable_key_shape_is_refused_at_startup(self, label, bad_key):
-        """Keys outside printable non-space ASCII must fail loudly at startup.
-
-        Each shape would otherwise reject the operator's own key on every
-        request, or be silently altered on the way in.
-        """
+        """Keys outside printable non-space ASCII must fail loudly at startup."""
         with pytest.raises(RuntimeError, match="API_KEY must be printable ASCII"):
             with reloaded_module(API_KEY=bad_key):
                 pass
