@@ -90,8 +90,9 @@ default Dockerfile.
 ## Step 4 — Assemble the deployment files into the Space
 
 `deploy/huggingface/assemble.sh` is the authoritative definition of what the
-Space contains: it copies exactly the paths the HF Dockerfile `COPY`s, and
-nothing else. From `hf-space-high-pay`:
+Space contains: every path the HF Dockerfile `COPY`s, plus the `Dockerfile` and
+`README.md` the Space itself is built and rendered from — and nothing else.
+From `hf-space-high-pay`:
 
 ```bash
 # Paths assume you're in the hf-space-high-pay directory

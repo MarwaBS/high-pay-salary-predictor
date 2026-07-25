@@ -181,7 +181,11 @@ class PredictResponse(BaseModel):
     )
     group_size: int = Field(
         ...,
-        description="Number of records in the comparison group.",
+        description=(
+            "Number of records in the same state + education cell. ``0`` means "
+            "that cell was unseen, so ``group_median``/``group_mean`` and the "
+            "percentile describe the whole dataset — see ``percentile_scope``."
+        ),
         examples=[214],
     )
     prediction_interval_low: float = Field(

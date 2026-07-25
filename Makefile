@@ -143,7 +143,9 @@ type-check: install
 	@echo ">>> Type-checking with mypy..."
 	# No global --ignore-missing-imports: it is weaker than CI, which relies on
 	# the targeted per-module overrides in pyproject.toml. Keep them identical.
-	$(MYPY) api/ pipeline.py scripts/
+	# Same surface as CI, so a green target here means a green gate there:
+	# streamlit_app.py is imported by nothing and is only checked when named.
+	$(MYPY) api/ pipeline.py scripts/ config_schema.py streamlit_app.py
 	@echo ">>> Type check complete."
 
 # ── Services ──────────────────────────────────────────────────────────────────

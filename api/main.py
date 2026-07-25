@@ -174,10 +174,10 @@ if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
         "API_KEY must consist only of printable ASCII with no spaces "
         "(0x21-0x7E). Non-ASCII, surrounding whitespace and newlines cannot be "
         "sent and matched reliably, so they would reject the correct key on "
-        "every request; other control characters make the server answer 400; "
-        "internal spaces are refused as near-certain misconfiguration. Use "
-        "base64 or hex, and check for a trailing newline if the value came "
-        "from a file."
+        "every request; control characters other than tab make the server "
+        "answer 400; internal spaces and tabs are refused as near-certain "
+        "misconfiguration. Use base64 or hex, and check for a trailing newline "
+        "if the value came from a file."
     )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

@@ -547,10 +547,11 @@ class TestConfigSchema:
             ProjectConfig(**broken)
 
     def test_classifier_path_without_hyperparameters_rejected(self, cfg):
-        """A configured classifier needs every setting the trainer indexes.
+        """A configured classifier needs every setting the trainer relies on.
 
-        Otherwise validation passes and training dies with a KeyError partway
-        through, after the regressor has already been fitted.
+        Six are read unguarded, so a half-declared classifier kills a training
+        run partway through with a KeyError; ``premium_threshold`` instead falls
+        back to 150000 and fits a head against a boundary nobody configured.
         """
         import copy
 

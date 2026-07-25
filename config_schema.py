@@ -78,8 +78,13 @@ class ModelConfig(BaseModel):
     def _classifier_config_is_all_or_nothing(self) -> ModelConfig:
         """A configured classifier needs every hyperparameter the trainer reads.
 
-        The trainer indexes these directly, so a half-declared classifier passes
-        validation and then dies with a KeyError mid-run.
+        Six of these are read unguarded by ``scripts/train_quantile.py``, so a
+        half-declared classifier kills a training run partway through with a
+        KeyError; ``premium_threshold`` is worse, falling back to 150000 and
+        training a head against a boundary nobody configured. The trainer loads
+        its config with plain YAML and never sees this schema — the rule is
+        enforced where ``ProjectConfig`` is used, at API startup and in CI, so
+        the mismatch is caught before a deploy rather than during a retrain.
         """
         required = {
             "premium_threshold": self.premium_threshold,
