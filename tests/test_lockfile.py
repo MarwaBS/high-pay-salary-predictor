@@ -5,10 +5,10 @@ CI/security tooling (the pip-audit target). Two ways that claim rots:
 
 1. A package the API runtime needs drops out of the freeze, so the "audited
    runtime" no longer covers what actually ships.
-2. A maintainer-machine-only tool leaks into the freeze (this happened:
-   ``git-filter-repo``, a history-rewrite CLI, was pinned in the lock), which
-   both pollutes the reproducibility story and expands the audited surface with
-   software the project never runs.
+2. A maintainer-machine-only tool leaks into the freeze (e.g.
+   ``git-filter-repo``, a history-rewrite CLI), which both pollutes the
+   reproducibility story and expands the audited surface with software the
+   project never runs.
 
 These check both, by name, so the corrected README claim stays true.
 """

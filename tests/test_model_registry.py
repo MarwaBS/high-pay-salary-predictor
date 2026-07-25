@@ -125,10 +125,10 @@ def test_dataset_is_published_in_the_release() -> None:
 
 
 def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
-    """Regression: the k8s manifests referenced the pre-rename GHCR path
-    ``high_pay_analysis_us`` while CI pushes to ``ghcr.io/<repo>`` (i.e.
-    ``high-pay-salary-predictor``) — a bare apply ImagePullBackOffs. Pin the
-    manifests to the live repo path and forbid the dead one."""
+    """The k8s manifests must reference the GHCR path CI actually pushes to
+    (``ghcr.io/<repo>`` = ``high-pay-salary-predictor``), not the stale
+    ``high_pay_analysis_us`` path — a mismatch ImagePullBackOffs on a bare
+    apply. Pin the live path and forbid the dead one."""
     for manifest in ("api-deployment.yaml", "dashboard-deployment.yaml"):
         text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
         assert "high_pay_analysis_us" not in text, (
