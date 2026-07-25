@@ -95,8 +95,8 @@ def test_no_dangling_train_model_references():
                     offenders.append(f"{rel}:{lineno}: {line.strip()}")
 
     assert not offenders, (
-        "The legacy trainer ``scripts/train_model.py`` was deleted in "
-        "cd1037d but the following files still reference it. Update "
-        "each to point at ``scripts/train_quantile.py`` (or delete the "
-        "stale line entirely):\n  " + "\n  ".join(offenders)
+        "The legacy trainer ``scripts/train_model.py`` no longer exists, "
+        "but the following files still reference it. Update each to point "
+        "at ``scripts/train_quantile.py`` (or delete the stale line "
+        "entirely):\n  " + "\n  ".join(offenders)
     )
