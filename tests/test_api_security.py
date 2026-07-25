@@ -1,10 +1,9 @@
 """
 API security tests — auth, CORS, rate limiting, and proxy-IP handling.
 
-These cover the controls the README advertises but that previously had **zero**
-test coverage: ``API_KEY`` enforcement (401), the CORS allow-list, the per-IP
-rate limiter (429), and the ``X-Forwarded-For`` parsing that decides *which*
-IP a caller is bucketed under.
+These cover the controls the README advertises: ``API_KEY`` enforcement (401),
+the CORS allow-list, the per-IP rate limiter (429), and the ``X-Forwarded-For``
+parsing that decides *which* IP a caller is bucketed under.
 
 ``API_KEY``, ``CORS_ORIGINS``, ``RATE_LIMIT`` and ``TRUSTED_PROXY_HOPS`` are all
 read from the environment at module-import time (the limiter and the CORS
@@ -93,9 +92,9 @@ def _fake_request(xff: str | None = None, client_host: str = "203.0.113.250"):
 
 class TestClientIpProxySecurity:
     """Lock the security property that a forged X-Forwarded-For cannot move a
-    caller to a fresh rate-limit bucket. The pre-fix code returned the
-    attacker-controlled *left-most* entry; the fix returns the trusted
-    right-most entry."""
+    caller to a fresh rate-limit bucket: with N trusted proxy hops the client IP
+    is read from the Nth-from-right XFF entry, so an attacker-controlled
+    *left-most* entry cannot mint a new bucket."""
 
     def test_no_proxy_uses_direct_peer(self):
         with reloaded_module(TRUSTED_PROXY_HOPS="0") as m:

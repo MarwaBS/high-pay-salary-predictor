@@ -165,7 +165,7 @@ def _leak_frame(seed: int = 0) -> pd.DataFrame:
 
 
 def _leaky_cv_reference(df_raw: pd.DataFrame) -> float:
-    """Pre-fix behaviour: encode once from all of train, then fold over it."""
+    """Leaky reference: encode once over all of train, then fold over it."""
     gm = compute_group_means(df_raw)
     df = engineer_features(df_raw, _EDU, _REGION, occ_means=gm["occ_means"], state_means=gm["state_means"]).reset_index(
         drop=True
@@ -190,7 +190,7 @@ def test_cross_val_r2_is_leakage_free():
     """Per-fold target encoding must not leak the validation target.
 
     On a frame whose only signal is a high-cardinality encoding, encoding once
-    over all of train (the pre-fix path) inflates CV R²; the honest per-fold
+    over all of train (the leaky path) inflates CV R²; the honest per-fold
     encoding scores far lower. Red if ``_cross_val_r2`` regresses to global
     encoding.
     """

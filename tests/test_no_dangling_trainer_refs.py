@@ -1,11 +1,8 @@
 """Guard against dangling references to the deleted legacy trainer.
 
 ``scripts/train_model.py`` (the v1 point-estimate trainer with MLflow +
-Optuna) was deleted in commit ``cd1037d`` after two trainers were found
-sharing the same artefact path. The file is gone from
-disk, but docstrings and user-facing error messages elsewhere in the
-repo kept mentioning it, so a user who hit the ``/drift`` disabled path
-was told to run a file that no longer exists.
+Optuna) no longer exists; a reference to it in a docstring or user-facing
+error message would tell a user to run a file that isn't there.
 
 This test walks the repo and asserts the string ``train_model.py``
 appears nowhere in tracked, user-visible source — tests, docs, reports,
@@ -13,11 +10,10 @@ Python modules, YAML workflows, Dockerfiles, and Makefile. Anything
 under ``private/`` or ``.git/`` is exempt (the private/ directory
 intentionally preserves historical notes).
 
-The guard is intentionally a plain substring search rather than an AST
-walk because the prior failure modes were in **comments and docstrings**
-(``api/main.py:646``'s JSON response body, ``api/drift.py:215``'s
-save_baseline_stats docstring, etc.) — an AST walk would have silently
-missed all of them.
+The guard is a plain substring search rather than an AST walk because the
+references it must catch live in **comments and docstrings** (a JSON
+response body, a save_baseline_stats docstring), which an AST walk would
+silently miss.
 """
 
 from __future__ import annotations

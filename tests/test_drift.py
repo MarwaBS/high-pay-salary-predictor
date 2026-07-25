@@ -78,8 +78,8 @@ class TestDriftDetection:
         assert report["features"]["Education_Ord"]["drifted"] is False
 
     def test_absent_feature_does_not_manufacture_drift(self, monitor):
-        """A feature missing from observations must not be imputed as 0.0 (which
-        previously dragged its mean far from baseline and faked drift)."""
+        """A feature missing from observations must not be imputed as 0.0 —
+        imputing 0.0 drags its mean far from baseline and manufactures drift."""
         for _ in range(40):
             monitor.observe({"Age": 40.0})  # Education_Ord never observed
         report = monitor.check_drift()
@@ -145,13 +145,13 @@ class TestDriftEdgeCases:
 
 
 class TestDriftSensitivityAtWindow500:
-    """Regression for the over-sensitivity the standard-error z-score introduced.
+    """The effect-size floor must suppress benign wobble at the real window.
 
     With the SE z-score alone, the alarm fires whenever the window mean shifts by
     more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the default
     window=500. Production traffic is never i.i.d. from the training baseline, so
-    that alarmed on every benign sampling wobble. The fix adds a practical
-    effect-size floor (``min_effect_size``) on TOP of significance.
+    significance alone alarms on benign sampling wobble; ``min_effect_size`` gates
+    it with a practical effect-size floor on TOP of significance.
     """
 
     BASELINE = {
@@ -176,8 +176,7 @@ class TestDriftSensitivityAtWindow500:
                 mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
             if mon.check_drift()["any_drifted"]:
                 false_alarms += 1
-        # Allow a hair of slack for the rare tail, but it must be near-zero — the
-        # pre-fix rate was ~50%.
+        # Allow a hair of slack for the rare tail, but it must be near-zero.
         assert false_alarms <= 1, f"{false_alarms}/{trials} i.i.d. windows alarmed"
 
     def test_genuine_consistent_shift_still_alarms_at_n500(self):
@@ -215,18 +214,17 @@ class TestDriftSensitivityAtWindow500:
 
 
 class TestDriftRampUpFalseAlarms:
-    """Regression for chronic false alarms while the window fills.
+    """The familywise false-alarm rate must stay bounded while the window fills.
 
-    ``any_drifted`` is the union of ~10 per-feature tests. Before the fix, each
-    feature was cut at an UNcorrected z > 2 (per-test α ≈ 4.55%), and below
-    n = (z/d)² = 100 the fixed 0.2σ effect floor is implied by significance
-    alone — so nothing gated the union and a perfectly stationary window
-    false-alarmed on ~37% of trials at both n=30 and n=100 (measured, 2000
-    bootstrap trials on the real baseline). The fix Šidák-corrects the
-    per-feature α across the k tested features AND ramp-scales the effect floor
-    (max(0.2, z·√(2/n))), bounding the familywise false-alarm rate at
-    ≈ erfc(2/√2) ≈ 4.6% at ANY window fill — without touching the n=500
-    operating point (see TestDriftSensitivityAtWindow500).
+    ``any_drifted`` is the union of ~10 per-feature tests. An UNcorrected
+    per-feature cut at z > 2 (per-test α ≈ 4.55%) leaves the union ungated, and
+    below n = (z/d)² = 100 a fixed 0.2σ effect floor is implied by significance
+    alone — a perfectly stationary window then false-alarms on ~37% of trials at
+    both n=30 and n=100 (measured, 2000 bootstrap trials on the real baseline).
+    The monitor therefore Šidák-corrects the per-feature α across the k tested
+    features AND ramp-scales the effect floor (max(0.2, z·√(2/n))), bounding the
+    familywise false-alarm rate at ≈ erfc(2/√2) ≈ 4.6% at ANY window fill —
+    without touching the n=500 operating point (see TestDriftSensitivityAtWindow500).
     """
 
     # Ten features, mirroring the width of the production baseline — the
@@ -260,16 +258,16 @@ class TestDriftRampUpFalseAlarms:
     def test_stationary_n30_familywise_false_alarm_rate_bounded(self):
         """At the 30-observation reporting floor, i.i.d.-from-baseline windows
         (NO real drift) must false-alarm at ≲ the designed familywise ≈4.6% —
-        allow 7% for binomial noise over 150 trials. Pre-fix: ~37%."""
+        allow 7% for binomial noise over 150 trials."""
         rate = self._familywise_false_alarm_rate(n_obs=30, trials=150, seed=20260704)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 (pre-fix regime was ~37%)"
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 exceeds 7% bound"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
-        """Same bound at n=100, where the fixed 0.2σ floor exactly coincides
-        with the uncorrected z>2 bound and so (pre-fix) added nothing: ~37%
-        of stationary windows alarmed. Post-fix must be ≤ 7%."""
+        """Same bound at n=100 — the stress point where the fixed 0.2σ floor
+        exactly coincides with the uncorrected z>2 bound, so the effect floor
+        adds no protection and only the Šidák α-correction bounds the union."""
         rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 (pre-fix regime was ~37%)"
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 exceeds 7% bound"
 
     def test_mid_window_real_drift_still_fires(self):
         """Deaf-check: the ramp-up conservatism must NOT silence real drift
