@@ -365,10 +365,9 @@ async def lifespan(app: FastAPI):
         state.conformal_delta = load_conformal_delta(str(ROOT / VALIDATED_CFG.model.conformal_path))
         logger.info("Conformal interval margin loaded (delta=%.4f, log space)", state.conformal_delta)
 
-    # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
-    # Optional on purpose: pre-Phase-1 artefacts (any model trained before
-    # the classifier was added) do not ship a classifier, and the API must
-    # keep running against them. Missing artefact → ``p_above_premium_threshold``
+    # ── Premium-tier classifier head ────────────────────────────────────────
+    # Optional: when no classifier is configured/present the API runs without it
+    # and a missing artefact → ``p_above_premium_threshold``
     # becomes ``None`` on every response, the rest of the pipeline is
     # unaffected. Any *other* exception is a real fault and should crash
     # the probe — do not silently swallow it.
@@ -769,9 +768,8 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
         QUANTILE_CROSSINGS.inc()
     group_stats = lookup_benchmarks(state.benchmark_lookup, req.state, req.education_level)
 
-    # Premium-tier classifier probability (Gap 1 Phase 1). ``None`` when
-    # no classifier is loaded so older deployments keep returning the
-    # same payload shape.
+    # Premium-tier classifier probability. ``None`` when no classifier is
+    # loaded, so deployments without it keep the same payload shape.
     p_premium: float | None = None
     if state.classifier is not None:
         p_premium = float(state.classifier.predict_proba(row)[0, 1])

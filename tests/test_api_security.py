@@ -87,7 +87,7 @@ def _fake_request(xff: str | None = None, client_host: str = "203.0.113.250"):
     return _Req()
 
 
-# ── X-Forwarded-For / rate-limit bucketing (the spoofing defect) ─────────────
+# ── X-Forwarded-For / rate-limit bucketing (spoofing defense) ───────────────
 
 
 class TestClientIpProxySecurity:
@@ -273,10 +273,10 @@ class TestRateLimiting:
 
 
 class TestBodySizeLimit:
-    """The middleware capped only the declared Content-Length, so a chunked
-    upload (Transfer-Encoding: chunked, no Content-Length) slipped past it
-    unbounded. The fix measures the actual streamed bytes when no usable
-    Content-Length is present."""
+    """The middleware caps the actual streamed byte count, so a chunked upload
+    (Transfer-Encoding: chunked, no Content-Length) is bounded exactly like a
+    declared-length body — no Content-Length header is required to enforce the
+    cap."""
 
     def test_declared_oversize_content_length_rejected_413(self):
         with reloaded_module(MAX_BODY_BYTES="1024") as m:
@@ -318,8 +318,9 @@ class TestBodySizeLimit:
 
 class TestAuthFailureThrottle:
     """A 401 from verify_api_key short-circuits before the route-level limiter,
-    so repeated wrong keys were unthrottled. The per-IP failure throttle caps
-    them: the first N return 401, then further attempts return 429."""
+    so the route limiter alone never throttles repeated wrong keys. The per-IP
+    failure throttle caps them: the first N return 401, then further attempts
+    return 429."""
 
     def test_repeated_failed_auth_eventually_429(self):
         with reloaded_module(API_KEY="s3cret", AUTH_FAILURE_LIMIT="3") as m:

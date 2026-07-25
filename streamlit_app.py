@@ -418,7 +418,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
                 f"percentile (**{pct:.1f}%**) is computed against the full dataset."
             )
 
-        # ── Premium-tier probability (Gap 1 Phase 1 classifier head) ────
+        # ── Premium-tier probability (classifier head) ────
         # The classifier is optional on the API side — older deployments
         # return ``None`` and the dashboard silently skips the tile.
         p_premium = result.get("p_above_premium_threshold")

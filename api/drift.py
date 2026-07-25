@@ -245,9 +245,9 @@ class DriftMonitor:
         # performed (k) is known before any drift decision is made — the
         # familywise correction below needs it.
         feature_values = {
-            # Only count observations that actually carry the feature. The old
-            # ``obs.get(feat, 0.0)`` invented zeros for absent features, which
-            # dragged the mean toward zero and manufactured phantom drift.
+            # Count only observations that carry the feature; folding in absent
+            # features as 0.0 would drag the mean toward zero and manufacture
+            # phantom drift.
             feat: [obs[feat] for obs in observations if feat in obs]
             for feat in self.baseline
         }
@@ -297,9 +297,9 @@ class DriftMonitor:
 
             # Test whether the *mean* of n observations differs from the
             # baseline mean: the correct yardstick is the standard error of
-            # the mean (σ/√n), not the population σ. Dividing by σ alone (the
-            # previous behaviour) required a full multi-σ shift in the raw
-            # feature to alert — i.e. it was statistically near-deaf. With the
+            # the mean (σ/√n), not the population σ. Dividing by the population
+            # σ alone would require a full multi-σ shift in the raw feature to
+            # alert — statistically near-deaf. With the
             # standard error, ``alert_threshold`` is in standard-error units
             # (default 2.0 ≈ a 95% confidence bound on the mean).
             if baseline_std > 0:

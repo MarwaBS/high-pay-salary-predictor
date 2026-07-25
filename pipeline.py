@@ -10,7 +10,7 @@ Single source of truth for:
 
 Design notes
 ------------
-* ``Annual Mean Wage`` was removed from FEATURES_FULL / FEATURES_DEMO because
+* ``Annual Mean Wage`` is excluded from FEATURES_FULL / FEATURES_DEMO because
   it is a near-perfect linear transformation of ``Hourly Mean`` (×2080,
   corr ≈ 1.0000, VIF ≈ 5.4×10⁸).  Keeping both distorts feature-importance
   scores and wastes a feature slot with zero new information.
@@ -315,11 +315,11 @@ def load_classifier(path: str) -> XGBClassifier:
 
     Raises
     ------
-    FileNotFoundError  if *path* does not exist — meaning the classifier
-        head has not been trained yet. Callers that want backwards
-        compatibility with pre-Phase-1 artefacts should catch this
-        exception and degrade gracefully (the API does exactly that:
-        the ``p_above_premium_threshold`` field becomes ``None``).
+    FileNotFoundError  if *path* does not exist — meaning no classifier
+        head is present. Callers that want to run without a classifier
+        should catch this exception and degrade gracefully (the API does
+        exactly that: the ``p_above_premium_threshold`` field becomes
+        ``None``).
     """
     p = Path(path)
     if not p.exists():

@@ -4,10 +4,7 @@ deploy/huggingface/assemble.sh overlays the runtime snapshot onto a clone of
 the Space repo; the Space then runs `docker build` on deploy/huggingface/
 Dockerfile with the Space root as context. If assemble.sh omits (or misplaces)
 any path the Dockerfile `COPY`s, the Space build fails — and nothing catches it,
-because the weekly drift guard only diffs files, it never builds. This exact bug
-shipped once: assemble.sh copied start.sh to the Space ROOT while the Dockerfile
-`COPY deploy/huggingface/start.sh`, so the build would have failed on a missing
-COPY source.
+because the weekly drift guard only diffs files, it never builds.
 
 This test runs assemble.sh into a throwaway dir and asserts every COPY *source*
 in the Space Dockerfile exists in the output — a static stand-in for the build.

@@ -52,7 +52,7 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       # Download model + dataset from object storage BEFORE the API starts.
-      # Replaces the old shared-PVC pattern which required ReadWriteMany.
+      # An initContainer stages artefacts into emptyDir, so no ReadWriteMany PVC.
       initContainers:
         - name: fetch-artefacts
           image: curlimages/curl:8.11.0

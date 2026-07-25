@@ -8,10 +8,9 @@
 # and nothing else. Runtime code dirs are removed-then-copied so a file deleted
 # from the repo is deleted from the Space too.
 #
-# WHY THIS EXISTS: the Space was hand-deployed once (deploy/huggingface/DEPLOY.md)
-# and never re-pushed — it served a 3-month-stale April revision behind a "Live
-# Demo" badge. A demo only a human remembers to redeploy always rots; deploys
-# must ride main. This script is the SINGLE definition of "what the Space should
+# WHY THIS EXISTS: the public HF Space must serve exactly main's committed code
+# + model artefacts. A demo that depends on a human remembering to redeploy
+# drifts. This script is the SINGLE definition of "what the Space should
 # contain", used by BOTH the deploy job (overlay -> commit -> push) and the
 # weekly drift guard (overlay -> any diff means the Space is stale -> fail), so
 # the two can never disagree.
@@ -49,7 +48,7 @@ cp "$REPO_DIR/pyproject.toml" "$SPACE_DIR/pyproject.toml"
 
 # ── Serving artefacts: sync the committed model set wholesale ────────────────
 # Ships every artefact the API loads (the same set tests/test_model_registry.py
-# pins). Removing first drops any stale artefact the old hand-deploy left behind.
+# pins). Removing the directory first ensures no stale artefact persists.
 rm -rf "$SPACE_DIR/models"
 mkdir -p "$SPACE_DIR/models"
 cp "$REPO_DIR"/models/*.ubj "$SPACE_DIR/models/"

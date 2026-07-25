@@ -45,7 +45,7 @@ def test_root_endpoint_version_matches_constant():
     assert body["version"] == __version__, (
         f"GET / returned version={body.get('version')!r} but "
         f"api.__version__={__version__!r}. The root endpoint "
-        f"was hardcoded to a stale version string."
+        f"must not hardcode a version string."
     )
 
 
