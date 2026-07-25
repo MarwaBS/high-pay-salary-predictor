@@ -121,7 +121,7 @@ def tab_overview(df: pd.DataFrame) -> None:
     """Render the Overview EDA tab: key metrics, top occupations, distributions."""
     st.header("Overview")
 
-    top_occ = df["Occupation"].value_counts().idxmax()
+    most_common_occupation = str(df["Occupation"].value_counts().idxmax())
 
     col1, col2, col3, col4 = st.columns(4)
     col1.metric("Total Records", f"{len(df):,}")
@@ -132,7 +132,7 @@ def tab_overview(df: pd.DataFrame) -> None:
     )
     col4.metric(
         "Top Occupation (Volume)",
-        top_occ[:30] + ("..." if len(top_occ) > 30 else ""),
+        most_common_occupation[:30] + ("..." if len(most_common_occupation) > 30 else ""),
     )
 
     st.markdown("---")
@@ -140,7 +140,7 @@ def tab_overview(df: pd.DataFrame) -> None:
     col_left, col_right = st.columns(2)
 
     with col_left:
-        top_occ = (
+        top_paying_occupations = (
             df.groupby("Occupation")["Annual Income"]
             .mean()
             .nlargest(15)
@@ -148,7 +148,7 @@ def tab_overview(df: pd.DataFrame) -> None:
             .rename(columns={"Annual Income": "Avg Annual Income"})
         )
         fig = px.bar(
-            top_occ,
+            top_paying_occupations,
             x="Avg Annual Income",
             y="Occupation",
             orientation="h",
@@ -316,7 +316,8 @@ def _call_predict_api(payload: dict[str, Any]) -> dict[str, Any] | None:
             timeout=10.0,
         )
         response.raise_for_status()
-        return response.json()
+        prediction: dict = response.json()
+        return prediction
     except httpx.HTTPStatusError as exc:
         st.error(f"API returned {exc.response.status_code}: {exc.response.text}")
         return None
@@ -535,7 +536,7 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
         labels={"x": "Actual Income ($)", "y": "Predicted Income ($)"},
         title="Actual vs Predicted Annual Income",
     )
-    max_val = max(y_test.values.max(), y_pred_dollar.max())
+    max_val = max(y_test.to_numpy().max(), y_pred_dollar.max())
     fig2.add_trace(
         go.Scatter(
             x=[0, max_val],

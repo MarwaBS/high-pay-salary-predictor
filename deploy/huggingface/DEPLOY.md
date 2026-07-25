@@ -1,14 +1,15 @@
 # Deploying to Hugging Face Spaces
 
 **Goal**: get the Streamlit dashboard + FastAPI service running as a single
-always-on Docker Space at
+Docker Space at
 `https://<your-hf-username>-high-pay-salary-predictor.hf.space`.
 
 **Total time**: ~15 minutes (10 min of manual clicks + 5–10 min of build time
 on Hugging Face's side).
 
-**Cost**: free. The HF Spaces "CPU Basic" tier gives 16 GB RAM and 2 vCPU,
-always-on, no credit card.
+**Cost**: free. The HF Spaces "CPU Basic" tier gives 16 GB RAM and 2 vCPU, no
+credit card. On the free tier the Space sleeps after inactivity and wakes on
+the next visit (~30 s cold start).
 
 ---
 
@@ -86,64 +87,38 @@ default Dockerfile.
 
 ---
 
-## Step 4 — Copy the deployment files into the Space
+## Step 4 — Assemble the deployment files into the Space
 
-From `hf-space-high-pay`, copy the following **from the deployed project**:
+`deploy/huggingface/assemble.sh` is the authoritative definition of what the
+Space contains: it copies exactly the paths the HF Dockerfile `COPY`s, and
+nothing else. From `hf-space-high-pay`:
 
 ```bash
 # Paths assume you're in the hf-space-high-pay directory
 PROJECT="<PROJECT_DIR>"   # substitute the absolute path to your local clone
 
-# 1. HF-specific files — these replace the Space defaults
-cp "$PROJECT/deploy/huggingface/Dockerfile"      ./Dockerfile
-cp "$PROJECT/deploy/huggingface/README.md"       ./README.md
-cp "$PROJECT/deploy/huggingface/start.sh"        ./start.sh
-cp "$PROJECT/deploy/huggingface/.dockerignore"   ./.dockerignore
-
-# 2. Python source + config
-cp -r "$PROJECT/api"               ./api
-cp -r "$PROJECT/scripts"           ./scripts
-cp    "$PROJECT/pipeline.py"       ./
-cp    "$PROJECT/config_schema.py"  ./
-cp    "$PROJECT/config.yaml"       ./
-cp    "$PROJECT/streamlit_app.py"  ./
-cp    "$PROJECT/pyproject.toml"    ./
-cp    "$PROJECT/requirements-api.txt" ./
-cp    "$PROJECT/requirements.txt"     ./
-cp    "$PROJECT/LICENSE"              ./
-
-# 3. Runtime artefacts (model + data) — baked into the image, no mounts
-cp -r "$PROJECT/models"            ./models
-cp -r "$PROJECT/Data"              ./Data
-
-# 4. Optional: geospatial shapefile for the choropleth tab
-cp -r "$PROJECT/us_state"          ./us_state
-
-# 5. The deploy/ folder itself — so the Dockerfile's COPY of
-#    deploy/huggingface/start.sh resolves at build time.
-mkdir -p ./deploy/huggingface
-cp "$PROJECT/deploy/huggingface/start.sh" ./deploy/huggingface/start.sh
+bash "$PROJECT/deploy/huggingface/assemble.sh" "$PROJECT" .
 ```
 
-> **Windows note**: if you're on plain PowerShell, use `Copy-Item -Recurse`
-> and `Copy-Item` instead of `cp -r` / `cp`. Git Bash supports the Unix-style
-> commands above.
+`tests/test_space_snapshot.py` asserts assemble.sh satisfies every COPY source
+the Dockerfile needs, so a Space assembled this way has everything the build
+reads.
+
+> **Windows note**: run this from Git Bash — `assemble.sh` needs `bash`.
 
 ### What NOT to copy
 
-Keep these **out** of the Space — they're either private, irrelevant to
-the demo, or too large:
+assemble.sh copies only what the image needs, so these reach the Space only if
+you add them by hand. Keep them **out** — they're either private, irrelevant
+to the demo, or too large:
 
-- `private/` — **never** push this directory. It's in `.dockerignore` too.
+- `private/` — **never** push this directory.
 - `tests/` — not used at runtime.
-- `Resources/` (~27 MB raw data), `Images/` (~11 MB), `*.ipynb` — not needed.
+- `Resources/` (~7 MB raw data), `Images/` (~11 MB), `*.ipynb` — not needed.
 - `.git/`, `.github/`, `.vscode/`, `.venv/`, `__pycache__/` — clutter.
 - `Dockerfile` (the original one from the project root, for docker-compose)
-  — you're using the HF-specific Dockerfile instead.
+  — the Space uses the HF-specific Dockerfile instead.
 - `docker-compose.yml`, `Makefile`, `k8s/` — wrong deployment target.
-
-The `.dockerignore` you copied in step 4 will exclude most of these even
-if you accidentally copy them over.
 
 ---
 
@@ -155,8 +130,6 @@ Your `hf-space-high-pay` directory should look roughly like this:
 hf-space-high-pay/
 ├── Dockerfile                 # HF Spaces-specific, runs both services
 ├── README.md                  # Space README with YAML frontmatter
-├── start.sh                   # Bash entrypoint
-├── .dockerignore
 ├── api/
 │   ├── __init__.py
 │   ├── cache.py
@@ -168,25 +141,24 @@ hf-space-high-pay/
 │   └── ...
 ├── models/
 │   ├── xgb_salary_model.ubj
+│   ├── xgb_premium_classifier.ubj
+│   ├── baseline_stats.json
+│   ├── conformal_delta.json
 │   ├── feature_names.json
 │   ├── group_means.json
-│   ├── model_metrics.json
-│   └── baseline_stats.json
+│   └── model_metrics.json
 ├── Data/
 │   └── cleaned_high_pay_data.csv
-├── us_state/
-│   └── ...
 ├── deploy/
 │   └── huggingface/
-│       └── start.sh
+│       ├── requirements-space.txt
+│       └── start.sh              # Bash entrypoint
 ├── pipeline.py
 ├── config_schema.py
 ├── config.yaml
 ├── streamlit_app.py
 ├── pyproject.toml
-├── requirements.txt
-├── requirements-api.txt
-└── LICENSE
+└── requirements-api.txt
 ```
 
 Check that **no `private/` directory** is present. `ls private/` should
@@ -214,7 +186,7 @@ for HF's Git LFS policy), you'll need to enable LFS:
 
 ```bash
 git lfs install
-git lfs track "models/*.ubj" "Data/*.csv" "us_state/*.shp" "us_state/*.dbf"
+git lfs track "models/*.ubj" "Data/*.csv"
 git add .gitattributes
 git commit -m "Track large binaries via LFS"
 git push
@@ -222,9 +194,7 @@ git push
 
 Our `models/xgb_salary_model.ubj` is 588 KB and `Data/cleaned_high_pay_data.csv`
 is 1.3 MB, both well under the 10 MB warning threshold, so LFS is probably
-not needed. `us_state/us_state.shp` is ~15 MB though, so if you included it
-you may hit the LFS warning. You can either enable LFS (above) or just
-skip the `us_state/` directory — the Geographic tab will degrade gracefully.
+not needed.
 
 ---
 
@@ -255,9 +225,9 @@ The most likely failure modes:
 - **Out of memory during `pip install`** — rare on CPU-basic but possible.
   Fix: go to Space **Settings → Hardware** → upgrade temporarily to
   "CPU upgrade" for the first build, then switch back.
-- **`models/xgb_salary_model.ubj` not found** — you forgot to copy the
-  `models/` directory in Step 4. Re-copy and push again.
-- **`Data/cleaned_high_pay_data.csv` not found** — same fix for `Data/`.
+- **`models/xgb_salary_model.ubj` not found** — assemble.sh didn't run to
+  completion in Step 4. Re-run it and push again.
+- **`Data/cleaned_high_pay_data.csv` not found** — same fix.
 
 ---
 
@@ -299,24 +269,20 @@ GitHub repo has a one-click path to the live demo.
 
 ## Updating the Space after code changes
 
-Once the Space is set up, the update flow is:
+Once the Space exists, updates are automatic. `.github/workflows/deploy.yml`
+runs on every push to `main`: it clones the Space, overlays the snapshot with
+`deploy/huggingface/assemble.sh`, and pushes if anything changed. HF then
+rebuilds (~30 s for code-only changes, ~3 min if deps changed). Model updates
+ship the same way — commit the retrained `models/` artefacts to `main`.
 
-1. Make your changes in the main project (`<PROJECT_DIR>`).
-2. Copy the changed files to `hf-space-high-pay/`.
-3. `git commit -am "Update X" && git push` in `hf-space-high-pay/`.
-4. HF rebuilds automatically (~30 s for code-only changes, ~3 min if
-   deps changed).
+This requires a **write-scoped** HF token stored as the `HF_TOKEN` repository
+secret (GitHub → Settings → Secrets and variables → Actions). The workflow
+validates the token first and fails with instructions if it is missing or
+read-scoped.
 
-If you change the model, re-run `python -m scripts.train_quantile` in
-the main project, then copy `models/` and `Data/` over to the Space
-and push.
-
-> **Tip**: you can also add a second git remote to the main project
-> pointing at the Space repo, and use `git push space main` to sync
-> only specific branches. This is faster than copying files but
-> requires careful `.dockerignore` management because the Space will
-> receive the full project tree including `private/` unless excluded.
-> For a portfolio demo the copy-and-push flow above is safer.
+A weekly `space-drift` job in the same workflow re-runs the assembly against
+the live Space read-only; any diff means the Space is no longer serving
+`main`, and the job fails.
 
 ---
 
@@ -336,8 +302,8 @@ and push.
 ## What to commit back to the main project
 
 **Only** commit the `deploy/huggingface/` directory (Dockerfile, start.sh,
-README.md, .dockerignore, this DEPLOY.md) to the main GitHub project.
-That's the deployment tooling. The Space repo itself is separate and
-stays local (or gets pushed only to HF).
+README.md, requirements-space.txt, assemble.sh, this DEPLOY.md) to the main
+GitHub project. That's the deployment tooling. The Space repo itself is
+separate and stays local (or gets pushed only to HF).
 
 **Never** commit your HF access token to either repo.

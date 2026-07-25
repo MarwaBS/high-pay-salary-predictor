@@ -29,6 +29,11 @@ thresholds:
 model:
   test_size: 0.20
   random_state: 42
+  # Training threads. XGBoost's hist method sums gradient histograms in
+  # thread-partition order, so the fitted bytes and every reported metric
+  # depend on the thread count; 1 is the only value that reproduces on a
+  # machine of any size. Raise it only if you accept machine-specific bytes.
+  n_jobs: 1
   # XGBoost hyper-parameters — multi-quantile XGBoost via
   # ``reg:quantileerror`` with ``quantile_alpha=[0.10, 0.50, 0.90]``.
   # Trained on log1p(Annual Income); callers must expm1() the prediction.
@@ -43,6 +48,8 @@ model:
   log_transform_target: true
   # Cross-validation
   cv_folds: 5
+  # Seeds the trainer refits under to report metric spread across resplits.
+  stability_seeds: [11, 22, 33, 44, 55]
   # Saved artefacts — XGBoost native format (.ubj) and JSON (no pickle)
   model_path: "models/xgb_salary_model.ubj"
   features_path: "models/feature_names.json"

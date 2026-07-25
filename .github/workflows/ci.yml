@@ -93,18 +93,31 @@ jobs:
         # code for issues bandit flags (hardcoded secrets, insecure
         # yaml.load, weak crypto, etc.). Fails on MEDIUM+ severity.
         run: |
-          pip install bandit
-          bandit -r api/ pipeline.py scripts/ -n 3 -ll
+          pip install bandit==1.9.4
+          bandit -r api/ pipeline.py scripts/ config_schema.py streamlit_app.py -n 3 -ll
 
       - name: Format check with ruff
         run: |
           ruff format --check .
 
+      - name: Enforce the repo-safety pre-commit hooks
+        # These hooks otherwise protect only contributors who ran
+        # `pre-commit install`, so a committed key or a large blob reaches main
+        # unchallenged. Lint/format/type hooks are omitted: they already run as
+        # their own steps above, on the pinned versions.
+        if: matrix.python-version == '3.12'
+        run: |
+          pip install pre-commit
+          pre-commit run --all-files detect-private-key
+          pre-commit run --all-files check-added-large-files
+          pre-commit run --all-files check-merge-conflict
+
       - name: Type-check with mypy
         # Matches the Makefile `type-check` target and the pre-commit hook.
         run: |
-          pip install mypy pandas-stubs
-          mypy api pipeline.py scripts
+          # mypy is pinned in requirements.txt; only the stubs are added here.
+          pip install pandas-stubs
+          mypy api pipeline.py scripts config_schema.py streamlit_app.py
 
       - name: Verify committed model artefacts (integrity gate)
         run: |
@@ -155,6 +168,54 @@ jobs:
           if errors:
               sys.exit(1)
           EOF
+
+  # ── Build the images on every change, so a broken Dockerfile blocks a PR ───
+  # The deploy job below only runs after merge, where its failure no longer
+  # gates anything. This builds both images (no registry push, no credentials)
+  # so a broken stage or a missing COPY source is caught while it is still
+  # reviewable. tests/test_docker_image.py parses the Dockerfile text; only an
+  # actual build proves it assembles.
+  docker-build:
+    name: Docker build (no push)
+    needs: [test]
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: api
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build dashboard image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: dashboard
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build HuggingFace Space image
+        # The Space image is built by HF from an assembled snapshot, so a break
+        # here surfaces only after a push to the Space. Assemble and build it
+        # here instead.
+        run: |
+          set -euo pipefail
+          snapshot="$(mktemp -d)"
+          bash deploy/huggingface/assemble.sh . "$snapshot"
+          docker build -f "$snapshot/Dockerfile" "$snapshot"
 
   # ── CD: Build & Push Docker images on merge to main ────────────────────────
   deploy:

@@ -28,7 +28,7 @@ on:
   push:
     branches: [main]
   schedule:
-    # Weekly, offset from CI (Mon 06:00) and train.yml (Mon 03:00) so a shared
+    # Weekly, offset from CI (Mon 05:00) and train.yml (Mon 03:00) so a shared
     # runner hiccup doesn't take out multiple signals at once.
     - cron: "30 6 * * 1"
 

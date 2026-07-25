@@ -9,6 +9,7 @@ Endpoints:
   GET  /meta        — valid states, occupations, education levels
   GET  /metrics     — Prometheus metrics (auto-instrumented)
   POST /predict     — salary prediction with contextual benchmarks and PI
+  POST /predict/batch — up to 1000 predictions scored in one vectorised call
   GET  /drift       — feature drift report (cluster-wide with Redis)
 
 Run locally:
@@ -28,6 +29,12 @@ Environment variables:
                         rate limiter and logging read the Nth-from-last
                         entry of X-Forwarded-For. Default: 0 (bind to the
                         direct client.host — dev / no proxy).
+  AUTH_FAILURE_LIMIT    Failed X-API-Key attempts allowed per IP within the
+                        window before 429. Default: 10.
+  AUTH_FAILURE_WINDOW_S Sliding window for that budget, in seconds.
+                        Default: 60.
+  MAX_BODY_BYTES        Request bodies above this are rejected with 413,
+                        counted as streamed. Default: 512 KiB.
   REDIS_URL             Optional. Enables the PredictionCache and the
                         shared drift monitor window. Default: no-op.
   CACHE_TTL             Prediction cache TTL in seconds. Default: 3600.

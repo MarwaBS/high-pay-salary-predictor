@@ -1,3 +1,4 @@
-# Pin the conformal artefact to LF so its committed bytes match the recorded
-# content-addressed hash on every platform (the integrity gate re-hashes the file).
-models/conformal_delta.json text eol=lf
+# Pin every content-addressed artefact to LF so its committed bytes match the
+# SHA-256 recorded in model_metrics.json on every platform (the integrity gate
+# re-hashes these files, so a checkout that rewrote line endings would fail it).
+models/*.json text eol=lf

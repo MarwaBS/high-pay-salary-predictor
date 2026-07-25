@@ -74,30 +74,26 @@ class DriftMonitor:
         baseline_stats : per-feature statistics from training set
                          {feature: {mean, std, min, max}}
         window         : number of recent observations to keep
-        alert_threshold: base standard-error z-score that sets the FAMILYWISE
-                         significance level of the detector: alpha_family =
-                         erfc(alert_threshold/sqrt(2)) (two-sided normal tail,
-                         default 2.0 -> ~4.6%). Because ~10 features are tested
-                         per report, the per-feature significance cut is
-                         Sidak-adjusted from this familywise alpha (see
-                         ``check_drift``) — an UNcorrected per-feature z>2 test
-                         false-alarmed on ~37% of stationary 30-observation
-                         windows (measured, 2000 bootstrap trials on the real
-                         baseline; the union of ~10 per-feature tests).
-        min_effect_size: minimum |mean shift| in baseline-std units required to
-                         flag drift, ON TOP OF statistical significance. Without
-                         it, the standard-error z-score alone alarms on a shift of
-                         only ``alert_threshold/sqrt(window)`` std — at the default
-                         window=500 that is ~0.09 std, so any real (never i.i.d.)
-                         traffic trips it constantly. Requiring BOTH significance
-                         AND a practical effect (Cohen's-d small = 0.2) means a
-                         genuinely-i.i.d. window at n=500 (mean wanders ~0.045 std)
-                         stays silent, while a consistent >=0.2-std shift alarms.
-                         While the window is still FILLING (n < 2*(z/d)^2 = 200 at
-                         the defaults) this fixed floor is vacuous — significance
-                         alone already implies a larger shift — so the effective
-                         floor is ramp-scaled: max(min_effect_size,
-                         alert_threshold*sqrt(2/n)). See ``check_drift``.
+        alert_threshold: base standard-error z-score setting the FAMILYWISE
+                         significance level: alpha_family =
+                         erfc(alert_threshold/sqrt(2)) (two-sided normal tail;
+                         default 2.0 -> ~4.6%). Around 10 features are tested
+                         per report, so the per-feature cut is Sidak-adjusted
+                         from this familywise alpha (see ``check_drift``).
+                         Testing each feature at the raw cut instead lets the
+                         union of k tests alarm at 1-(1-alpha)^k — an order of
+                         magnitude above the headline rate.
+        min_effect_size: minimum |mean shift| in baseline-std units required ON
+                         TOP OF statistical significance. Significance alone
+                         scales with n — at window=500 a ~0.09-std wobble
+                         clears it — so never-quite-i.i.d. production traffic
+                         would alarm forever. Requiring a practical effect too
+                         (Cohen's d small = 0.2) keeps an i.i.d. window silent
+                         while a consistent >=0.2-std shift still fires. The
+                         fixed floor is vacuous while the window is filling, so
+                         the effective floor is ramp-scaled to
+                         max(min_effect_size, alert_threshold*sqrt(2/n)).
+                         See ``check_drift``.
         redis_client   : optional Redis client. If provided (or discoverable
                          from REDIS_URL), observations are stored in a
                          shared list so multi-replica Deployments aggregate
@@ -399,5 +395,5 @@ def save_baseline_stats(
         }
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(stats, f, indent=2)

@@ -6,7 +6,7 @@ every model test load what it writes. This test locks the trainer's own
 contract end-to-end.
 
 This test runs ``main()`` end-to-end against the real dataset but into a
-throwaically-isolated output tree (``ROOT`` monkeypatched to ``tmp_path``) so it
+throwaway-isolated output tree (``ROOT`` monkeypatched to ``tmp_path``) so it
 never touches the committed ``models/`` artefacts, with the stability sweep cut
 to a single seed for speed. It then asserts the artefacts exist and the metrics
 are structurally sane — locking the trainer's contract, not just its coverage.

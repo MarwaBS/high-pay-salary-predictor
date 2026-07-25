@@ -165,12 +165,18 @@ class PredictResponse(BaseModel):
     )
     group_median: float = Field(
         ...,
-        description="Median annual income for the same state + education level ($).",
+        description=(
+            "Median annual income of the reference distribution named by "
+            "``percentile_scope``: the same state + education level when that "
+            "cell has data, otherwise the whole dataset ($)."
+        ),
         examples=[148000.0],
     )
     group_mean: float = Field(
         ...,
-        description="Mean annual income for the same state + education level ($).",
+        description=(
+            "Mean annual income of the same reference distribution as ``group_median`` — see ``percentile_scope`` ($)."
+        ),
         examples=[160000.0],
     )
     group_size: int = Field(
@@ -271,10 +277,13 @@ class HealthResponse(BaseModel):
         default_factory=dict,
         description=(
             "SHA-256 digest of each served artefact (model, classifier, "
-            "features, group_means, baseline_stats), recorded by the trainer "
-            "in ``models/model_metrics.json``. The API verifies these on load "
-            "and crashes on mismatch, so a non-empty map here is proof the "
-            "running process is serving exactly the audited bytes."
+            "conformal, features, group_means, baseline_stats), recorded by "
+            "the trainer in ``models/model_metrics.json``. Every recorded "
+            "artefact that is present on disk is re-hashed at startup and a "
+            "mismatch crashes the process, so these digests describe the bytes "
+            "actually loaded. An artefact that is recorded but absent is "
+            "skipped rather than verified — the optional ones degrade "
+            "loudly in the logs instead (see ``model_loaded``)."
         ),
     )
 
