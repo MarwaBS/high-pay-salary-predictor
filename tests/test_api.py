@@ -186,6 +186,19 @@ class TestValidation:
         r = client.post("/predict", json=payload)
         assert r.status_code == 422
 
+    def test_unknown_education_level_422(self, client):
+        """``education_level`` is free-form text, so the domain check is the only
+        thing standing between an unmapped label and a KeyError during encoding."""
+        payload = {
+            "state": "CA",
+            "occupation": "Software Developers",
+            "education_level": "Some College",
+            "gender": "Female",
+            "age": 32,
+        }
+        r = client.post("/predict", json=payload)
+        assert r.status_code == 422, r.text
+
     def test_invalid_gender_422(self, client):
         payload = {
             "state": "CA",

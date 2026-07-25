@@ -66,3 +66,40 @@ def test_disabled_cache_is_noop():
     assert c.enabled is False
     assert c.get({"state": "CA"}) is None
     c.set({"state": "CA"}, {"predicted_salary": 1.0})  # must not raise
+
+
+class _DeadRedis(_FakeRedis):
+    """Every operation raises — Redis died after the cache was constructed."""
+
+    def get(self, key: str):
+        raise ConnectionError("simulated redis outage")
+
+    def setex(self, key: str, ttl: int, value: str) -> None:
+        raise ConnectionError("simulated redis outage")
+
+
+def test_read_failure_degrades_to_a_miss():
+    """A dead Redis must cost a cache hit, never a failed prediction."""
+    c = _cache_with_fake()
+    c._client = _DeadRedis()
+    c.version = "v1"
+    assert c.get({"state": "CA", "age": 30}) is None
+
+
+def test_write_failure_is_swallowed():
+    """A failed cache write must not propagate into the request path."""
+    c = _cache_with_fake()
+    c._client = _DeadRedis()
+    c.version = "v1"
+    c.set({"state": "CA", "age": 30}, {"predicted_salary": 1.0})  # must not raise
+
+
+def test_corrupt_cached_value_degrades_to_a_miss():
+    """Undecodable bytes in Redis are a miss, not a 500."""
+    c = _cache_with_fake()
+    c.version = "v1"
+    payload = {"state": "CA", "age": 30}
+    c.set(payload, {"predicted_salary": 1.0})
+    key = next(iter(c._client.store))
+    c._client.store[key] = "{not-json"
+    assert c.get(payload) is None

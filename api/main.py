@@ -190,8 +190,10 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
     if not API_KEY:
         return None  # dev mode: no auth required
     # Constant-time comparison so a timing side-channel can't be used to
-    # recover the key byte by byte.
-    if key is None or not secrets.compare_digest(key, API_KEY):
+    # recover the key byte by byte. Compared as UTF-8 bytes because header
+    # values decode as latin-1: compare_digest rejects non-ASCII str, and a
+    # wrong key must resolve to 401 rather than raise past the throttle below.
+    if key is None or not secrets.compare_digest(key.encode("utf-8"), API_KEY.encode("utf-8")):
         # Throttle brute-force key guessing per IP — the route-level limiter
         # never sees this request because the 401 short-circuits before it.
         within_budget = _auth_throttle.record_failure(_client_ip(request), time.monotonic())
@@ -414,18 +416,21 @@ async def lifespan(app: FastAPI):
     # emitted by scripts/train_quantile.py. Falls back to "unknown" on
     # pre-provenance artefacts so the API is backwards-compatible.
     state.model_version = str(metrics.get("model_version", "unknown"))
-    # Namespace the prediction cache by model version so a retrain never
-    # serves a previous model's cached predictions from a shared Redis.
-    cache.version = state.model_version
 
     # ── Artifact integrity: served bytes must match what training recorded ───
-    # /health reports model_version from the metrics sidecar, but nothing tied
-    # that string to the actual .ubj/.json files on disk — a swapped or
-    # partially-copied artefact would serve under a /health that still claims
-    # the trained version. Re-hash each loaded artefact against the recorded
-    # SHA-256 and crash the probe on mismatch, same fail-loud posture as the
-    # threshold check below.
+    # /health reports model_version from the metrics sidecar; re-hashing each
+    # loaded artefact against the recorded SHA-256 is what ties that string to
+    # the .ubj/.json files actually on disk, so a swapped or partially-copied
+    # artefact crashes the probe instead of serving under a /health that claims
+    # the trained version. Same fail-loud posture as the threshold check below.
     state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
+
+    # Namespace the prediction cache by model version AND the served model's
+    # digest, so a retrain never serves a previous model's cached predictions
+    # from a shared Redis. The digest is required: model_version is built from
+    # the git SHA and input CSV, so a retrain that only changes hyperparameters
+    # leaves it identical while the model bytes differ.
+    cache.version = f"{state.model_version}.{state.artifact_sha256.get('model', '')[:12]}"
     if state.artifact_sha256:
         artefact_files = {
             "model": ROOT / VALIDATED_CFG.model.model_path,
