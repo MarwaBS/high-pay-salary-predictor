@@ -33,11 +33,9 @@ repos:
         # committed conflict marker passes. CI is never mid-merge.
         args: [--assume-in-merge]
       - id: check-added-large-files
-        # --enforce-all checks every tracked file, not only newly staged ones:
-        # a fresh CI checkout stages nothing, so the default inspects an empty
-        # set and passes unconditionally. Exactly two source files exceed the
-        # cap and ship deliberately (7 MB BLS workbook, 15 MB shapefile); both
-        # are matched in full so a new large file beside them is still caught.
+        # --enforce-all: a fresh CI checkout stages nothing, so the default
+        # inspects an empty set. The two exclusions are the source datasets
+        # that ship over the cap, matched in full so neighbours are caught.
         args: [--maxkb=5000, --enforce-all]
         exclude: ^(Resources/bls_state_data\.xlsx|us_state/us_state\.shp)$
       - id: debug-statements    # catch leftover pdb / breakpoint() calls

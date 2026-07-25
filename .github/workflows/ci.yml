@@ -101,15 +101,9 @@ jobs:
           ruff format --check .
 
       - name: Enforce the repo-safety pre-commit hooks
-        # These hooks otherwise protect only contributors who ran
-        # `pre-commit install`, so a committed key or a large blob reaches main
-        # unchallenged. Lint/format/type hooks are omitted: they already run as
-        # their own steps above, on the pinned versions.
-        #
-        # The --enforce-all / --assume-in-merge args in .pre-commit-config.yaml
-        # are load-bearing here: a fresh checkout stages nothing and is not
-        # mid-merge, so by default these two hooks inspect an empty set and pass
-        # unconditionally.
+        # Otherwise these protect only contributors who ran `pre-commit
+        # install`. Lint/format/type hooks are omitted -- they run as their own
+        # steps, on the pinned versions.
         if: matrix.python-version == '3.12'
         run: |
           pip install pre-commit
@@ -118,10 +112,8 @@ jobs:
           pre-commit run --all-files check-merge-conflict
 
       - name: Type-check with mypy
-        # Widest surface of the three: the Makefile target and the pre-commit
-        # hook cover api/, pipeline.py and scripts/, which already pulls in
-        # config_schema.py through api.main. streamlit_app.py is the genuine
-        # addition — nothing imports it, so only naming it type-checks it.
+        # streamlit_app.py is imported by nothing, so it is only checked when
+        # named; the pre-commit hook covers the rest via import-following.
         run: |
           # mypy is pinned in requirements.txt; only the stubs are added here.
           pip install pandas-stubs
@@ -178,11 +170,8 @@ jobs:
           EOF
 
   # ── Build the images on every change, so a broken Dockerfile blocks a PR ───
-  # The deploy job below only runs after merge, where its failure no longer
-  # gates anything. This builds both images (no registry push, no credentials)
-  # so a broken stage or a missing COPY source is caught while it is still
-  # reviewable. tests/test_docker_image.py parses the Dockerfile text; only an
-  # actual build proves it assembles.
+  # The deploy job below runs only after merge, too late to gate anything, and
+  # tests/test_docker_image.py parses the Dockerfile rather than building it.
   docker-build:
     name: Docker build (no push)
     needs: [test]

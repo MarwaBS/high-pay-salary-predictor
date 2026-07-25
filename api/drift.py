@@ -16,9 +16,9 @@ Storage backends
   a process-local deque. Drift in this mode is per-replica and therefore
   only meaningful when replicas=1.
 
-Once Redis is the selected backend it stays selected: observations lost to
-a later Redis failure are dropped rather than diverted to the deque, and
-``check_drift`` withholds its verdict until writes land again.
+Once Redis is the selected backend it stays selected: observations lost to a
+later failure are dropped rather than diverted to the deque, and ``check_drift``
+withholds its verdict until as many fresh ones have landed.
 
 The backend is selected automatically by ``DriftMonitor.__init__`` based on
 whether a Redis client is provided / available.
@@ -100,8 +100,7 @@ class DriftMonitor:
                          correctly.
         """
         if window < 1:
-            # A zero window would cap the dropped-write backlog at zero, turning
-            # the verdict-withholding guard into a permanent all-clear.
+            # Would cap the dropped-write backlog at zero: a permanent all-clear.
             raise ValueError(f"window must be >= 1, got {window}")
         self.baseline = baseline_stats
         self.window = window
@@ -109,11 +108,8 @@ class DriftMonitor:
         self.min_effect_size = min_effect_size
         self.buffer: deque[dict[str, float]] = deque(maxlen=window)
         self._observation_count = 0
-        #: Outstanding observations lost to failed Redis writes, capped at
-        #: ``window``. Worked off one per successful write; non-zero means the
-        #: shared window is still missing live traffic. Per-process: a replica
-        #: that dropped withholds its own verdict while a sibling that did not
-        #: still serves one from the same shared window.
+        #: Backlog of observations lost to failed Redis writes, per process.
+        #: Non-zero means the shared window is still missing live traffic.
         self._dropped_writes = 0
         self._redis = redis_client or self._discover_redis()
         if self._redis is not None:
@@ -165,30 +161,15 @@ class DriftMonitor:
                 # Observation counter (monotonic across all replicas).
                 pipe.incr(f"{REDIS_DRIFT_KEY}:count")
                 pipe.execute()
-                # Recover proportionally, not on the first success: one landed
-                # observation does not make up for a window that is missing
-                # hundreds. The verdict resumes once as much fresh traffic has
-                # landed as was lost.
+                # One landed observation replaces one lost, so the verdict
+                # resumes only once the window has been made whole.
                 self._dropped_writes = max(0, self._dropped_writes - 1)
                 return
             except Exception as exc:
-                # Drop the observation rather than write it to the local deque:
-                # on a Redis deployment that deque is NOT the authoritative
-                # window (reads come from the shared list), so mixing planes
-                # would leave a misleading partial window behind for a later
-                # read-failure to serve. The capped shared list refills from
-                # healthy traffic. Counted so ``check_drift`` withholds its
-                # verdict while traffic is missing from the window, and capped
-                # at the window size: the shared list holds at most ``window``
-                # entries, so a backlog beyond that would keep the monitor dark
-                # after the window already held nothing but post-outage data.
-                #
-                # This bounds how long an outage blinds the monitor; it does not
-                # detect a partial one. Because each success works off one drop,
-                # a failure rate below half drains the backlog to zero and the
-                # verdict resumes while a minority of observations is still
-                # being discarded — the dropped-write log line is the signal for
-                # that case.
+                # Dropped, not diverted to the deque: on a Redis deployment
+                # reads come from the shared list, so a partial local window
+                # would only mislead a later read failure. Capped at the window
+                # size, past which no pre-outage data can remain.
                 self._dropped_writes = min(self._dropped_writes + 1, self.window)
                 logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
                 return
@@ -248,12 +229,9 @@ class DriftMonitor:
         dropped = self._dropped_writes
 
         if degraded or dropped:
-            # Either the window could not be read, or live observations were
-            # dropped before reaching it. Both leave the window unrepresentative,
-            # and ``any_drifted: False`` would be a clean bill of health the data
-            # does not support. Emit ``None`` under an explicit unavailable
-            # status instead. Dropped writes are the subtler case: reads still
-            # succeed, so the stale window loads and looks healthy.
+            # Unreadable or incomplete, so ``any_drifted: False`` would be a
+            # clean bill of health the data does not support. Dropped writes are
+            # the subtler case: reads still succeed and the window looks fine.
             reason = (
                 "Redis backend unreachable"
                 if degraded

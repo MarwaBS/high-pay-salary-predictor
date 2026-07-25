@@ -42,14 +42,8 @@ class PredictionCache:
 
     def __init__(self) -> None:
         self._client = None
-        # Namespaces every key by the served model's content address. Without
-        # it, a retrain pushes a new model while a shared Redis still holds the
-        # previous model's predictions, so callers are served stale values for
-        # up to the TTL and replicas on different models cross-contaminate.
-        # ``api.main`` sets this in the lifespan; it must include the artefact
-        # digest, because ``model_version`` alone is derived from the git SHA
-        # and input CSV and so is unchanged by a retrain that only edits
-        # hyperparameters in ``config.yaml``.
+        # Set by ``api.main`` to the served model's content address, so a
+        # retrain cannot serve the previous model's cached predictions.
         self.version: str = ""
         if REDIS_URL:
             try:

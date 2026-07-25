@@ -144,40 +144,14 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
-# The key must be printable ASCII with no spaces. Three different reasons,
-# measured against the parser this service runs on (uvicorn[standard] selects
-# httptools; h11 differs in the details below):
-#
-# The correct key would never match, so every request 401s with no diagnostic:
-#   - non-ASCII has no encoding the clients agree on. httpx refuses to send it
-#     at all, while http.client (so requests and urllib3) puts latin-1 on the
-#     wire; a key that works for one cannot work for the other. This also
-#     covers the surrogates CPython yields from a non-UTF-8 environment
-#     variable, which would otherwise raise on every request rather than 401.
-#   - a leading space or tab is dropped as optional whitespace before the app
-#     sees the value, so what arrives never equals what was configured.
-#   - a trailing space or tab survives httptools but httpx refuses to send it,
-#     so whether it authenticates depends on the caller's client library.
-#   - a newline cannot be transmitted: every client tested rejects it. This is
-#     the common misconfiguration, since `kubectl create secret --from-file`
-#     keeps the newline at the end of the file.
-#
-# The request never reaches the application at all:
-#   - control characters other than tab make httptools answer 400 itself.
-#
-# Refused as near-certain misconfiguration, though they do round-trip:
-#   - internal spaces and tabs would authenticate, but a key carrying them is
-#     almost always a quoting or copy-paste accident, and keys that differ only
-#     by an invisible character are undebuggable.
+# Anything outside printable non-space ASCII either fails to survive an HTTP
+# header or is rejected by the parser, so the correct key would 401 forever.
 if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
-        "API_KEY must consist only of printable ASCII with no spaces "
-        "(0x21-0x7E). Non-ASCII, surrounding whitespace and newlines cannot be "
-        "sent and matched reliably, so they would reject the correct key on "
-        "every request; control characters other than tab make the server "
-        "answer 400; internal spaces and tabs are refused as near-certain "
-        "misconfiguration. Use base64 or hex, and check for a trailing newline "
-        "if the value came from a file."
+        "API_KEY must be printable ASCII with no spaces (0x21-0x7E); other "
+        "values cannot be matched reliably and would reject the correct key on "
+        "every request. Use base64 or hex, and check for a trailing newline if "
+        "the value came from a file."
     )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -231,13 +205,10 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
     """Validate API key if API_KEY is configured; skip in dev mode (unset)."""
     if not API_KEY:
         return None  # dev mode: no auth required
-    # Constant-time comparison so a timing side-channel can't be used to
-    # recover the key byte by byte. Compared as bytes, not str: compare_digest
-    # rejects non-ASCII str, so a submitted key carrying any byte >= 0x80 would
-    # raise past the throttle below instead of resolving to 401. Encoding the
-    # header back to latin-1 recovers the exact bytes the client sent, since
-    # that is the codec starlette decoded them with; API_KEY is printable ASCII
-    # by the check at import, so its own encoding is unambiguous.
+    # Constant-time, and as bytes: compare_digest rejects non-ASCII str, which
+    # would raise past the throttle below instead of resolving to 401. latin-1
+    # is the codec starlette decoded the header with, so it recovers the bytes
+    # the client actually sent.
     if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("ascii")):
         # Throttle brute-force key guessing per IP — the route-level limiter
         # never sees this request because the 401 short-circuits before it.
@@ -463,18 +434,12 @@ async def lifespan(app: FastAPI):
     state.model_version = str(metrics.get("model_version", "unknown"))
 
     # ── Artifact integrity: served bytes must match what training recorded ───
-    # /health reports model_version from the metrics sidecar; re-hashing each
-    # loaded artefact against the recorded SHA-256 is what ties that string to
-    # the .ubj/.json files actually on disk, so a swapped or partially-copied
-    # artefact crashes the probe instead of serving under a /health that claims
-    # the trained version. Same fail-loud posture as the threshold check below.
+    # Re-hashing each loaded artefact is what ties the model_version /health
+    # reports to the files on disk, so a swapped one crashes the probe.
     state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
 
-    # Namespace the prediction cache by model version AND the served model's
-    # digest, so a retrain never serves a previous model's cached predictions
-    # from a shared Redis. The digest is required: model_version is built from
-    # the git SHA and input CSV, so a retrain that only changes hyperparameters
-    # leaves it identical while the model bytes differ.
+    # The digest is required: model_version comes from the git SHA and input
+    # CSV, so a hyperparameter-only retrain leaves it identical.
     cache.version = f"{state.model_version}.{state.artifact_sha256.get('model', '')[:12]}"
     if state.artifact_sha256:
         artefact_files = {

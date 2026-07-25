@@ -547,12 +547,7 @@ class TestConfigSchema:
             ProjectConfig(**broken)
 
     def test_classifier_path_without_hyperparameters_rejected(self, cfg):
-        """A configured classifier needs every setting the trainer relies on.
-
-        Six are read unguarded, so a half-declared classifier kills a training
-        run partway through with a KeyError; ``premium_threshold`` instead falls
-        back to 150000 and fits a head against a boundary nobody configured.
-        """
+        """A configured classifier needs every setting the trainer relies on."""
         import copy
 
         from pydantic import ValidationError
