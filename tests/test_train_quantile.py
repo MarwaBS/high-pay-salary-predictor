@@ -2,9 +2,8 @@
 End-to-end trainer test for ``scripts/train_quantile.py``.
 
 The trainer is the critical artefact-producing path: the API, dashboard, and
-every model test load what it writes, but nothing asserted anything about the
-trainer's own code, so under coverage it read 0% — a 205-statement
-blind spot on the most important script in the repo.
+every model test load what it writes. This test locks the trainer's own
+contract end-to-end.
 
 This test runs ``main()`` end-to-end against the real dataset but into a
 throwaically-isolated output tree (``ROOT`` monkeypatched to ``tmp_path``) so it

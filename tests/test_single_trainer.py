@@ -60,8 +60,8 @@ def test_quantile_trainer_uses_quantile_objective():
     literals = {node.value for node in ast.walk(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str)}
     assert "reg:quantileerror" in literals, (
         "scripts/train_quantile.py must train with objective='reg:quantileerror'. "
-        "Falling back to 'reg:squarederror' would re-introduce the v1 "
-        "point-estimate framing that the v2 quantile reframe replaced."
+        "Falling back to 'reg:squarederror' would re-introduce point-estimate "
+        "framing instead of quantile regression."
     )
 
 

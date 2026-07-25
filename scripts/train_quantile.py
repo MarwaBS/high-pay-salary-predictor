@@ -24,18 +24,18 @@ a calibrated quantile interval instead. The classifier head answers a
 (>= $150K) even plausible? A caller needs *both* — "will I likely clear
 the bar?" plus "if so, what's the range?".
 
-Gap 1 framing — phases
-----------------------
-**Phase 1 (this file)**: premium-tier classifier trained *inside the
-existing high-pay cohort*. The label is ``Annual Income >= $150K`` —
-a well-defined, supportable binary task on the data that exists in the
+Classifier scope
+----------------
+This file trains the premium-tier classifier *inside the existing
+high-pay cohort*. The label is ``Annual Income >= $150K`` — a
+well-defined, supportable binary task on the data that exists in the
 repo (roughly 40/60 class balance, see ``models/model_metrics.json``).
 
-**Phase 2 (deferred, blocked on raw data)**: a true "is this profile
-above the $100K line at all?" membership classifier would require the
-*unfiltered* IPUMS Census microdata — a separate fetch with an IPUMS
-API key, not just a file in ``Data/``. When that raw file is added,
-Phase 2 becomes a 2-hour follow-up to this trainer.
+A broader "is this profile above the $100K line at all?" membership
+classifier is deferred: it would require the *unfiltered* IPUMS Census
+microdata — a separate fetch with an IPUMS API key, not just a file in
+``Data/`` — and becomes a follow-up to this trainer once that raw file
+is added.
 
 No MLflow / Optuna dependencies — this trainer is deliberately lean so
 it can run on a CI worker or a dev machine without pulling an
@@ -540,7 +540,7 @@ def main() -> None:
         int(width_median_conformal),
     )
 
-    # ── Premium-tier classifier head (Gap 1 Phase 1) ────────────────────────
+    # ── Premium-tier classifier head ────────────────────────────────────────
     # Binary XGBoost classifier trained on the same engineered feature
     # matrix as the quantile regressor. Label: Annual Income >= the
     # premium threshold configured in config.yaml; hyper-parameters come
@@ -745,7 +745,7 @@ def main() -> None:
         "log_transform": True,
         "fixed_group_means": True,
         "objective": "reg:quantileerror",
-        # Premium-tier classifier head (Gap 1 Phase 1)
+        # Premium-tier classifier head
         "classifier_objective": "binary:logistic",
         "classifier_threshold": premium_threshold,
         "classifier_positive_rate_train": round(pos_rate_train, 4),

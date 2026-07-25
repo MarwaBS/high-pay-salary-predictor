@@ -163,8 +163,9 @@ class TestDriftSensitivityAtWindow500:
 
     def test_iid_from_baseline_at_n500_does_not_alarm(self):
         """Drawing 500 observations straight from the baseline distribution — i.e.
-        NO real drift — must not alarm. Before the effect-size floor this falsely
-        alarmed on ~50% of windows (each feature ~5% × several features)."""
+        NO real drift — must not alarm. Without the effect-size floor, significance
+        alone would falsely alarm on ~50% of windows (each feature ~5% × several
+        features)."""
         import numpy as np
 
         rng = np.random.default_rng(20260617)

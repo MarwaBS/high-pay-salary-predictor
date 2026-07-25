@@ -1,9 +1,9 @@
 # Deploy the runtime snapshot to the Hugging Face Space + weekly drift guard.
 #
-# WHY THIS EXISTS: the Space was assembled by hand once (deploy/huggingface/
-# DEPLOY.md) and never re-pushed — it served a 3-month-stale April revision
-# behind a "Live Demo" badge in the README. A demo only a human remembers to
-# redeploy will always rot; deploys must ride main.
+# WHY THIS EXISTS: the public HF Space must serve exactly main's committed code
+# + model artefacts. A demo that depends on a human remembering to redeploy
+# drifts, so deploy-space redeploys on every push to main and the weekly
+# read-only space-drift guard fails if the live Space diverges.
 #
 # Two jobs, one assembly script (deploy/huggingface/assemble.sh — shared so the
 # deploy and the guard can never diverge):

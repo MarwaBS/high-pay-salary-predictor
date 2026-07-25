@@ -2,9 +2,8 @@
 #
 # This is the ONLY file consumed by the `dashboard-builder` Docker stage
 # (Streamlit UI + viz stack: streamlit, plotly, matplotlib, plus the
-# pipeline.py runtime deps). It replaces the hand-listed `>=` floors
-# that previously lived inline in the Dockerfile and were never covered by
-# any CVE audit.
+# pipeline.py runtime deps). Pinning them here — rather than as hand-listed
+# `>=` floors inline in the Dockerfile — puts them under the CVE audit gate.
 #
 # Why pinned (==) instead of floors (>=):
 #   - Reproducible images — same policy as requirements-api.txt.
