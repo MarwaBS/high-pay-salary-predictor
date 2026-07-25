@@ -11,9 +11,14 @@ Storage backends
   pushed onto a shared Redis list and trimmed to the window size. Every
   replica reads and writes the same window, so `/drift` returns a single
   cluster-wide view regardless of which pod handled a given prediction.
-- **In-memory (fallback)**: if Redis is unreachable or ``REDIS_URL`` is
-  unset, observations are stored in a process-local deque. Drift in this
-  mode is per-replica and therefore only meaningful when replicas=1.
+- **In-memory (fallback)**: if ``REDIS_URL`` is unset, or Redis is
+  unreachable when the monitor is constructed, observations are stored in
+  a process-local deque. Drift in this mode is per-replica and therefore
+  only meaningful when replicas=1.
+
+Once Redis is the selected backend it stays selected: observations lost to a
+later failure are dropped rather than diverted to the deque, and ``check_drift``
+withholds its verdict until as many fresh ones have landed.
 
 The backend is selected automatically by ``DriftMonitor.__init__`` based on
 whether a Redis client is provided / available.
@@ -69,41 +74,43 @@ class DriftMonitor:
         baseline_stats : per-feature statistics from training set
                          {feature: {mean, std, min, max}}
         window         : number of recent observations to keep
-        alert_threshold: base standard-error z-score that sets the FAMILYWISE
-                         significance level of the detector: alpha_family =
-                         erfc(alert_threshold/sqrt(2)) (two-sided normal tail,
-                         default 2.0 -> ~4.6%). Because ~10 features are tested
-                         per report, the per-feature significance cut is
-                         Sidak-adjusted from this familywise alpha (see
-                         ``check_drift``) — an UNcorrected per-feature z>2 test
-                         false-alarmed on ~37% of stationary 30-observation
-                         windows (measured, 2000 bootstrap trials on the real
-                         baseline; the union of ~10 per-feature tests).
-        min_effect_size: minimum |mean shift| in baseline-std units required to
-                         flag drift, ON TOP OF statistical significance. Without
-                         it, the standard-error z-score alone alarms on a shift of
-                         only ``alert_threshold/sqrt(window)`` std — at the default
-                         window=500 that is ~0.09 std, so any real (never i.i.d.)
-                         traffic trips it constantly. Requiring BOTH significance
-                         AND a practical effect (Cohen's-d small = 0.2) means a
-                         genuinely-i.i.d. window at n=500 (mean wanders ~0.045 std)
-                         stays silent, while a consistent >=0.2-std shift alarms.
-                         While the window is still FILLING (n < 2*(z/d)^2 = 200 at
-                         the defaults) this fixed floor is vacuous — significance
-                         alone already implies a larger shift — so the effective
-                         floor is ramp-scaled: max(min_effect_size,
-                         alert_threshold*sqrt(2/n)). See ``check_drift``.
+        alert_threshold: base standard-error z-score setting the FAMILYWISE
+                         significance level: alpha_family =
+                         erfc(alert_threshold/sqrt(2)) (two-sided normal tail;
+                         default 2.0 -> ~4.6%). Around 10 features are tested
+                         per report, so the per-feature cut is Sidak-adjusted
+                         from this familywise alpha (see ``check_drift``).
+                         Testing each feature at the raw cut instead lets the
+                         union of k tests alarm at 1-(1-alpha)^k — an order of
+                         magnitude above the headline rate.
+        min_effect_size: minimum |mean shift| in baseline-std units required ON
+                         TOP OF statistical significance. Significance alone
+                         scales with n — at window=500 a ~0.09-std wobble
+                         clears it — so never-quite-i.i.d. production traffic
+                         would alarm forever. Requiring a practical effect too
+                         (Cohen's d small = 0.2) keeps an i.i.d. window silent
+                         while a consistent >=0.2-std shift still fires. The
+                         fixed floor is vacuous while the window is filling, so
+                         the effective floor is ramp-scaled to
+                         max(min_effect_size, alert_threshold*sqrt(2/n)).
+                         See ``check_drift``.
         redis_client   : optional Redis client. If provided (or discoverable
                          from REDIS_URL), observations are stored in a
                          shared list so multi-replica Deployments aggregate
                          correctly.
         """
+        if window < 1:
+            # Would cap the dropped-write backlog at zero: a permanent all-clear.
+            raise ValueError(f"window must be >= 1, got {window}")
         self.baseline = baseline_stats
         self.window = window
         self.alert_threshold = alert_threshold
         self.min_effect_size = min_effect_size
         self.buffer: deque[dict[str, float]] = deque(maxlen=window)
         self._observation_count = 0
+        #: Backlog of observations lost to failed Redis writes, per process.
+        #: Non-zero means the shared window is still missing live traffic.
+        self._dropped_writes = 0
         self._redis = redis_client or self._discover_redis()
         if self._redis is not None:
             logger.info("DriftMonitor using Redis-backed shared window (key=%s)", REDIS_DRIFT_KEY)
@@ -154,14 +161,16 @@ class DriftMonitor:
                 # Observation counter (monotonic across all replicas).
                 pipe.incr(f"{REDIS_DRIFT_KEY}:count")
                 pipe.execute()
+                # One landed observation replaces one lost, so the verdict
+                # resumes only once the window has been made whole.
+                self._dropped_writes = max(0, self._dropped_writes - 1)
                 return
             except Exception as exc:
-                # Drop the observation rather than write it to the local deque:
-                # on a Redis deployment that deque is NOT the authoritative
-                # window (reads come from the shared list), so mixing planes
-                # would leave a misleading partial window behind for a later
-                # read-failure to serve. The capped shared list refills from
-                # healthy traffic.
+                # Dropped, not diverted to the deque: on a Redis deployment
+                # reads come from the shared list, so a partial local window
+                # would only mislead a later read failure. Capped at the window
+                # size, past which no pre-outage data can remain.
+                self._dropped_writes = min(self._dropped_writes + 1, self.window)
                 logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
                 return
 
@@ -203,22 +212,31 @@ class DriftMonitor:
             window_size  : current buffer length
             backend      : "redis" | "memory" — the path that actually served
                            this read, not merely the configured backend
-            degraded     : True if a configured Redis window could not be loaded
+            degraded     : True if a configured Redis window could not be loaded,
+                           or observations were dropped before reaching it
+            dropped_observations : outstanding backlog of dropped observations,
+                           capped at ``window`` — how many more must land before
+                           the verdict resumes, not how many were lost
             features     : {feature: {z_score, effect_size, p_value, current_mean,
                             baseline_mean, n_observed, drifted}}
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
                            the (ramp-scaled) practical effect-size floor; ``None``
                            when ``degraded`` (verdict withheld — never a clean
-                           False from a window we could not read)
+                           False from a window that is missing traffic)
         """
         observations, total_count, backend, degraded = self._read_window()
+        dropped = self._dropped_writes
 
-        if degraded:
-            # The configured Redis window could not be loaded. Returning
-            # ``any_drifted: False`` here would be a clean bill of health from a
-            # window we never read — the exact false negative this guards. Emit
-            # ``None`` under an explicit unavailable status instead.
+        if degraded or dropped:
+            # Unreadable or incomplete, so ``any_drifted: False`` would be a
+            # clean bill of health the data does not support. Dropped writes are
+            # the subtler case: reads still succeed and the window looks fine.
+            reason = (
+                "Redis backend unreachable"
+                if degraded
+                else f"{dropped} more observation(s) must land to replace ones dropped by failed Redis writes"
+            )
             return {
                 "observations": total_count,
                 "window_size": len(observations),
@@ -227,7 +245,8 @@ class DriftMonitor:
                 "status": "unavailable",
                 "features": {},
                 "any_drifted": None,
-                "message": "Drift window unavailable: Redis backend unreachable — verdict withheld",
+                "dropped_observations": dropped,
+                "message": f"Drift window unavailable: {reason} — verdict withheld",
             }
 
         if len(observations) < 30:
@@ -238,6 +257,7 @@ class DriftMonitor:
                 "degraded": False,
                 "features": {},
                 "any_drifted": False,
+                "dropped_observations": 0,
                 "message": f"Need at least 30 observations (have {len(observations)})",
             }
 
@@ -353,6 +373,7 @@ class DriftMonitor:
             "degraded": False,
             "features": result,
             "any_drifted": any(v["drifted"] for v in result.values()),
+            "dropped_observations": 0,
         }
 
 
@@ -376,5 +397,5 @@ def save_baseline_stats(
         }
 
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(stats, f, indent=2)

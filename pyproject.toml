@@ -55,13 +55,16 @@ warn_unused_configs = true
 exclude             = [".venv", "build"]
 
 # Third-party packages without bundled stubs — ignore missing imports only for
-# the ones the type-checked surface (api/ pipeline.py scripts/) actually reaches.
+# the ones the type-checked surface (api/ pipeline.py scripts/ config_schema.py
+# streamlit_app.py) actually reaches.
 [[tool.mypy.overrides]]
 module = [
     "xgboost.*",
     "sklearn.*",
     "yaml",
     "scipy.*",
+    "streamlit",
+    "plotly.*",
 ]
 ignore_missing_imports = true
 

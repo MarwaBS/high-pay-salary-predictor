@@ -34,8 +34,17 @@ class ThresholdsConfig(BaseModel):
 
 
 class ModelConfig(BaseModel):
+    # Unknown keys are rejected: a mistyped optional knob (``stabilty_seeds``)
+    # would otherwise validate clean and silently fall back to a default.
+    model_config = {"extra": "forbid"}
+
     test_size: float = Field(ge=0.05, le=0.5)
     random_state: int
+    # Training thread count. XGBoost's hist tree method sums gradient
+    # histograms in thread-partition order, so the fitted bytes depend on how
+    # many threads ran; ``n_jobs: 1`` is the only setting reproducible on a
+    # machine of any size. Seeds and pinned libraries alone do not fix it.
+    n_jobs: int = Field(default=1, ge=1)
     n_estimators: int = Field(ge=1)
     max_depth: int = Field(ge=1, le=20)
     learning_rate: float = Field(gt=0, le=1.0)
@@ -44,6 +53,8 @@ class ModelConfig(BaseModel):
     reg_lambda: float = Field(ge=0)
     log_transform_target: bool
     cv_folds: int = Field(ge=2, le=20)
+    # Seeds the trainer refits under to report metric stability.
+    stability_seeds: list[int] = Field(min_length=1)
     model_path: str
     features_path: str
     metrics_path: str
@@ -62,6 +73,30 @@ class ModelConfig(BaseModel):
     classifier_subsample: float | None = Field(default=None, gt=0, le=1.0)
     classifier_colsample_bytree: float | None = Field(default=None, gt=0, le=1.0)
     classifier_reg_lambda: float | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _classifier_config_is_all_or_nothing(self) -> ModelConfig:
+        """A configured classifier needs every hyperparameter the trainer reads.
+
+        The trainer reads six of them unguarded and falls back to 150000 for
+        ``premium_threshold``, so a half-declared classifier either dies partway
+        through or trains against a boundary nobody configured. Enforced at API
+        startup and in CI, where ``ProjectConfig`` is loaded.
+        """
+        required = {
+            "premium_threshold": self.premium_threshold,
+            "classifier_n_estimators": self.classifier_n_estimators,
+            "classifier_max_depth": self.classifier_max_depth,
+            "classifier_learning_rate": self.classifier_learning_rate,
+            "classifier_subsample": self.classifier_subsample,
+            "classifier_colsample_bytree": self.classifier_colsample_bytree,
+            "classifier_reg_lambda": self.classifier_reg_lambda,
+        }
+        if self.classifier_path:
+            missing = sorted(name for name, value in required.items() if value is None)
+            if missing:
+                raise ValueError(f"classifier_path is set but these classifier settings are missing: {missing}")
+        return self
 
 
 class VisualizationColors(BaseModel):

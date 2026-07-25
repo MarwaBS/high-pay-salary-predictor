@@ -42,12 +42,8 @@ class PredictionCache:
 
     def __init__(self) -> None:
         self._client = None
-        # Namespaces every key by the loaded model version. Without it, a
-        # weekly retrain pushes a new model while a shared Redis still holds
-        # the previous model's predictions, so callers are served stale
-        # values for up to the TTL and replicas on different model versions
-        # cross-contaminate. ``api.main`` sets this in the lifespan once
-        # ``model_version`` is known.
+        # Set by ``api.main`` to the served model's content address, so a
+        # retrain cannot serve the previous model's cached predictions.
         self.version: str = ""
         if REDIS_URL:
             try:
@@ -62,7 +58,12 @@ class PredictionCache:
 
     @property
     def enabled(self) -> bool:
-        """True if Redis is connected and responding."""
+        """True if a Redis client was configured and reachable at construction.
+
+        Not a liveness signal: a Redis that dies later leaves this True while
+        ``get``/``set`` degrade to misses. Reads and writes report their own
+        failures rather than being inferred from this flag.
+        """
         return self._client is not None
 
     def get(self, payload: dict[str, Any]) -> dict | None:

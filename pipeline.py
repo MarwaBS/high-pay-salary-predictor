@@ -334,7 +334,7 @@ def load_classifier(path: str) -> XGBClassifier:
 def save_features(features: list[str], path: str) -> None:
     """Persist the feature name list as plain JSON."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(features, f, indent=2)
 
 
@@ -348,7 +348,7 @@ def load_features(path: str) -> list[str]:
 def save_metrics(metrics: dict, path: str) -> None:
     """Persist model evaluation metrics as plain JSON."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(metrics, f, indent=2)
 
 
@@ -364,7 +364,7 @@ def load_metrics(path: str) -> dict:
 def save_group_means(group_means: dict, path: str) -> None:
     """Persist occupation and state mean-income mappings as JSON."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w") as f:
+    with open(path, "w", newline="\n") as f:
         json.dump(group_means, f, indent=2)
 
 
