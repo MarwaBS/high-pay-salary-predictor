@@ -7,9 +7,8 @@ from a single source of truth (``api.__version__``) and must match across:
 3. The default on ``HealthResponse.version`` in ``api/schemas.py``
 4. The ``[project].version`` field in ``pyproject.toml``
 
-Previously the root endpoint returned a hardcoded ``"1.0.0"`` while
-the FastAPI app advertised ``"2.0.0"`` — silent version skew across
-endpoints in the same service.
+A hardcoded version in any one of these while another is bumped is silent
+version skew across the same service; this locks them to one source.
 """
 
 from __future__ import annotations

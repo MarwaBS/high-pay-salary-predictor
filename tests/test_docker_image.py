@@ -120,19 +120,16 @@ def _parse_requirements(path: Path) -> set[str]:
 
 
 def test_api_requirements_pins_sklearn_for_xgboost_wrapper():
-    """Regression guard for the 2026-04-11 smoke-test crash.
+    """The API image must pin scikit-learn, not just xgboost.
 
     ``pipeline.load_model`` instantiates ``XGBRegressor()`` (and
     ``load_classifier`` instantiates ``XGBClassifier()``), and in xgboost
     3.x both constructors call into ``sklearn.base`` and raise
     ``ImportError: sklearn needs to be installed in order to use this
-    module`` if scikit-learn is not present. The API container must
-    therefore ship scikit-learn, not just xgboost.
-
-    Historically the failure mode was silent: the dev environment picked
-    up sklearn transitively through other packages in ``requirements.txt``,
-    so the bug only surfaced inside the minimal ``requirements-api.txt``
-    image at container start-up.
+    module`` if scikit-learn is not present. The dev environment picks up
+    sklearn transitively through ``requirements.txt``, so the gap surfaces
+    only inside the minimal ``requirements-api.txt`` image at container
+    start-up — hence the explicit pin here.
     """
     api_reqs = _parse_requirements(REPO_ROOT / "requirements-api.txt")
     assert "scikit-learn" in api_reqs, (
@@ -147,9 +144,7 @@ def test_api_requirements_pins_sklearn_for_xgboost_wrapper():
 
 
 def test_api_main_bare_imports_all_copied_into_api_stage():
-    """Regression guard for the 390382a CI smoke-test crash.
-
-    Every top-level `.py` module that `api/main.py` imports by bare name
+    """Every top-level `.py` module that `api/main.py` imports by bare name
     (e.g. `from config_schema import ...`, `from pipeline import ...`)
     must be COPY'd into the API image. Otherwise `uvicorn api.main:app`
     raises `ModuleNotFoundError` the instant the container starts.
@@ -165,7 +160,7 @@ def test_api_main_bare_imports_all_copied_into_api_stage():
     assert not missing, (
         f"api/main.py imports top-level modules {sorted(missing)} by bare name, "
         f"but the Dockerfile `AS api` stage never COPY's them into the image. "
-        f"This reproduces the 390382a smoke-test crash "
-        f"(`ModuleNotFoundError: No module named '{next(iter(missing))}'`). "
+        f"`uvicorn api.main:app` then fails at container start with "
+        f"`ModuleNotFoundError: No module named '{next(iter(missing))}'`. "
         f"Add `COPY {next(iter(missing))}.py ./{next(iter(missing))}.py` to the API stage."
     )
