@@ -219,14 +219,16 @@ class TestApiKeyAuth:
             ("control character", "s3cret\x01"),
         ],
     )
-    def test_key_that_cannot_survive_a_header_is_refused_at_startup(self, label, bad_key):
-        """Configurations that would 401 the correct key must fail loudly.
+    def test_unusable_key_shape_is_refused_at_startup(self, label, bad_key):
+        """Keys outside printable non-space ASCII must fail loudly at startup.
 
-        None of these can round-trip an HTTP header: non-ASCII has no agreed
-        encoding (httpx refuses to send it, http.client sends latin-1), leading
-        and trailing whitespace is stripped by the server's parser, and control
-        characters are rejected by the client. Each would otherwise reject the
-        operator's own key on every request with no diagnostic.
+        Two reasons, both worth refusing. Non-ASCII, surrounding whitespace and
+        newlines cannot reach the comparison intact — no agreed encoding, or
+        stripped as optional whitespace — so they would reject the operator's
+        own key on every request with no diagnostic. Internal spaces and control
+        characters would transmit fine, but are refused because a key carrying
+        them is almost always a quoting accident and keys differing by an
+        invisible character are undebuggable.
         """
         with pytest.raises(RuntimeError, match="API_KEY must consist only of printable ASCII"):
             with reloaded_module(API_KEY=bad_key):

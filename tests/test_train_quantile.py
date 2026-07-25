@@ -31,6 +31,12 @@ from pipeline import FEATURES_FULL, compute_group_means, engineer_features
 REPO_ROOT = Path(tq.__file__).resolve().parent.parent
 
 
+#: Parameters each trainer was actually called with during ``trained_in_tmp``.
+#: Populated by the fixture so a test can assert on what ``main()`` handed the
+#: trainers, not merely on what the source text says.
+_TRAINER_CALLS: dict[str, list[dict]] = {"regressor": [], "classifier": []}
+
+
 @pytest.fixture
 def trained_in_tmp(tmp_path, monkeypatch):
     """Run the trainer once into an isolated tmp tree; return its models dir."""
@@ -51,8 +57,41 @@ def trained_in_tmp(tmp_path, monkeypatch):
     monkeypatch.setattr(tq, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
 
+    # Record what each trainer is actually called with, then delegate.
+    _TRAINER_CALLS["regressor"].clear()
+    _TRAINER_CALLS["classifier"].clear()
+    for name, bucket in (("_train_quantile_regressor", "regressor"), ("_train_premium_classifier", "classifier")):
+        real = getattr(tq, name)
+
+        def recorder(*args, _real=real, _bucket=bucket, **kwargs):
+            _TRAINER_CALLS[_bucket].append(dict(kwargs.get("params", {})))
+            return _real(*args, **kwargs)
+
+        monkeypatch.setattr(tq, name, recorder)
+
     tq.main()
     return tmp_path / "models"
+
+
+def test_trainers_are_called_with_the_configured_thread_count(trained_in_tmp):
+    """Both heads must be fitted with the thread count config declares.
+
+    The fitted bytes depend on it, so a hardcoded value anywhere between the
+    config and the trainers silently restores machine-specific artefacts. A
+    source-text check cannot see that; this asserts on the calls themselves.
+    """
+    with open(REPO_ROOT / "config.yaml") as f:
+        configured = yaml.safe_load(f)["model"]["n_jobs"]
+
+    assert _TRAINER_CALLS["regressor"], "the regressor was never called"
+    assert _TRAINER_CALLS["classifier"], "the classifier was never called"
+    for head, calls in _TRAINER_CALLS.items():
+        for params in calls:
+            assert params.get("n_jobs") == configured, f"{head} fitted with n_jobs={params.get('n_jobs')!r}"
+
+    # The recorded provenance must agree with what was actually used.
+    metrics = json.loads((trained_in_tmp / "model_metrics.json").read_text())
+    assert metrics["hyperparameters"]["n_jobs"] == configured
 
 
 def test_trainer_writes_all_artifacts(trained_in_tmp):

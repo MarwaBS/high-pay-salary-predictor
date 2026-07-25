@@ -144,26 +144,32 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
-# Only a key made entirely of printable non-space ASCII survives a round trip
-# through an HTTP header, so anything else is refused here rather than serving
-# an endpoint that 401s the correct key with no diagnostic:
+# The key must be printable ASCII with no spaces. Two different reasons:
+#
+# Cannot reach the comparison intact, so the correct key would 401 forever:
 #   - non-ASCII has no agreed encoding. httpx refuses to send it at all, while
 #     http.client (so requests and urllib3) puts latin-1 on the wire; a key that
 #     works for one client cannot work for the other. This also covers the
 #     surrogates CPython yields from a non-UTF-8 environment variable, which
 #     would otherwise raise on every request instead of returning 401.
 #   - leading or trailing whitespace is stripped as optional whitespace by the
-#     server's HTTP parser, so the value that arrives never equals the value
+#     server's HTTP parser, so the value that arrives never equals the one
 #     configured. A trailing newline is the common case: `kubectl create secret
-#     --from-file` keeps the one at the end of the file.
-#   - embedded newlines and control characters are rejected outright by the
-#     client library, so no request can carry them.
+#     --from-file` keeps the one at the end of the file, and clients refuse to
+#     transmit it at all.
+#
+# Refused as near-certain misconfiguration, though they would transmit fine:
+#   - internal spaces, tabs and other control characters do round-trip, but a
+#     key containing them is almost always a quoting or copy-paste accident,
+#     and keys that differ only by an invisible character are undebuggable.
 if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
         "API_KEY must consist only of printable ASCII with no spaces "
-        "(0x21-0x7E) — other values cannot survive an HTTP header round trip "
-        "and would reject the correct key on every request. Use base64 or hex, "
-        "and check for a trailing newline if the value came from a file."
+        "(0x21-0x7E). Non-ASCII and surrounding whitespace cannot reach the "
+        "server unchanged and would reject the correct key on every request; "
+        "internal spaces and control characters are refused as near-certain "
+        "misconfiguration. Use base64 or hex, and check for a trailing newline "
+        "if the value came from a file."
     )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
