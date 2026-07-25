@@ -328,11 +328,7 @@ def _cross_conformal_delta(
 def _train_quantile_regressor(
     X_train: pd.DataFrame, y_train_log: pd.Series, *, params: dict, seed: int
 ) -> XGBRegressor:
-    """Fit the multi-quantile regressor (P10/P50/P90 in one model).
-
-    ``params`` carries ``n_jobs`` from config: the thread count changes the
-    fitted bytes, so it is a reproducibility input, not a tuning knob.
-    """
+    """Fit the multi-quantile regressor (P10/P50/P90 in one model)."""
     model = XGBRegressor(
         objective="reg:quantileerror",
         quantile_alpha=QUANTILE_ALPHAS,
@@ -417,9 +413,6 @@ def main() -> None:
     edu_order = cfg["education_order"]
     region_map = {s: r for r, states in cfg["regions"].items() for s in states}
     random_state = model_cfg["random_state"]
-    # Fixing the thread count is part of the reproducibility contract, not a
-    # performance knob: XGBoost's hist method partitions gradient histograms
-    # across threads, so a different count yields different fitted bytes.
     n_jobs = int(model_cfg["n_jobs"])
 
     data_path = ROOT / cfg["data"]["cleaned"]

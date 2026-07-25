@@ -144,9 +144,9 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
-# Outside this range a key is altered in transit or refused by the parser, so
-# the correct one would 401 forever; spaces and tabs do work but are a quoting
-# accident often enough to refuse too.
+# Clients disagree on non-ASCII, a leading space is stripped in transit, and
+# control characters draw a 400 — so the correct key would 401 forever.
+# Internal spaces and tabs work; they are refused as a quoting accident.
 if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
         "API_KEY must be printable ASCII with no spaces (0x21-0x7E). Use "

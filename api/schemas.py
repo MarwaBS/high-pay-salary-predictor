@@ -282,12 +282,11 @@ class HealthResponse(BaseModel):
         description=(
             "SHA-256 digest of each served artefact (model, classifier, "
             "conformal, features, group_means, baseline_stats), recorded by "
-            "the trainer in ``models/model_metrics.json``. Every recorded "
-            "artefact present on disk is re-hashed at startup and a mismatch "
-            "crashes the process, so these digests describe the bytes actually "
-            "loaded. A recorded artefact that is absent is not verified: only "
-            "the classifier is optional, and its digest is still listed here "
-            "while ``p_above_premium_threshold`` returns ``None``."
+            "the trainer in ``models/model_metrics.json``. Each one present on "
+            "disk is re-hashed at startup and a mismatch crashes the process. "
+            "An absent artefact is skipped but still listed: the classifier, "
+            "feature list and drift baseline are optional, and the feature list "
+            "is content-addressed rather than loaded."
         ),
     )
 

@@ -29,10 +29,7 @@ thresholds:
 model:
   test_size: 0.20
   random_state: 42
-  # Training threads. XGBoost's hist method sums gradient histograms in
-  # thread-partition order, so the fitted bytes and every reported metric
-  # depend on the thread count; 1 is the only value that reproduces on a
-  # machine of any size. Raise it only if you accept machine-specific bytes.
+  # Reproducibility input, not a speed knob — see config_schema.ModelConfig.
   n_jobs: 1
   # XGBoost hyper-parameters — multi-quantile XGBoost via
   # ``reg:quantileerror`` with ``quantile_alpha=[0.10, 0.50, 0.90]``.
