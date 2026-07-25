@@ -165,20 +165,17 @@ cython_debug/
 private/
 
 # === Private internal artifacts ===
-# Broad patterns so individual private filenames never leak. Mirrors the
-# ResumeForge + Price_Prediction pattern.
-*_REPORT.md
-*_STATE.md
-*_NOTES.md
-*_PLAN.md
-*_TASKS.md
-*_PRIVATE.md
-*_VERDICT.md
-*_REVIEW.md
-*_SUMMARY.md
-AUDIT_*.md
-FAANG_*.md
-INTERVIEW_*.md
+# Deny-by-default: a private note is ignored because it was never allowed, not
+# because someone remembered to add a pattern matching its name.
+*.md
+!README.md
+!CHANGELOG.md
+!CONTRIBUTING.md
+!MODEL_CARD.md
+!SECURITY.md
+!DESIGN_DECISIONS.md
+!deploy/huggingface/DEPLOY.md
+!deploy/huggingface/README.md
 Private_test/
 Private/
 internal/

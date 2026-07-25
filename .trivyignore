@@ -2,7 +2,7 @@
 #
 # Currently empty — no documented managed-risk container CVEs on this project.
 # Add CVE / GHSA IDs here only with inline rationale when a breaking fix is
-# not feasible, matching the ResumeForge + Price_Prediction pattern.
+# not feasible.
 #
 # Note: the pip-audit step in ci.yml currently carries NO suppressions. Trivy
 # does not honour pip-audit's ignore list anyway, so if a Python package CVE
