@@ -144,32 +144,40 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
-# The key must be printable ASCII with no spaces. Two different reasons:
+# The key must be printable ASCII with no spaces. Three different reasons,
+# measured against the parser this service runs on (uvicorn[standard] selects
+# httptools; h11 differs in the details below):
 #
-# Cannot reach the comparison intact, so the correct key would 401 forever:
-#   - non-ASCII has no agreed encoding. httpx refuses to send it at all, while
-#     http.client (so requests and urllib3) puts latin-1 on the wire; a key that
-#     works for one client cannot work for the other. This also covers the
-#     surrogates CPython yields from a non-UTF-8 environment variable, which
-#     would otherwise raise on every request instead of returning 401.
-#   - leading or trailing whitespace is stripped as optional whitespace by the
-#     server's HTTP parser, so the value that arrives never equals the one
-#     configured. A trailing newline is the common case: `kubectl create secret
-#     --from-file` keeps the one at the end of the file, and clients refuse to
-#     transmit it at all.
+# The correct key would never match, so every request 401s with no diagnostic:
+#   - non-ASCII has no encoding the clients agree on. httpx refuses to send it
+#     at all, while http.client (so requests and urllib3) puts latin-1 on the
+#     wire; a key that works for one cannot work for the other. This also
+#     covers the surrogates CPython yields from a non-UTF-8 environment
+#     variable, which would otherwise raise on every request rather than 401.
+#   - a leading space or tab is dropped as optional whitespace before the app
+#     sees the value, so what arrives never equals what was configured.
+#   - a trailing space or tab survives httptools but httpx refuses to send it,
+#     so whether it authenticates depends on the caller's client library.
+#   - a newline cannot be transmitted: every client tested rejects it. This is
+#     the common misconfiguration, since `kubectl create secret --from-file`
+#     keeps the newline at the end of the file.
 #
-# Refused as near-certain misconfiguration, though they would transmit fine:
-#   - internal spaces, tabs and other control characters do round-trip, but a
-#     key containing them is almost always a quoting or copy-paste accident,
-#     and keys that differ only by an invisible character are undebuggable.
+# The request never reaches the application at all:
+#   - control characters other than tab make httptools answer 400 itself.
+#
+# Refused as near-certain misconfiguration, though they do round-trip:
+#   - internal spaces and tabs would authenticate, but a key carrying them is
+#     almost always a quoting or copy-paste accident, and keys that differ only
+#     by an invisible character are undebuggable.
 if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
         "API_KEY must consist only of printable ASCII with no spaces "
-        "(0x21-0x7E). Non-ASCII and surrounding whitespace cannot reach the "
-        "server unchanged and would reject the correct key on every request; "
-        "internal spaces and control characters are refused as near-certain "
-        "misconfiguration. Use base64 or hex, and check for a trailing newline "
-        "if the value came from a file."
+        "(0x21-0x7E). Non-ASCII, surrounding whitespace and newlines cannot be "
+        "sent and matched reliably, so they would reject the correct key on "
+        "every request; other control characters make the server answer 400; "
+        "internal spaces are refused as near-certain misconfiguration. Use "
+        "base64 or hex, and check for a trailing newline if the value came "
+        "from a file."
     )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 

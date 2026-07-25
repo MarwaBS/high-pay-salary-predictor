@@ -222,13 +222,13 @@ class TestApiKeyAuth:
     def test_unusable_key_shape_is_refused_at_startup(self, label, bad_key):
         """Keys outside printable non-space ASCII must fail loudly at startup.
 
-        Two reasons, both worth refusing. Non-ASCII, surrounding whitespace and
-        newlines cannot reach the comparison intact — no agreed encoding, or
-        stripped as optional whitespace — so they would reject the operator's
-        own key on every request with no diagnostic. Internal spaces and control
-        characters would transmit fine, but are refused because a key carrying
-        them is almost always a quoting accident and keys differing by an
-        invisible character are undebuggable.
+        Three reasons, all worth refusing. Non-ASCII, surrounding whitespace and
+        newlines cannot be sent and matched reliably, so they would reject the
+        operator's own key on every request with no diagnostic. Control
+        characters other than tab make the server answer 400 before the app sees
+        the request. Internal spaces and tabs do round-trip and would
+        authenticate, but a key carrying them is almost always a quoting
+        accident, and keys differing by an invisible character are undebuggable.
         """
         with pytest.raises(RuntimeError, match="API_KEY must consist only of printable ASCII"):
             with reloaded_module(API_KEY=bad_key):

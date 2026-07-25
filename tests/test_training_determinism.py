@@ -25,8 +25,12 @@ def test_thread_count_is_pinned_to_one(cfg):
     assert cfg["model"]["n_jobs"] == 1
 
 
-def test_trainers_take_the_thread_count_from_config():
-    """Neither trainer may hardcode a thread count past the configured one."""
+def test_trainer_source_carries_no_all_cores_literal():
+    """A source-text guard against the all-cores default reappearing.
+
+    Text only: what the trainers are actually fitted with is asserted by
+    ``tests/test_train_quantile.py``, which inspects the estimators themselves.
+    """
     source = Path(tq.__file__).read_text(encoding="utf-8")
     assert "n_jobs=-1" not in source, "an all-cores default makes the fitted bytes machine-specific"
     assert source.count('"n_jobs": n_jobs') == 2, "both the regressor and classifier params must carry n_jobs"

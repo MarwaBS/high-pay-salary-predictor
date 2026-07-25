@@ -64,8 +64,12 @@ def trained_in_tmp(tmp_path, monkeypatch):
         real = getattr(tq, name)
 
         def recorder(*args, _real=real, _bucket=bucket, **kwargs):
-            _TRAINER_CALLS[_bucket].append(dict(kwargs.get("params", {})))
-            return _real(*args, **kwargs)
+            fitted = _real(*args, **kwargs)
+            # Record what the estimator was actually built with, not just what
+            # was passed in: a trainer that overrode the value internally would
+            # leave the incoming params untouched.
+            _TRAINER_CALLS[_bucket].append({"passed": dict(kwargs.get("params", {})), "fitted": fitted.get_params()})
+            return fitted
 
         monkeypatch.setattr(tq, name, recorder)
 
@@ -86,8 +90,13 @@ def test_trainers_are_called_with_the_configured_thread_count(trained_in_tmp):
     assert _TRAINER_CALLS["regressor"], "the regressor was never called"
     assert _TRAINER_CALLS["classifier"], "the classifier was never called"
     for head, calls in _TRAINER_CALLS.items():
-        for params in calls:
-            assert params.get("n_jobs") == configured, f"{head} fitted with n_jobs={params.get('n_jobs')!r}"
+        for call in calls:
+            assert call["passed"].get("n_jobs") == configured, (
+                f"{head} was handed n_jobs={call['passed'].get('n_jobs')!r}"
+            )
+            assert call["fitted"].get("n_jobs") == configured, (
+                f"{head} was fitted with n_jobs={call['fitted'].get('n_jobs')!r} despite the configured value"
+            )
 
     # The recorded provenance must agree with what was actually used.
     metrics = json.loads((trained_in_tmp / "model_metrics.json").read_text())
