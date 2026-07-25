@@ -144,18 +144,26 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
-# A non-ASCII key cannot be matched reliably: HTTP header bytes carry no
-# encoding, and clients disagree — the stdlib's http.client (so requests and
-# urllib3) puts latin-1 on the wire where httpx puts UTF-8, so the same key
-# arrives as different bytes and one of them is rejected forever. Refuse it at
-# startup rather than serve an endpoint that 401s the correct key. This also
-# rejects the surrogates CPython produces from a non-UTF-8 environment
-# variable, which would otherwise raise on every request.
-if API_KEY and not API_KEY.isascii():
+# Only a key made entirely of printable non-space ASCII survives a round trip
+# through an HTTP header, so anything else is refused here rather than serving
+# an endpoint that 401s the correct key with no diagnostic:
+#   - non-ASCII has no agreed encoding. httpx refuses to send it at all, while
+#     http.client (so requests and urllib3) puts latin-1 on the wire; a key that
+#     works for one client cannot work for the other. This also covers the
+#     surrogates CPython yields from a non-UTF-8 environment variable, which
+#     would otherwise raise on every request instead of returning 401.
+#   - leading or trailing whitespace is stripped as optional whitespace by the
+#     server's HTTP parser, so the value that arrives never equals the value
+#     configured. A trailing newline is the common case: `kubectl create secret
+#     --from-file` keeps the one at the end of the file.
+#   - embedded newlines and control characters are rejected outright by the
+#     client library, so no request can carry them.
+if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
-        "API_KEY must be ASCII: HTTP clients disagree on how to encode non-ASCII "
-        "header values, so a non-ASCII key authenticates for some clients and is "
-        "rejected by others. Use an ASCII key (e.g. base64 or hex)."
+        "API_KEY must consist only of printable ASCII with no spaces "
+        "(0x21-0x7E) — other values cannot survive an HTTP header round trip "
+        "and would reject the correct key on every request. Use base64 or hex, "
+        "and check for a trailing newline if the value came from a file."
     )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
@@ -211,11 +219,11 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
         return None  # dev mode: no auth required
     # Constant-time comparison so a timing side-channel can't be used to
     # recover the key byte by byte. Compared as bytes, not str: compare_digest
-    # rejects non-ASCII str, so a key carrying any byte >= 0x80 would raise
-    # past the throttle below instead of resolving to 401. Re-encoding the
-    # header as latin-1 recovers the exact bytes the client sent (that is the
-    # codec starlette decoded them with — and API_KEY is ASCII by the check at
-    # import, so its own encoding is unambiguous.
+    # rejects non-ASCII str, so a submitted key carrying any byte >= 0x80 would
+    # raise past the throttle below instead of resolving to 401. Encoding the
+    # header back to latin-1 recovers the exact bytes the client sent, since
+    # that is the codec starlette decoded them with; API_KEY is printable ASCII
+    # by the check at import, so its own encoding is unambiguous.
     if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("ascii")):
         # Throttle brute-force key guessing per IP — the route-level limiter
         # never sees this request because the 401 short-circuits before it.

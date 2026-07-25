@@ -207,17 +207,36 @@ class TestApiKeyAuth:
             assert codes[:3] == [401, 401, 401], codes
             assert codes[3:] == [429, 429, 429], codes
 
-    def test_non_ascii_configured_key_is_refused_at_startup(self):
-        """A non-ASCII API_KEY must fail loudly rather than 401 the correct key.
+    @pytest.mark.parametrize(
+        ("label", "bad_key"),
+        [
+            ("non-ascii", "café-secret"),
+            ("trailing newline", "s3cret\n"),  # `kubectl create secret --from-file`
+            ("leading space", " s3cret"),
+            ("trailing space", "s3cret "),
+            ("embedded tab", "s3\tcret"),
+            ("embedded space", "s3 cret"),
+            ("control character", "s3cret\x01"),
+        ],
+    )
+    def test_key_that_cannot_survive_a_header_is_refused_at_startup(self, label, bad_key):
+        """Configurations that would 401 the correct key must fail loudly.
 
-        HTTP header bytes carry no encoding and clients disagree: the stdlib's
-        http.client puts latin-1 on the wire where httpx puts UTF-8, so the same
-        key arrives as different bytes and one of those clients can never
-        authenticate. Refusing the configuration is the only unambiguous answer.
+        None of these can round-trip an HTTP header: non-ASCII has no agreed
+        encoding (httpx refuses to send it, http.client sends latin-1), leading
+        and trailing whitespace is stripped by the server's parser, and control
+        characters are rejected by the client. Each would otherwise reject the
+        operator's own key on every request with no diagnostic.
         """
-        with pytest.raises(RuntimeError, match="API_KEY must be ASCII"):
-            with reloaded_module(API_KEY="café-secret"):
+        with pytest.raises(RuntimeError, match="API_KEY must consist only of printable ASCII"):
+            with reloaded_module(API_KEY=bad_key):
                 pass
+
+    def test_ordinary_key_is_accepted(self):
+        """The guard must not reject keys operators actually use."""
+        for good in ("s3cret", "YWJjZA==", "a1b2c3d4e5f6", "key-with_symbols.~+/"):
+            with reloaded_module(API_KEY=good) as m:
+                assert m.API_KEY == good
 
     def test_correct_key_accepted(self):
         with reloaded_module(API_KEY="s3cret") as m:

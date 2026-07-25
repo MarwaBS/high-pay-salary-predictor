@@ -588,6 +588,16 @@ class TestDriftBackendFailureIsLoud:
         assert report["any_drifted"] is False
         assert report["dropped_observations"] == 0
 
+    def test_zero_window_is_refused(self, baseline_stats):
+        """A zero window would cap the backlog at zero and never withhold.
+
+        The dropped-write guard is bounded by the window size, so a window of 0
+        turns it into a permanent all-clear — the exact failure it exists to
+        prevent.
+        """
+        with pytest.raises(ValueError, match="window must be >= 1"):
+            DriftMonitor(baseline_stats=baseline_stats, window=0)
+
     def test_backlog_never_exceeds_the_window(self, baseline_stats):
         """A long outage must not withhold the verdict longer than the window.
 

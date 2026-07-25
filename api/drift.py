@@ -182,8 +182,13 @@ class DriftMonitor:
                 # at the window size: the shared list holds at most ``window``
                 # entries, so a backlog beyond that would keep the monitor dark
                 # after the window already held nothing but post-outage data.
-                # Under sustained partial failure the backlog stays at the cap,
-                # which is the safe direction — the verdict stays withheld.
+                #
+                # This bounds how long an outage blinds the monitor; it does not
+                # detect a partial one. Because each success works off one drop,
+                # a failure rate below half drains the backlog to zero and the
+                # verdict resumes while a minority of observations is still
+                # being discarded — the dropped-write log line is the signal for
+                # that case.
                 self._dropped_writes = min(self._dropped_writes + 1, self.window)
                 logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
                 return
