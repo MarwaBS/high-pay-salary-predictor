@@ -48,7 +48,7 @@ cp "$REPO_DIR/pyproject.toml" "$SPACE_DIR/pyproject.toml"
 
 # ── Serving artefacts: sync the committed model set wholesale ────────────────
 # Ships every artefact the API loads (the same set tests/test_model_registry.py
-# pins). Removing first drops any stale artefact the old hand-deploy left behind.
+# pins). Removing the directory first ensures no stale artefact persists.
 rm -rf "$SPACE_DIR/models"
 mkdir -p "$SPACE_DIR/models"
 cp "$REPO_DIR"/models/*.ubj "$SPACE_DIR/models/"
