@@ -104,12 +104,11 @@ def test_metrics_json_contains_service_version():
 
 
 def test_health_endpoint_surfaces_model_version():
-    """``GET /health`` must return the same ``model_version`` the trainer wrote.
+    """``GET /health`` must surface the ``model_version`` the trainer wrote.
 
-    The API is the operator's single source of truth for "what is
-    live?". If /health says a different ``model_version`` than the
-    artefact on disk, either the API didn't reload after a retrain or
-    something is loading a stale metrics file — both are incidents.
+    Both sides read the same metrics file, so this pins the wiring — the field
+    is exposed and carries the recorded value rather than a hardcoded one. It
+    cannot detect a stale in-process load, which an in-process client never has.
     """
     metrics = _load_metrics()
     # Force the lifespan to run so state.model_version is populated. The

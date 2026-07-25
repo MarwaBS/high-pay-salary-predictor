@@ -19,6 +19,7 @@ import importlib
 import os
 from contextlib import contextmanager
 
+import pytest
 from fastapi.testclient import TestClient
 from starlette.datastructures import Headers
 
@@ -139,6 +140,34 @@ class TestClientIpProxySecurity:
 # ── API key authentication ───────────────────────────────────────────────────
 
 
+class TestUnhandledErrorsAreScrubbed:
+    """A 500 body must carry a correlation id and nothing about the internals.
+
+    Exception text routinely embeds file paths, feature values and library
+    internals, so returning it verbatim to an unauthenticated caller leaks the
+    server's shape.
+    """
+
+    def test_500_body_hides_the_exception_and_keeps_the_request_id(self):
+        with reloaded_module() as m:
+            secret = "s3cr3t-internal-detail-/srv/models/xgb.ubj"
+
+            @m.app.get("/_boom")
+            async def _boom():  # pragma: no cover - body raises by design
+                raise RuntimeError(secret)
+
+            client = TestClient(m.app, raise_server_exceptions=False)
+            r = client.get("/_boom", headers={"X-Request-ID": "corr-123"})
+
+            assert r.status_code == 500
+            body = r.json()
+            assert body["detail"] == "Internal server error"
+            assert body["request_id"] == "corr-123"
+            assert secret not in r.text
+            assert "RuntimeError" not in r.text
+            assert "Traceback" not in r.text
+
+
 class TestApiKeyAuth:
     def test_missing_key_rejected_401(self):
         with reloaded_module(API_KEY="s3cret") as m:
@@ -151,6 +180,56 @@ class TestApiKeyAuth:
             client = TestClient(m.app)
             r = client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": "nope"})
             assert r.status_code == 401
+
+    def test_non_ascii_key_rejected_401(self):
+        """A key carrying bytes outside ASCII is a wrong key, not a server fault.
+
+        Header bytes are decoded as latin-1, so any byte >= 0x80 yields a
+        non-ASCII ``str``; the comparison must still resolve to a clean 401.
+        """
+        with reloaded_module(API_KEY="s3cret") as m:
+            client = TestClient(m.app)
+            r = client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": b"caf\xe9"})
+            assert r.status_code == 401, r.text
+
+    def test_non_ascii_key_failures_count_against_the_throttle(self):
+        """Every rejected key counts toward the per-IP failure budget.
+
+        The throttle is the brute-force control, so no encoding of the
+        submitted key may provide an unmetered guessing channel.
+        """
+        with reloaded_module(API_KEY="s3cret", AUTH_FAILURE_LIMIT="3") as m:
+            client = TestClient(m.app)
+            codes = [
+                client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": b"caf\xe9"}).status_code
+                for _ in range(6)
+            ]
+            assert codes[:3] == [401, 401, 401], codes
+            assert codes[3:] == [429, 429, 429], codes
+
+    @pytest.mark.parametrize(
+        ("label", "bad_key"),
+        [
+            ("non-ascii", "café-secret"),
+            ("trailing newline", "s3cret\n"),  # `kubectl create secret --from-file`
+            ("leading space", " s3cret"),
+            ("trailing space", "s3cret "),
+            ("embedded tab", "s3\tcret"),
+            ("embedded space", "s3 cret"),
+            ("control character", "s3cret\x01"),
+        ],
+    )
+    def test_unusable_key_shape_is_refused_at_startup(self, label, bad_key):
+        """Keys outside printable non-space ASCII must fail loudly at startup."""
+        with pytest.raises(RuntimeError, match="API_KEY must be printable ASCII"):
+            with reloaded_module(API_KEY=bad_key):
+                pass
+
+    def test_ordinary_key_is_accepted(self):
+        """The guard must not reject keys operators actually use."""
+        for good in ("s3cret", "YWJjZA==", "a1b2c3d4e5f6", "key-with_symbols.~+/"):
+            with reloaded_module(API_KEY=good) as m:
+                assert m.API_KEY == good
 
     def test_correct_key_accepted(self):
         with reloaded_module(API_KEY="s3cret") as m:

@@ -2,8 +2,8 @@
 
 These tests exercise the helpers in isolation without spinning up FastAPI
 or loading the full app. They guarantee that ``build_benchmark_lookup``
-→ ``lookup_benchmarks`` → ``build_response`` reproduces the exact
-percentile semantics of the previous DataFrame-scan implementation.
+→ ``lookup_benchmarks`` → ``build_response`` computes the percentile as
+the share of the reference group strictly below the prediction.
 
 Run: pytest tests/test_inference.py -v
 """
@@ -123,9 +123,8 @@ class TestBenchmarkLookup:
 
 
 class TestBuildResponsePercentile:
-    """Verify the sorted-array percentile matches the original DataFrame
-    mask semantics: ``(group < predicted).mean() * 100``, using P50 as
-    the anchor for the percentile calculation."""
+    """The sorted-array percentile must equal ``(group < predicted).mean() *
+    100``, anchored on P50."""
 
     def _make_req(self) -> PredictRequest:
         return PredictRequest(
@@ -160,10 +159,9 @@ class TestBuildResponsePercentile:
         )
         assert resp.percentile_in_group == 100.0
 
-    def test_percentile_equals_scan_result(self, sample_df):
-        """For a 3-row cell [100K, 150K, 200K] a P50 of 175K should
-        give the same percentile as the original ``(group < pred).mean()``:
-        2 of 3 rows strictly below → 66.6666... → rounds to 66.7."""
+    def test_percentile_matches_share_strictly_below(self, sample_df):
+        """For a 3-row cell [100K, 150K, 200K] a P50 of 175K leaves 2 of 3 rows
+        strictly below → 66.6666... → rounds to 66.7."""
         lookup = build_benchmark_lookup(sample_df)
         group_stats = lookup[("CA", "Bachelor's degree")]
         resp = build_response(
@@ -208,7 +206,7 @@ class TestBuildResponsePercentile:
         assert resp.predicted_p90 == pytest.approx(190_000.0)
         # Backward-compat alias
         assert resp.predicted_salary == resp.predicted_p50
-        # PI bounds are now the direct quantiles
+        # PI bounds are the model's own P10/P90
         assert resp.prediction_interval_low == pytest.approx(120_000.0)
         assert resp.prediction_interval_high == pytest.approx(190_000.0)
 

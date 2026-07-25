@@ -334,7 +334,6 @@ def _train_quantile_regressor(
         quantile_alpha=QUANTILE_ALPHAS,
         tree_method="hist",
         random_state=seed,
-        n_jobs=-1,
         verbosity=0,
         **params,
     )
@@ -359,7 +358,6 @@ def _train_premium_classifier(
         eval_metric="logloss",
         tree_method="hist",
         random_state=seed,
-        n_jobs=-1,
         verbosity=0,
         **params,
     )
@@ -415,6 +413,7 @@ def main() -> None:
     edu_order = cfg["education_order"]
     region_map = {s: r for r, states in cfg["regions"].items() for s in states}
     random_state = model_cfg["random_state"]
+    n_jobs = int(model_cfg["n_jobs"])
 
     data_path = ROOT / cfg["data"]["cleaned"]
     logger.info("Loading dataset from %s", data_path)
@@ -446,6 +445,7 @@ def main() -> None:
         "subsample": model_cfg["subsample"],
         "colsample_bytree": model_cfg["colsample_bytree"],
         "reg_lambda": model_cfg["reg_lambda"],
+        "n_jobs": n_jobs,
     }
     logger.info("Training XGBoost quantile model (alphas=%s)…", QUANTILE_ALPHAS)
     model = _train_quantile_regressor(X_train, y_train_log, params=params, seed=random_state)
@@ -553,6 +553,7 @@ def main() -> None:
         "subsample": model_cfg["classifier_subsample"],
         "colsample_bytree": model_cfg["classifier_colsample_bytree"],
         "reg_lambda": model_cfg["classifier_reg_lambda"],
+        "n_jobs": n_jobs,
     }
     y_train_clf = (y_train >= premium_threshold).astype(int)
     y_test_clf = (y_test >= premium_threshold).astype(int)
@@ -633,7 +634,7 @@ def main() -> None:
     # and record mean±std. Cheap on a 10K-row set; turns "R²=0.82" into
     # "R²=0.82±0.01", which is the difference between a lucky split and a
     # stable model.
-    stability_seeds = model_cfg.get("stability_seeds") or [11, 22, 33, 44, 55]
+    stability_seeds = list(model_cfg["stability_seeds"])
     logger.info("Stability eval over %d seeds: %s", len(stability_seeds), stability_seeds)
     stab_runs = [
         _headline_metrics_for_seed(

@@ -117,7 +117,7 @@ def build_bls_defaults_lookup(df: pd.DataFrame) -> dict[tuple[str, str], BlsDefa
     ``Hourly Mean``). Called once at startup so ``encode_features`` does
     a dict get instead of scanning the full DataFrame. Contains a
     ``_GLOBAL_KEY`` entry with dataset-wide fallbacks for unseen pairs,
-    plus state-only fallbacks (keyed on ``(state, _GLOBAL_KEY[1])``).
+    plus state-only fallbacks (keyed on ``(state, "")``).
     """
     lookup: dict[tuple[str, str], BlsDefaults] = {}
 

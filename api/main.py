@@ -9,6 +9,7 @@ Endpoints:
   GET  /meta        — valid states, occupations, education levels
   GET  /metrics     — Prometheus metrics (auto-instrumented)
   POST /predict     — salary prediction with contextual benchmarks and PI
+  POST /predict/batch — up to 1000 predictions scored in one vectorised call
   GET  /drift       — feature drift report (cluster-wide with Redis)
 
 Run locally:
@@ -28,6 +29,12 @@ Environment variables:
                         rate limiter and logging read the Nth-from-last
                         entry of X-Forwarded-For. Default: 0 (bind to the
                         direct client.host — dev / no proxy).
+  AUTH_FAILURE_LIMIT    Failed X-API-Key attempts allowed per IP within the
+                        window before 429. Default: 10.
+  AUTH_FAILURE_WINDOW_S Sliding window for that budget, in seconds.
+                        Default: 60.
+  MAX_BODY_BYTES        Request bodies above this are rejected with 413,
+                        counted as streamed. Default: 512 KiB.
   REDIS_URL             Optional. Enables the PredictionCache and the
                         shared drift monitor window. Default: no-op.
   CACHE_TTL             Prediction cache TTL in seconds. Default: 3600.
@@ -137,6 +144,15 @@ logger = logging.getLogger(__name__)
 # ── API Key Auth ─────────────────────────────────────────────────────────────
 
 API_KEY = os.getenv("API_KEY", "")
+# Clients disagree on non-ASCII, a leading space is stripped in transit, and
+# control characters draw a 400 — so the correct key would 401 forever.
+# Internal spaces and tabs work; they are refused as a quoting accident.
+if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
+    raise RuntimeError(
+        "API_KEY must be printable ASCII with no spaces (0x21-0x7E). Use "
+        "base64 or hex, and check for a trailing newline if the value came "
+        "from a file."
+    )
 _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Per-IP throttle for FAILED auth attempts. The main rate limiter runs inside the
@@ -189,9 +205,11 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
     """Validate API key if API_KEY is configured; skip in dev mode (unset)."""
     if not API_KEY:
         return None  # dev mode: no auth required
-    # Constant-time comparison so a timing side-channel can't be used to
-    # recover the key byte by byte.
-    if key is None or not secrets.compare_digest(key, API_KEY):
+    # Constant-time, and as bytes: compare_digest rejects non-ASCII str, which
+    # would raise past the throttle below instead of resolving to 401. latin-1
+    # is the codec starlette decoded the header with, so it recovers the bytes
+    # the client actually sent.
+    if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("ascii")):
         # Throttle brute-force key guessing per IP — the route-level limiter
         # never sees this request because the 401 short-circuits before it.
         within_budget = _auth_throttle.record_failure(_client_ip(request), time.monotonic())
@@ -414,18 +432,15 @@ async def lifespan(app: FastAPI):
     # emitted by scripts/train_quantile.py. Falls back to "unknown" on
     # pre-provenance artefacts so the API is backwards-compatible.
     state.model_version = str(metrics.get("model_version", "unknown"))
-    # Namespace the prediction cache by model version so a retrain never
-    # serves a previous model's cached predictions from a shared Redis.
-    cache.version = state.model_version
 
     # ── Artifact integrity: served bytes must match what training recorded ───
-    # /health reports model_version from the metrics sidecar, but nothing tied
-    # that string to the actual .ubj/.json files on disk — a swapped or
-    # partially-copied artefact would serve under a /health that still claims
-    # the trained version. Re-hash each loaded artefact against the recorded
-    # SHA-256 and crash the probe on mismatch, same fail-loud posture as the
-    # threshold check below.
+    # Re-hashing each loaded artefact is what ties the model_version /health
+    # reports to the files on disk, so a swapped one crashes the probe.
     state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
+
+    # The digest is required: model_version comes from the git SHA and input
+    # CSV, so a hyperparameter-only retrain leaves it identical.
+    cache.version = f"{state.model_version}.{state.artifact_sha256.get('model', '')[:12]}"
     if state.artifact_sha256:
         artefact_files = {
             "model": ROOT / VALIDATED_CFG.model.model_path,

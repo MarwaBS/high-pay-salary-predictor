@@ -48,8 +48,8 @@ jupyter>=1.0.0
 optuna>=3.0.0                # HPO exploration in 04_salary_prediction_model.ipynb (v1 EDA)
 pytest>=7.2.0
 pytest-cov>=4.0.0            # coverage reporting (make coverage)
-ruff>=0.3.0                  # fast linter + formatter (replaces flake8 + black + isort)
-mypy>=1.8.0                  # static type checker (make type-check)
+ruff==0.15.16                # fast linter + formatter (replaces flake8 + black + isort)
+mypy==2.1.0                  # static type checker (make type-check)
 pandas-stubs>=2.0.0          # pandas type stubs so mypy resolves DataFrame/Series
 pre-commit>=3.6.0            # git pre-commit hooks (pre-commit install)
 

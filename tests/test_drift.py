@@ -484,6 +484,21 @@ class _WriteFailingRedis(_FakeRedis):
         return _WriteFailingRedisPipeline(self._store)
 
 
+class _WriteFailingReadsWorkingRedis(_FakeRedis):
+    """Rejects writes while still serving reads — a Redis at ``maxmemory`` or a
+    replica promoted read-only. The stored window keeps loading cleanly while
+    live observations are discarded."""
+
+    def __init__(self):
+        super().__init__()
+        self.writes_ok = True
+
+    def pipeline(self):
+        if self.writes_ok:
+            return super().pipeline()
+        return _WriteFailingRedisPipeline(self._store)
+
+
 class TestDriftBackendFailureIsLoud:
     """A configured Redis backend that fails must never yield a clean bill of
     health from a window it could not read, nor mislabel which path served it."""
@@ -520,6 +535,93 @@ class TestDriftBackendFailureIsLoud:
             mon.observe({"Age": 40.0, "Education_Ord": 2.0})  # every write fails
         # Dropped, not mixed into the local plane — deque stays empty.
         assert len(mon.buffer) == 0
+
+    def test_dropped_writes_withhold_the_verdict(self, baseline_stats):
+        """Observations lost to failed writes make the window unrepresentative.
+
+        Reads still succeed here, so the stored window looks healthy while live
+        traffic is being discarded — the verdict must be withheld rather than
+        reported clean from a window the dropped traffic never reached.
+        """
+        fake = _WriteFailingReadsWorkingRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=500, redis_client=fake)
+
+        for _ in range(50):  # healthy traffic lands in the shared window
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        assert mon.check_drift()["degraded"] is False, "healthy writes must not degrade"
+
+        fake.writes_ok = False
+        for _ in range(200):  # heavily drifted traffic is dropped
+            mon.observe({"Age": 90.0, "Education_Ord": 2.0})
+
+        report = mon.check_drift()
+        assert report["degraded"] is True
+        assert report["status"] == "unavailable"
+        assert report["any_drifted"] is None, "never a clean False while observations are being dropped"
+        assert report["dropped_observations"] == 200
+
+    def test_verdict_resumes_only_after_the_lost_traffic_is_replaced(self, baseline_stats):
+        """Recovery is proportional to what was lost, not to the first success.
+
+        A single landed observation does not make a window that is missing many
+        of them representative again.
+        """
+        fake = _WriteFailingReadsWorkingRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=500, redis_client=fake)
+
+        fake.writes_ok = False
+        for _ in range(10):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        assert mon.check_drift()["degraded"] is True
+
+        fake.writes_ok = True
+        mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        partial = mon.check_drift()
+        assert partial["degraded"] is True, "one landed write must not clear a ten-observation gap"
+        assert partial["dropped_observations"] == 9
+
+        for _ in range(40):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+
+        report = mon.check_drift()
+        assert report["degraded"] is False
+        assert report["any_drifted"] is False
+        assert report["dropped_observations"] == 0
+
+    def test_zero_window_is_refused(self, baseline_stats):
+        """A zero window would cap the backlog at zero and never withhold.
+
+        The dropped-write guard is bounded by the window size, so a window of 0
+        turns it into a permanent all-clear — the exact failure it exists to
+        prevent.
+        """
+        with pytest.raises(ValueError, match="window must be >= 1"):
+            DriftMonitor(baseline_stats=baseline_stats, window=0)
+
+    def test_backlog_never_exceeds_the_window(self, baseline_stats):
+        """A long outage must not withhold the verdict longer than the window.
+
+        The shared list is trimmed to ``window``, so once that many fresh
+        observations have landed none of the pre-outage data remains and there
+        is nothing further to wait for. Without the cap the monitor stays dark
+        for as many requests as it dropped, however long the outage ran.
+        """
+        window = 50
+        fake = _WriteFailingReadsWorkingRedis()
+        mon = DriftMonitor(baseline_stats=baseline_stats, window=window, redis_client=fake)
+
+        fake.writes_ok = False
+        for _ in range(10_000):  # a long outage
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        assert mon.check_drift()["dropped_observations"] == window
+
+        fake.writes_ok = True
+        for _ in range(window):  # exactly one full window of fresh traffic
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+
+        report = mon.check_drift()
+        assert report["dropped_observations"] == 0
+        assert report["degraded"] is False
 
 
 class TestBaselinePersistence:
