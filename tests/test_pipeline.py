@@ -9,6 +9,7 @@ Run: pytest tests/ -v
 
 import json
 import os
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -460,6 +461,46 @@ def test_compute_fallback_means_raises_on_empty():
 # ── Config Schema Validation ─────────────────────────────────────────────────
 
 
+class TestArtefactWritersEmitLf:
+    """Content-addressed artefacts must be byte-identical across platforms.
+
+    Their SHA-256 digests are recorded at training time and re-verified at
+    startup and in CI, so a writer that emitted platform-native line endings
+    would produce a different digest on Windows than on Linux for identical
+    content. .gitattributes normalises what git stores; these tests pin what
+    the writers actually emit.
+    """
+
+    def test_all_json_artefact_writers_emit_lf(self, tmp_path):
+        from api.drift import save_baseline_stats
+        from pipeline import save_conformal, save_features, save_group_means, save_metrics
+
+        written = {
+            "features": (save_features, (["Age", "Education_Ord"], str(tmp_path / "features.json")), {}),
+            "metrics": (save_metrics, ({"r2": 0.5, "nested": {"a": 1}}, str(tmp_path / "metrics.json")), {}),
+            "group_means": (
+                save_group_means,
+                ({"occ_means": {"Dev": 1.0}, "state_means": {"CA": 2.0}}, str(tmp_path / "gm.json")),
+                {},
+            ),
+            "conformal": (
+                save_conformal,
+                (0.01, str(tmp_path / "conformal.json")),
+                {"target_coverage": 0.8, "n_scores": 100},
+            ),
+            "baseline_stats": (
+                save_baseline_stats,
+                ({"Age": [30.0, 40.0, 50.0]}, str(tmp_path / "baseline.json")),
+                {},
+            ),
+        }
+        for name, (writer, args, kwargs) in written.items():
+            writer(*args, **kwargs)
+            raw = Path(args[1]).read_bytes()
+            assert b"\r\n" not in raw, f"{name} writer emitted CRLF; its recorded digest would be platform-specific"
+            assert b"\n" in raw, f"{name} wrote no newlines at all — check the fixture, not the writer"
+
+
 class TestConfigSchema:
     """Verify that config_schema.py catches invalid configurations."""
 
@@ -470,6 +511,40 @@ class TestConfigSchema:
         config = ProjectConfig(**cfg)
         assert config.thresholds.min_annual_income == 100_000
         assert len(config.education_order) == 4
+
+    def test_unknown_model_key_rejected(self, cfg):
+        """A mistyped optional knob must fail loudly, not fall back to a default.
+
+        Optional settings are the dangerous case: ``stabilty_seeds`` silently
+        ignored leaves the trainer using a value nobody configured.
+        """
+        import copy
+
+        from pydantic import ValidationError
+
+        from config_schema import ProjectConfig
+
+        broken = copy.deepcopy(cfg)
+        broken["model"]["stabilty_seeds"] = [1, 2]
+        with pytest.raises(ValidationError):
+            ProjectConfig(**broken)
+
+    def test_classifier_path_without_hyperparameters_rejected(self, cfg):
+        """A configured classifier needs every setting the trainer indexes.
+
+        Otherwise validation passes and training dies with a KeyError partway
+        through, after the regressor has already been fitted.
+        """
+        import copy
+
+        from pydantic import ValidationError
+
+        from config_schema import ProjectConfig
+
+        broken = copy.deepcopy(cfg)
+        del broken["model"]["classifier_n_estimators"]
+        with pytest.raises(ValidationError, match="classifier_n_estimators"):
+            ProjectConfig(**broken)
 
     def test_missing_section_raises(self, cfg):
         """Missing a required top-level key should fail validation."""

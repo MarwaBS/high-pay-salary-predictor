@@ -61,6 +61,25 @@ class TestStartupRefusesToServe:
             assert client.get("/health").status_code == 200
 
 
+class TestCacheNamespaceBindsToTheServedModel:
+    """Cached predictions must be addressed by the model that produced them.
+
+    ``model_version`` is built from the git SHA and the input CSV hash, so a
+    retrain that only edits hyperparameters leaves it identical while the model
+    bytes change. Namespacing on it alone lets a shared Redis serve the previous
+    model's predictions for a full TTL.
+    """
+
+    def test_namespace_includes_the_served_artefact_digest(self):
+        with TestClient(m.app):
+            model_digest = m.state.artifact_sha256["model"]
+            assert m.state.model_version in m.cache.version
+            assert model_digest[:12] in m.cache.version, (
+                "cache namespace does not bind to the model bytes, so a "
+                "hyperparameter-only retrain would reuse the previous namespace"
+            )
+
+
 class TestClassifierHeadIsActuallyServed:
     """The premium-tier probability is an advertised response field.
 

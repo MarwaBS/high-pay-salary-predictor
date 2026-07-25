@@ -29,8 +29,17 @@ repos:
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
+        # Without this the check returns early unless git is mid-merge, so a
+        # committed conflict marker passes. CI is never mid-merge.
+        args: [--assume-in-merge]
       - id: check-added-large-files
-        args: [--maxkb=5000]    # block accidental data file commits > 5 MB
+        # --enforce-all checks every tracked file, not only newly staged ones:
+        # a fresh CI checkout stages nothing, so the default inspects an empty
+        # set and passes unconditionally. The two exclusions are the source
+        # datasets this project ships deliberately (7 MB BLS workbook, 15 MB
+        # shapefile); everything else stays under the cap.
+        args: [--maxkb=5000, --enforce-all]
+        exclude: ^(Resources/bls_state_data\.xlsx|us_state/)
       - id: debug-statements    # catch leftover pdb / breakpoint() calls
       - id: detect-private-key  # block accidental secret commits
 

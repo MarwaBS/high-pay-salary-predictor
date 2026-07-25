@@ -68,10 +68,12 @@ def _training_matrix(df: pd.DataFrame, cfg: dict, edu_order: dict, region_map: d
 
 
 def test_configured_fit_is_bit_identical_across_runs(df, cfg, edu_order, region_map):
-    """Two fits under the shipped settings must produce identical bytes.
+    """Two fits under the shipped settings produce identical bytes.
 
-    This is the property the reproducibility claim rests on: it is what lets a
-    recorded artefact digest be reproduced rather than merely asserted.
+    Same-machine sanity check only: it holds at any fixed thread count and so
+    cannot detect thread-count dependence. The cross-machine property the
+    reproducibility claim rests on is guarded by the two tests above, which pin
+    the thread count itself.
     """
     x_train, y_train = _training_matrix(df, cfg, edu_order, region_map)
     params = _production_params(cfg, cfg["model"]["n_jobs"])

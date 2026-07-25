@@ -105,8 +105,9 @@ class DriftMonitor:
         self.min_effect_size = min_effect_size
         self.buffer: deque[dict[str, float]] = deque(maxlen=window)
         self._observation_count = 0
-        #: Observations discarded since the last successful Redis write. Non-zero
-        #: means the shared window is missing live traffic.
+        #: Outstanding observations lost to failed Redis writes. Incremented on
+        #: each drop and worked off one per successful write; non-zero means the
+        #: shared window is still missing live traffic.
         self._dropped_writes = 0
         self._redis = redis_client or self._discover_redis()
         if self._redis is not None:
@@ -158,7 +159,11 @@ class DriftMonitor:
                 # Observation counter (monotonic across all replicas).
                 pipe.incr(f"{REDIS_DRIFT_KEY}:count")
                 pipe.execute()
-                self._dropped_writes = 0
+                # Recover proportionally, not on the first success: one landed
+                # observation does not make up for a window that is missing
+                # hundreds. The verdict resumes once as much fresh traffic has
+                # landed as was lost.
+                self._dropped_writes = max(0, self._dropped_writes - 1)
                 return
             except Exception as exc:
                 # Drop the observation rather than write it to the local deque:
@@ -212,8 +217,8 @@ class DriftMonitor:
                            this read, not merely the configured backend
             degraded     : True if a configured Redis window could not be loaded,
                            or observations were dropped before reaching it
-            dropped_observations : observations lost to failed Redis writes since
-                           the last successful one
+            dropped_observations : observations lost to failed Redis writes and
+                           not yet replaced by fresh ones
             features     : {feature: {z_score, effect_size, p_value, current_mean,
                             baseline_mean, n_observed, drifted}}
             any_drifted  : True if any feature is BOTH statistically significant

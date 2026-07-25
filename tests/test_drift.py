@@ -560,8 +560,12 @@ class TestDriftBackendFailureIsLoud:
         assert report["any_drifted"] is None, "never a clean False while observations are being dropped"
         assert report["dropped_observations"] == 200
 
-    def test_recovered_writes_clear_the_degraded_state(self, baseline_stats):
-        """Once writes land again the window is authoritative, so verdicts resume."""
+    def test_verdict_resumes_only_after_the_lost_traffic_is_replaced(self, baseline_stats):
+        """Recovery is proportional to what was lost, not to the first success.
+
+        A single landed observation does not make a window that is missing many
+        of them representative again.
+        """
         fake = _WriteFailingReadsWorkingRedis()
         mon = DriftMonitor(baseline_stats=baseline_stats, window=500, redis_client=fake)
 
@@ -571,6 +575,11 @@ class TestDriftBackendFailureIsLoud:
         assert mon.check_drift()["degraded"] is True
 
         fake.writes_ok = True
+        mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        partial = mon.check_drift()
+        assert partial["degraded"] is True, "one landed write must not clear a ten-observation gap"
+        assert partial["dropped_observations"] == 9
+
         for _ in range(40):
             mon.observe({"Age": 40.0, "Education_Ord": 2.0})
 

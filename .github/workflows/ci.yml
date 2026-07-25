@@ -105,6 +105,11 @@ jobs:
         # `pre-commit install`, so a committed key or a large blob reaches main
         # unchallenged. Lint/format/type hooks are omitted: they already run as
         # their own steps above, on the pinned versions.
+        #
+        # The --enforce-all / --assume-in-merge args in .pre-commit-config.yaml
+        # are load-bearing here: a fresh checkout stages nothing and is not
+        # mid-merge, so by default these two hooks inspect an empty set and pass
+        # unconditionally.
         if: matrix.python-version == '3.12'
         run: |
           pip install pre-commit
@@ -113,7 +118,9 @@ jobs:
           pre-commit run --all-files check-merge-conflict
 
       - name: Type-check with mypy
-        # Matches the Makefile `type-check` target and the pre-commit hook.
+        # Widest surface of the three: the Makefile target and the pre-commit
+        # hook cover api/, pipeline.py and scripts/. CI additionally checks
+        # config_schema.py and streamlit_app.py, which nothing imports.
         run: |
           # mypy is pinned in requirements.txt; only the stubs are added here.
           pip install pandas-stubs
