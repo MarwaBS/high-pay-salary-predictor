@@ -1,5 +1,5 @@
 {
-  "conformal_delta": 0.010776494626254518,
+  "conformal_delta": 0.01001129468479256,
   "target_coverage": 0.8,
   "method": "cross-conformal (5-fold CQR, log1p space)",
   "n_scores": 8204
