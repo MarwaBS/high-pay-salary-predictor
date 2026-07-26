@@ -1,11 +1,7 @@
 # pip-audit ignore list
 # ---------------------
-# Add vulnerability IDs here (one per line) ONLY when:
-#   1. No upstream patch exists yet
-#   2. The risk is mitigated by other controls
-#   3. A tracking issue is linked
+# pip-audit does not read this file: the CI gate passes no --ignore-vuln flag,
+# so an ID added here suppresses nothing. Suppressing a finding means adding an
+# explicit --ignore-vuln to .github/workflows/ci.yml with inline rationale.
 #
 # Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN   or   CVE-YYYY-NNNNN
-#
-# Every entry needs an inline comment naming which of the three conditions it
-# meets. An entry without one is a silenced finding, not a managed risk.

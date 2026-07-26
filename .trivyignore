@@ -1,9 +1,5 @@
 # Trivy container-scan ignores.
 #
-# Currently empty — no documented managed-risk container CVEs on this project.
-# Add CVE / GHSA IDs here only with inline rationale when a breaking fix is
-# not feasible.
-#
-# Note: the pip-audit step in ci.yml currently carries NO suppressions. Trivy
-# does not honour pip-audit's ignore list anyway, so if a Python package CVE
-# shows up in a container scan, add it here too with inline rationale.
+# Add CVE / GHSA IDs here only with inline rationale, and only when a breaking
+# fix is not feasible. Trivy does not honour pip-audit's ignore list, so a
+# Python package CVE surfaced by a container scan needs its own entry here.
