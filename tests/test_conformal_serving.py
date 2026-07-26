@@ -26,11 +26,10 @@ _PROBE_DELTA = 0.5
 _LOWER_BOUNDS = ("predicted_p10", "prediction_interval_low")
 _UPPER_BOUNDS = ("predicted_p90", "prediction_interval_high")
 _POINT_ESTIMATES = ("predicted_p50", "predicted_salary")
-# The model predicts in float32, so reconstructing one bound from another carries
-# a relative error near float32 eps — measured 1.1e-07 across 120 bounds, against
-# the ~1e-2 a wrong margin would produce. The absolute floor covers cent-rounding.
-_REL_TOLERANCE = 1e-6
-_ABS_TOLERANCE = 0.02
+# The model predicts in float32 and expm1 amplifies the log-space error, so
+# reconstructing one bound from another lands a few times float32 eps (1.19e-07)
+# away — still three orders tighter than the ~1e-2 a dropped margin produces.
+_REL_TOLERANCE = 1e-5
 
 
 @pytest.fixture(scope="module")
@@ -72,10 +71,10 @@ def _assert_margin_applied(raw, wide, delta):
     """Each bound must equal the raw one shifted by exactly ``delta`` in log space."""
     for field in _LOWER_BOUNDS:
         expected = math.expm1(math.log1p(raw[field]) - delta)
-        assert wide[field] == pytest.approx(expected, rel=_REL_TOLERANCE, abs=_ABS_TOLERANCE), field
+        assert wide[field] == pytest.approx(expected, rel=_REL_TOLERANCE), field
     for field in _UPPER_BOUNDS:
         expected = math.expm1(math.log1p(raw[field]) + delta)
-        assert wide[field] == pytest.approx(expected, rel=_REL_TOLERANCE, abs=_ABS_TOLERANCE), field
+        assert wide[field] == pytest.approx(expected, rel=_REL_TOLERANCE), field
     for field in _POINT_ESTIMATES:
         assert wide[field] == pytest.approx(raw[field]), f"{field} moved"
 
