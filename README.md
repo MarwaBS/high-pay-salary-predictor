@@ -147,7 +147,7 @@ The project is organized across four notebooks and two deployable services:
 | `notebooks/high_pay_jobs_data_cleaning.ipynb` | Data integration & cleaning (BLS + Census → single dataset) |
 | `notebooks/high_paying_jobs_data_visualization.ipynb` | EDA: distributions, rankings, correlations |
 | `notebooks/us_high_income_jobs_mapping.ipynb` | Geospatial: choropleth maps by state |
-| `notebooks/04_salary_prediction_model.ipynb` | **ML: historical v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
+| `notebooks/ARCHIVED_04_salary_prediction_model_v1.ipynb` | **ML: archived v1 point-estimator EDA (superseded by `scripts/train_quantile.py`)** |
 
 All figures are saved automatically to `Images/` at 300 DPI.
 
@@ -279,7 +279,7 @@ Grouped by the engineering discipline they demonstrate.
 - **Composite provenance string.** Every trained artefact is stamped with `model_version = {service_version}+{git_sha}.{data_sha256}` — e.g. `2.0.0+<git-sha12>.<data-sha12>`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0) pins `1c5e9d896ee5`, the commit the 2.0.0 model release was trained at; when the metrics file is later regenerated (for example, the leakage-free CV recompute), `model_version` records the commit of that regeneration instead — the SHA inside `models/model_metrics.json` is always the authoritative one, and [MODEL_CARD.md](MODEL_CARD.md) explains why it stays fetchable without being a `main` ancestor.
 - **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
 - **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`, `conformal_delta.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
-- **Rollback path.** Historical model artefacts are published per release on the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases). Note the current gap: all 7 releases published to date omit `conformal_delta.json` and `cleaned_high_pay_data.csv`, and the initContainer in `k8s/api-deployment.yaml` fetches both under `set -eu` — so redeploying straight from a release asset set does not currently start. Reproducibility rests on the pinned environment, not on a bare checkout: install `requirements-lock.txt` (the exact library set the release was trained under — recorded per release in `model_metrics.json::library_versions`), then `python -m scripts.train_quantile` against the same input CSV (pinned by `data_sha256`) and the unchanged `config.yaml` — including its fixed `random_state` and `n_jobs: 1` — regenerates identical metrics. CI does not retrain to diff; it content-addresses every shipped artefact and fails if its bytes drift from the SHA-256 recorded in `model_metrics.json`. See [MODEL_CARD.md](MODEL_CARD.md) for why a post-squash `git checkout <sha>` is not the reproduction path.
+- **Rollback path.** Historical model artefacts are published per release on the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases). Note the current gap: all 7 releases published to date omit `conformal_delta.json` and `cleaned_high_pay_data.csv`, which the initContainer fetches under `set -eu`, so a redeploy from `releases/latest` does not start today. Both joined the publish list in `train.yml` after the newest release was cut, and `tests/test_model_registry.py` gates that list — the next training run closes it. Reproducibility rests on the pinned environment, not on a bare checkout: install `requirements-lock.txt` (the exact library set the release was trained under — recorded per release in `model_metrics.json::library_versions`), then `python -m scripts.train_quantile` against the same input CSV (pinned by `data_sha256`) and the unchanged `config.yaml` — including its fixed `random_state` and `n_jobs: 1` — regenerates identical metrics. CI does not retrain to diff; it content-addresses every shipped artefact and fails if its bytes drift from the SHA-256 recorded in `model_metrics.json`. See [MODEL_CARD.md](MODEL_CARD.md) for why a post-squash `git checkout <sha>` is not the reproduction path.
 - **Why not MLflow Model Registry?** Free, versioned, rollback-able, and one fewer service to operate. A real production system would graduate to MLflow or SageMaker Model Registry; for a portfolio-scale project, GitHub Releases is the pragmatic choice and the trade-off is documented here on purpose.
 - **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote — so the provenance contract cannot silently regress.
 
@@ -490,7 +490,7 @@ Gender share overlays (map)
 - Industry deep-dives and longitudinal trends would refine signals.
 
 The full analyst-oriented narrative lives in the analysis notebooks
-(`04_salary_prediction_model.ipynb` and the EDA/visualisation notebooks).
+(`ARCHIVED_04_salary_prediction_model_v1.ipynb` and the EDA/visualisation notebooks).
 
 ---
 
@@ -506,7 +506,7 @@ high-pay-salary-predictor/
 │   ├── high_pay_jobs_data_cleaning.ipynb      # Pipeline: BLS + Census → cleaned CSV
 │   ├── high_paying_jobs_data_visualization.ipynb  # EDA: distributions, rankings, correlations
 │   ├── us_high_income_jobs_mapping.ipynb      # Geospatial: choropleth maps
-│   └── 04_salary_prediction_model.ipynb       # ★ ML: XGBoost + SHAP + statistical tests (historical v1 EDA)
+│   └── ARCHIVED_04_salary_prediction_model_v1.ipynb  # archived v1 EDA: XGBoost + SHAP + statistical tests
 │
 ├── streamlit_app.py                           # ★ Interactive dashboard (routes predictor tab through /predict)
 ├── config.yaml                                # ★ All thresholds, paths, color palettes, premium-tier threshold

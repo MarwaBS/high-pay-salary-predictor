@@ -13,9 +13,9 @@ name: Train & Release Model
 #
 # This is the pragmatic "model registry" for a portfolio project:
 # free, versioned, rollback-able storage that does not require
-# standing up MLflow Registry or an S3 bucket. Note the current gap: the
-# published asset set omits conformal_delta.json and the cleaned CSV, both of
-# which the initContainer fetches, so a redeploy from a release does not start.
+# standing up MLflow Registry or an S3 bucket. The `files:` list below is the
+# contract the initContainer depends on; tests/test_model_registry.py checks it
+# against config.yaml so an artefact the API loads cannot go unpublished.
 #
 # The release is idempotent — if a release with the same
 # ``MODEL_VERSION`` tag already exists the workflow uploads the new

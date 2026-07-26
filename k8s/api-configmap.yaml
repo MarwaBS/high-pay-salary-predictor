@@ -3,8 +3,8 @@
 # published by .github/workflows/train.yml, which runs the metric-band tests +
 # artefact-integrity gate BEFORE publishing. `releases/latest/download/` tracks
 # the newest gated release, so a redeploy needs no manual version bump. Two of
-# the URLs below 404 today: the release asset set omits conformal_delta.json and
-# cleaned_high_pay_data.csv, and the initContainer curls both under `set -eu`.
+# these URLs 404 until the next training run: conformal_delta.json and the CSV
+# joined the published asset set after the newest release was cut.
 apiVersion: v1
 kind: ConfigMap
 metadata:
