@@ -5,7 +5,7 @@
 #      IMAGE_TAG_PLACEHOLDER with the git SHA before applying. Never
 #      deploy `:latest` — it breaks rollback and auditability.
 #   2. Model + data volumes are `emptyDir` populated by an initContainer
-#      that downloads from object storage. This avoids requiring RWX PVCs
+#      that downloads from the GitHub release assets. This avoids RWX PVCs
 #      (EBS / GCE PD / Azure Disk only support RWO, so a shared PVC across
 #      multiple replicas would not schedule).
 #   3. Pod-level securityContext enforces non-root execution and drops all
@@ -51,7 +51,7 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
-      # Download model + dataset from object storage BEFORE the API starts.
+      # Download model + dataset from the release assets BEFORE the API starts.
       # An initContainer stages artefacts into emptyDir, so no ReadWriteMany PVC.
       initContainers:
         - name: fetch-artefacts

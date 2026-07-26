@@ -6,6 +6,13 @@ project uses SemVer.
 
 ## [Unreleased]
 
+### Changed
+- **`GET /drift` now requires `X-API-Key` when `API_KEY` is set, and spends
+  the same per-IP `RATE_LIMIT` budget as `/predict`** (breaking for any caller
+  that read it anonymously). It aggregates live request traffic down to
+  per-feature means, so it was the one route publishing that summary without
+  a key.
+
 ### Added
 - `SECURITY.md` with disclosure policy + in-scope / out-of-scope
   boundaries.
@@ -46,13 +53,13 @@ project uses SemVer.
 - Drift monitor no longer chronically false-alarms while its window
   fills: per-feature significance is now Šidák-corrected across the ~10
   monitored features and the 0.2 σ effect floor ramp-scales as
-  `max(0.2, 2·√(2/n))`. Measured familywise false alarms on stationary
-  bootstrapped traffic (2000 trials on the real baseline): ~37 % → ~4 %
-  at n=30 and ~37 % → ~6 % at n=100 — i.e. down to the ≈4.6 % design
-  bound (the "before" is the uncorrected union of ~10 per-feature z>2
-  tests, which does not vary with n). Detection of an Age +5 yr (0.5 σ)
-  shift is unchanged at 100 % for n=150 and n=500, and full-window
-  (n=500) behaviour is byte-for-byte identical.
+  `max(0.2, 2·√(2/n))`. Uncorrected, the union of ~10 per-feature z>2
+  tests false-alarms with probability 1 − (1 − 0.0455)^10 ≈ 37 % while
+  n < (z/d)² = 100. The corrected monitor is gated at ≤7 % over 150
+  stationary windows at both n=30 and n=100, against the ≈4.6 % design
+  level — a bound, not a published rate. Detection of an Age +5 yr
+  (0.5 σ) shift is unchanged: 25 of 25 trials at n=150, and full-window
+  (n=500) behaviour is unchanged.
 
 ### Changed
 - Python target bumped: `requires-python >= 3.11` (was `>= 3.10`).
@@ -64,7 +71,7 @@ project uses SemVer.
   installing runtime deps, to refresh OS security patches even when the
   GHA layer cache reuses a stale base-image layer.
 
-## [2.0.0] — 2026-04-xx
+## [2.0.0] — 2026-04-11
 
 ### Changed
 - **Quantile reframe (breaking semantic upgrade).** The API now returns
@@ -79,7 +86,7 @@ project uses SemVer.
 - Model registry with provenance string; `/health` exposes the current
   model fingerprint.
 - Scheduled training workflow (`.github/workflows/train.yml`).
-- Hugging Face Spaces deployment package (`a74211d`) + live demo badge
+- Hugging Face Spaces deployment package (`2db1825`) + live demo badge
   in README.
 - `config_schema.py` with Pydantic validation of `config.yaml`.
 

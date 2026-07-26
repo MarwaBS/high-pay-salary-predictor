@@ -170,16 +170,13 @@ single-split artefacts — including the honest one: the near-zero R² is a
 
 ### Serving latency
 
-Single `POST /predict`, in-process (FastAPI `TestClient`, excludes
-network/proxy), N = 1,500 on dev hardware:
+`tests/test_performance.py` drives 100 sequential in-process `POST /predict`
+calls (FastAPI `TestClient`, excludes network/proxy) and fails the build if the
+nearest-rank p99 exceeds the 200 ms SLO. No absolute millisecond figure is
+published here: it would describe the machine that ran it, and nothing in this
+repo regenerates it.
 
-| Percentile | Latency |
-|---|---|
-| p50 | ~3.6 ms |
-| p95 | ~4.6 ms |
-| p99 | ~5.2 ms |
-
-The sub-6 ms p99 is a direct result of moving every per-request lookup to
+The hot path stays off the DataFrame by moving every per-request lookup to
 an O(1) dict get / O(log n) binary search precomputed at startup
 (`build_benchmark_lookup`, `build_bls_defaults_lookup`, and the fallback
 means) — the hot path performs no DataFrame scans.

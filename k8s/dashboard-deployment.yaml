@@ -1,7 +1,7 @@
 # ── Streamlit dashboard Deployment ──────────────────────────────────────────
 # Design points:
 #   - SHA-pinned image tag placeholder (CI substitutes IMAGE_TAG_PLACEHOLDER)
-#   - initContainer pulls artefacts from object storage (no PVC)
+#   - initContainer pulls artefacts from the GitHub release assets (no PVC)
 #   - securityContext enforces non-root
 #
 # Single replica: acceptable for a portfolio dashboard. For multi-replica
