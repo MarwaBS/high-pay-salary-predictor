@@ -12,7 +12,7 @@ Design notes
 ------------
 * ``Annual Mean Wage`` is excluded from FEATURES_FULL / FEATURES_DEMO because
   it is a near-perfect linear transformation of ``Hourly Mean`` (×2080,
-  corr ≈ 1.0000, VIF ≈ 5.4×10⁸).  Keeping both distorts feature-importance
+  corr ≈ 1.0000, VIF ≈ 2.3×10⁷).  Keeping both distorts feature-importance
   scores and wastes a feature slot with zero new information.
 
 * ``Occ_Mean_Income`` and ``State_Mean_Income`` are computed from the **training
@@ -66,7 +66,7 @@ def sha256_file(path: str | Path) -> str:
 
 #: Full feature vector used by the production XGBoost model.
 #: ``Annual Mean Wage`` is intentionally excluded — it is a near-perfect linear
-#: transform of ``Hourly Mean`` (correlation 0.9999, VIF ≈ 5.4×10⁸).
+#: transform of ``Hourly Mean`` (correlation 0.9999, VIF ≈ 2.3×10⁷).
 FEATURES_FULL: list[str] = [
     "Age",
     "Education_Ord",

@@ -45,10 +45,10 @@
 
 | Finding | Detail |
 |---|---|
-| **Gender pay gap (EDA, not model)** | Welch t-test on the cleaned dataset gives Cohen's *d* ≈ 0.27 for the male/female income gap within the same occupation and state. Persists after controlling for education and region. |
-| **Age dominates what the model can learn** | Permutation importance on the v1 point estimator: Age had the largest unique ΔR². Quantile model unchanged on feature inputs. |
-| **Education premium** | Bachelor's → Doctoral ~$45K median jump in EDA. |
-| **Regional disparity** | Northeast workers earn the most (EDA); model has the narrowest P10–P90 spread there. |
+| **Gender pay gap (EDA, not model)** | Pooled Cohen's *d* ≈ 0.26 for the male/female income gap across the cleaned dataset (Welch t = 14.0). The gap survives conditioning: *d* ≈ 0.25 within the same occupation and state, *d* ≈ 0.27 within education and region. |
+| **Age is the strongest single signal** | Of the 10 model features, Age has the strongest rank correlation with income (Spearman ρ = +0.25; next is `Occ_Mean_Income` at +0.20) and the largest share of model gain (30.4% of total gain, vs 21.3%). Median income climbs from $120K at 18–29 to $167K at 65+. |
+| **Education premium** | Bachelor's degree → Doctoral degree is a ~$13.6K median jump, and that is not the largest step: Bachelor's degree → Professional degree is ~$16.1K. |
+| **Regional disparity** | West workers earn the most (EDA mean $171.8K, ahead of $168.7K in the Midwest); the model's served interval band is narrowest in the Northeast. |
 | **Data-prep ceiling** | The cleaning notebook double-filters the cohort (`INCTOT ≥ 100K` × `A_MEAN ≥ 100K`), which puts a hard upper bound on what a point estimator can achieve. The quantile reframe addresses the right question for the available data. |
 
 ---
@@ -242,7 +242,7 @@ Grouped by the engineering discipline they demonstrate.
 - **Multi-quantile XGBoost.** `reg:quantileerror` with α=[0.10, 0.50, 0.90] in a single model. API returns `predicted_p10 / p50 / p90` directly. Honest uncertainty beats a rationalised point estimate — see [MODEL_CARD.md](MODEL_CARD.md) for the rationale.
 - **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, **no `scale_pos_weight`** — at the cohort's mild ~40/60 class balance, reweighting would trade probability calibration for a negligible ranking gain, and the head is served as a calibrated probability; see [MODEL_CARD.md](MODEL_CARD.md)). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** — a true unfiltered `≥ $100K` membership classifier — is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
 - **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::test_no_occ_mean_leakage`) locks this in.
-- **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF = 5.44×10⁸ against `Hourly Mean`). 10 features total.
+- **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF ≈ 2.3×10⁷ against the other features). 10 features total.
 - **CV = Test space, leakage-free.** 5-fold CV runs on the training set only; each fold recomputes its own target-encoding means from its train rows (`np.expm1` back to dollars, then `r2_score`), so a validation row is never encoded with a mean that saw its own target and `cv_r2_mean` is directly comparable to test `r2`.
 
 ### API
@@ -300,7 +300,7 @@ Grouped by the engineering discipline they demonstrate.
 **Cleaned dataset:** `Data/cleaned_high_pay_data.csv` — 10,255 rows × 15 columns
 
 **Key fields:** Occupation, Annual Income, Education Level, Gender, State Abbreviation, Hourly Mean, Location Quotient, Employment, Jobs per 1000.
-(`Annual Mean Wage` is in the raw dataset but was dropped from model features — VIF = 5.44×10⁸ collinearity with `Hourly Mean`.)
+(`Annual Mean Wage` is in the raw dataset but was dropped from model features — VIF ≈ 2.3×10⁷ collinearity with `Hourly Mean`.)
 
 Data are used for educational and analytical purposes only. Consult each provider's terms for reuse.
 
@@ -389,35 +389,35 @@ curl -X POST http://localhost:8000/predict \
 
 **Top occupations by average income**
 ![Top 10 Occupations by Average Income](./Images/Top_Occupations_Avg_Income.png)
-Chief Executives, Physicians, and Lawyers lead. STEM software roles cluster just below — occupation choice is the strongest signal in the dataset, outranking state, education, and demographics for predicting whether someone earns above the cohort median.
+Securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
 
 **Average income by education level**
 ![Average Income by Education Level](./Images/Average_Income_by_Education_Level.png)
-Each ordinal step adds income: the Bachelor's → Doctoral gap is ~$45K in medians. However, within-tier variance is high — a Bachelor's-degree Software Engineer often out-earns a Doctoral-degree academic, confirming that education alone is insufficient and occupation context is necessary.
+The steps are modest and not monotone: Bachelor's degree → Doctoral degree is ~$13.6K in medians, but Professional degree out-earns Doctoral degree by ~$2.5K, so the last ordinal step is negative. However, within-tier variance is high — a Bachelor's-degree Software Engineer often out-earns a Doctoral-degree academic, confirming that education alone is insufficient and occupation context is necessary.
 
 **Salary distributions for top occupations**
 ![Salary Distribution for Top Occupations](./Images/Top_10_Salary_Distribution.png)
-Right-skewed distributions with long upper tails in every role — the primary justification for the `log1p` target transform. Surgeons and CEOs show the widest spread, driven by equity compensation and bonuses not captured in the dataset.
+Right-skewed distributions with long upper tails in every role — the primary justification for the `log1p` target transform. Financial-services sales agents show the widest spread (std ~$226K), driven by commission and bonus components the dataset records only as annual totals.
 
 **Correlation among numeric features**
 ![Correlation Heatmap](./Images/Correlation_Annual_Income.png)
-`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r ≈ 0.9999). Both cannot coexist in a model — VIF confirms multicollinearity (5.44×10⁸). `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
+`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r ≈ 0.9999). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
 
 **Age vs annual income**
 ![Age vs Income](./Images/Age_Annual_Income.png)
-Age is the **single strongest predictor** in exploratory permutation-importance analysis, ranking above occupation and BLS wage signals. Income rises steeply from 22–40, plateaus 40–65. Age acts as a proxy for seniority, negotiating experience, and accumulated tenure — unobserved variables that the model captures indirectly.
+Age carries the **strongest rank correlation with income** of the 10 model features, above `Occ_Mean_Income` and the BLS wage signals. Median income climbs across every age bucket, from $120K at 18–29 to $167K at 65+. Age acts as a proxy for seniority, negotiating experience, and accumulated tenure — unobserved variables that the model captures indirectly.
 
 **Gender distribution across top occupations**
 ![Gender by Occupation](./Images/Gender_Distribution_Occupations.png)
-Male representation dominates in most high-paying occupations, with the largest gaps in Engineering and Executive roles. The composition gap partly explains the observed pay gap but Welch t-test confirms it persists *within* occupation-state cells (Cohen's *d* = 0.27, *p* < 0.001).
+Male representation dominates in most high-paying occupations, with the largest gaps in Engineering and Executive roles. The composition gap partly explains the observed pay gap but the gap persists *within* occupation-state cells (sample-weighted Cohen's *d* = 0.25).
 
 **Gender distribution across top states**
 ![Gender by State](./Images/Gender_Distribution_States.png)
-Female representation in the $100K+ cohort is highest in DC, MD, and VA — states with large government/healthcare/education sectors where gender-pay gaps tend to be smaller than private-sector tech and finance.
+Female representation in the $100K+ cohort is highest in VT (66.7%), HI (53.5%) and NV (51.1%); the dataset covers the 50 states and does not include DC.
 
 **Gender distribution by education (within $100K+)**
 ![Gender by Education](./Images/Gender_Education_Distribution.png)
-At every education tier, male workers outnumber female within the $100K+ cohort. The gap is smallest at the Doctoral level — consistent with academic/research roles having narrower pay dispersion — and largest at the Professional degree level (law, medicine).
+At every education tier, male workers outnumber female within the $100K+ cohort. The male share falls monotonically with education, from 60.4% at Bachelor's to 56.6% at Doctoral, so the gap is largest at the Bachelor's level and smallest at Doctoral.
 
 **Distribution of $100K+ individuals by state**
 ![High-Paid Individuals by State](./Images/High_Paid_Individuals_by_State.png)
