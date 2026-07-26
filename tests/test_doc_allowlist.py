@@ -20,10 +20,10 @@ _MUST_BE_IGNORED = [
     "notes.md",
     "scratch.md",
     "todo.md",
-    "AUDIT_findings.md",
+    "handover_draft.md",
     "docs/SECURITY.md",
     "a/b/README.md",
-    ".github/AUDIT_findings.md",
+    ".github/handover_draft.md",
     ".github/ISSUE_TEMPLATE/notes.md",
 ]
 
