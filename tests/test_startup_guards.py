@@ -11,6 +11,30 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.main as m
+from pipeline import load_metrics
+
+
+def _metrics_without(real_load_metrics, artefact):
+    """Real metrics with one artefact's digest removed."""
+
+    def _loader(path):
+        metrics = dict(real_load_metrics(path))
+        metrics["artifact_sha256"] = {k: v for k, v in metrics["artifact_sha256"].items() if k != artefact}
+        return metrics
+
+    return _loader
+
+
+def _metrics_with_flipped(real_load_metrics, artefact):
+    """Real metrics with one artefact's digest replaced by a value no file hashes to."""
+
+    def _loader(path):
+        metrics = dict(real_load_metrics(path))
+        metrics["artifact_sha256"] = {**metrics["artifact_sha256"], artefact: "0" * 64}
+        return metrics
+
+    return _loader
+
 
 PAYLOAD = {
     "state": "CA",
@@ -59,6 +83,61 @@ class TestStartupRefusesToServe:
         """The guards above must not fire on the committed artefacts."""
         with TestClient(m.app) as client:
             assert client.get("/health").status_code == 200
+
+
+ARTEFACTS = ["model", "classifier", "features", "group_means", "baseline_stats", "conformal"]
+
+
+class TestEveryLoadedArtefactIsVerified:
+    """An artefact the recorded digests do not cover must stop startup.
+
+    Verifying only the keys the metrics file happens to name would leave the
+    rest served unchecked, which is what the digests exist to prevent.
+    """
+
+    def test_absent_metrics_file_loads_as_no_digests(self, tmp_path):
+        """Ties the stubbed metrics below to the real file: absent loads as {}."""
+        assert load_metrics(str(tmp_path / "model_metrics.json")) == {}
+
+    @pytest.mark.parametrize(
+        "metrics",
+        [{}, {"artifact_sha256": {}}, {"artifact_sha256": None}, {"model_version": "2.0.0"}],
+        ids=["file-absent", "empty-map", "null-map", "key-missing"],
+    )
+    def test_startup_refuses_without_digests(self, monkeypatch, metrics):
+        monkeypatch.setattr(m, "load_metrics", lambda _path: dict(metrics))
+        with pytest.raises(RuntimeError, match="no recorded digest in artifact_sha256"):
+            with TestClient(m.app):
+                pass
+
+    @pytest.mark.parametrize("artefact", ARTEFACTS)
+    def test_startup_refuses_when_one_digest_is_unrecorded(self, monkeypatch, artefact):
+        """A map covering everything but one artefact leaves that one unverified."""
+        monkeypatch.setattr(m, "load_metrics", _metrics_without(m.load_metrics, artefact))
+        with pytest.raises(RuntimeError, match=f"{artefact} .*no recorded digest"):
+            with TestClient(m.app):
+                pass
+
+    def test_health_omits_the_digest_of_an_artefact_that_did_not_load(self, monkeypatch):
+        """The classifier is optional; advertising its digest would claim it is served."""
+
+        def _absent(_path):
+            raise FileNotFoundError("no classifier artefact")
+
+        monkeypatch.setattr(m, "load_classifier", _absent)
+        monkeypatch.setattr(m.state, "classifier", None)
+        with TestClient(m.app) as client:
+            digests = client.get("/health").json()["artifact_sha256"]
+        assert "classifier" not in digests
+        assert "model" in digests
+
+    @pytest.mark.parametrize("artefact", ARTEFACTS)
+    def test_every_recorded_digest_is_compared_against_its_file(self, monkeypatch, artefact):
+        """Each artefact is hashed and compared, not just the ones that happen to be checked."""
+        monkeypatch.setattr(m, "load_metrics", _metrics_with_flipped(m.load_metrics, artefact))
+        with pytest.raises(RuntimeError, match=f"Artifact integrity check failed.*{artefact}"):
+            with TestClient(m.app):
+                pass
 
 
 class TestCacheNamespaceBindsToTheServedModel:

@@ -324,12 +324,17 @@ state = AppState()
 
 
 def _artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
-    """Return a mismatch string for every artefact whose bytes differ from the
-    recorded SHA-256. Empty list ⇒ every present, recorded artefact verified."""
+    """Return a problem string for every artefact not proven identical to its
+    recorded SHA-256. An unrecorded or absent artefact counts: verifying only
+    the ones the metrics file happens to name leaves the rest unchecked."""
     problems = []
     for key, path in artefact_files.items():
         want = recorded.get(key)
-        if want and path.exists():
+        if not want:
+            problems.append(f"{key} ({path.name}): no recorded digest in artifact_sha256")
+        elif not path.exists():
+            problems.append(f"{key}: artefact missing at {path}")
+        else:
             got = sha256_file(path)
             if got != want:
                 problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
@@ -429,8 +434,7 @@ async def lifespan(app: FastAPI):
     # interval. Falls back to the raw coverage when no margin is calibrated.
     state.quantile_coverage_80 = float(metrics.get("conformal_coverage_80") or metrics.get("quantile_coverage_80", 0.0))
     # Model provenance string (``{service_version}+{git_sha}.{data_sha}``)
-    # emitted by scripts/train_quantile.py. Falls back to "unknown" on
-    # pre-provenance artefacts so the API is backwards-compatible.
+    # emitted by scripts/train_quantile.py alongside the digests required below.
     state.model_version = str(metrics.get("model_version", "unknown"))
 
     # ── Artifact integrity: served bytes must match what training recorded ───
@@ -441,24 +445,28 @@ async def lifespan(app: FastAPI):
     # The digest is required: model_version comes from the git SHA and input
     # CSV, so a hyperparameter-only retrain leaves it identical.
     cache.version = f"{state.model_version}.{state.artifact_sha256.get('model', '')[:12]}"
-    if state.artifact_sha256:
-        artefact_files = {
-            "model": ROOT / VALIDATED_CFG.model.model_path,
-            "features": ROOT / VALIDATED_CFG.model.features_path,
-            "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
-            "baseline_stats": ROOT / "models" / "baseline_stats.json",
-        }
-        if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
-            artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
-        if VALIDATED_CFG.model.conformal_path:
-            artefact_files["conformal"] = ROOT / VALIDATED_CFG.model.conformal_path
-        mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
-        if mismatches:
-            raise RuntimeError(
-                "Artifact integrity check failed at startup — served files do not match "
-                f"models/model_metrics.json: {'; '.join(mismatches)}. Refusing to serve a "
-                "mislabeled model; re-deploy the audited artefacts or retrain."
-            )
+    artefact_files = {
+        "model": ROOT / VALIDATED_CFG.model.model_path,
+        "features": ROOT / VALIDATED_CFG.model.features_path,
+        "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
+        "baseline_stats": ROOT / "models" / "baseline_stats.json",
+    }
+    if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
+        artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
+    if VALIDATED_CFG.model.conformal_path:
+        artefact_files["conformal"] = ROOT / VALIDATED_CFG.model.conformal_path
+    mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
+    if mismatches:
+        raise RuntimeError(
+            "Artifact integrity check failed at startup — served files could not be "
+            f"verified against models/model_metrics.json: {'; '.join(mismatches)}. "
+            "Refusing to serve a mislabeled model; re-deploy the audited artefacts "
+            "or retrain."
+        )
+    # /health reports what was verified. The classifier is optional, so a
+    # recorded digest for one that did not load would advertise an artefact
+    # this process is not serving.
+    state.artifact_sha256 = {key: state.artifact_sha256[key] for key in artefact_files}
 
     # Classifier ↔ config threshold consistency check. The trainer writes
     # the exact ``classifier_threshold`` it was fitted against into
