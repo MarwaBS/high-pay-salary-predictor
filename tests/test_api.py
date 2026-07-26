@@ -341,7 +341,11 @@ class TestPredictBatch:
 
 class TestDriftEndpoint:
     def test_drift_200(self, client):
-        """GET /drift should return 200 regardless of observation count."""
+        """An empty observation window still reports, rather than erroring.
+
+        No API_KEY is configured here; the keyed path is covered in
+        tests/test_api_security.py.
+        """
         r = client.get("/drift")
         assert r.status_code == 200
 
