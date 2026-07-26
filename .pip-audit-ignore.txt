@@ -3,5 +3,3 @@
 # pip-audit does not read this file: the CI gate passes no --ignore-vuln flag,
 # so an ID added here suppresses nothing. Suppressing a finding means adding an
 # explicit --ignore-vuln to .github/workflows/ci.yml with inline rationale.
-#
-# Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN   or   CVE-YYYY-NNNNN

@@ -51,7 +51,7 @@ def test_every_tracked_markdown_file_stays_committable():
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.split()
+    ).stdout.splitlines()
     assert tracked, "expected the repo to track markdown files"
 
     ignored = [path for path in tracked if _is_ignored(path)]
