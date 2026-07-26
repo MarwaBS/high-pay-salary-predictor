@@ -40,9 +40,9 @@ is added.
 No MLflow / Optuna dependencies — this trainer is deliberately lean so
 it can run on a CI worker or a dev machine without pulling an
 experiment-tracking stack. The regressor hyper-parameters are pinned in
-``config.yaml`` — selected against the ``reg:squarederror`` baseline tuned
-in ``notebooks/04`` and reused unchanged; re-tuning against the quantile
-objective is out of scope for this trainer.
+``config.yaml`` and chosen by ``scripts/tune.py``, which scores candidates on
+pinball loss under the quantile objective this trainer uses. The committed
+``models/tuning_study.json`` records that run.
 
 Artefacts saved
 ---------------

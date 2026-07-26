@@ -97,8 +97,16 @@ target = log1p(Annual Income)
 
 A single XGBoost model outputs all three quantiles simultaneously. At
 inference the raw `(n, 3)` output is back-transformed via `expm1` into
-dollar space. Hyperparameters are inherited from `config.yaml` — no HPO
-re-run was needed since the objective change drives the improvement.
+dollar space. Hyperparameters come from `config.yaml` and are chosen by
+`scripts/tune.py`, which scores candidates on leakage-free 5-fold pinball loss
+over the training split only. The committed study
+(`models/tuning_study.json`, seed 42, 60 trials) found nothing better than the
+shipped values, so they were retained. Read that as a tie, not a win: the best
+candidate was 0.81 worse on a paired per-fold standard error of 35.0
+(t = 0.02, p = 0.98), and the top seven candidates span 17 of loss, so this
+region of the space is flat. The 4,006 total spread comes from the poor
+candidates. `tests/test_hyperparameter_provenance.py` binds config, study and
+search space together.
 
 ## Performance
 
