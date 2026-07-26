@@ -165,8 +165,7 @@ cython_debug/
 private/
 
 # === Private internal artifacts ===
-# Deny-by-default: a private note is ignored because it was never allowed, not
-# because someone remembered to add a pattern matching its name.
+# Every .md is private unless it appears on this list, path and all.
 *.md
 !/README.md
 !/CHANGELOG.md
@@ -175,7 +174,6 @@ private/
 !/SECURITY.md
 !/deploy/huggingface/DEPLOY.md
 !/deploy/huggingface/README.md
-!/.github/**/*.md
 Private_test/
 Private/
 internal/
