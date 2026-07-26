@@ -590,11 +590,10 @@ def main() -> None:
     )
 
     # ── Baseline comparisons + calibration (Brier) ──────────────────────────
-    # The first question a senior reviewer asks: "how does it compare to a dumb
-    # baseline?" Report majority-class accuracy and a scaled logistic-regression
-    # ROC-AUC so the XGB head's lift (or shortfall) is explicit, not assumed.
-    # Brier score (lower=better) quantifies how honest the served probabilities
-    # are; the base-rate constant predictor is the no-skill reference it beats.
+    # Majority-class accuracy and a scaled logistic-regression ROC-AUC make the
+    # XGB head's lift — or shortfall — explicit rather than assumed. Brier
+    # (lower=better) scores the served probabilities against the base-rate
+    # constant predictor.
     baseline_majority_acc = float(max(pos_rate_test, 1.0 - pos_rate_test))
     logreg = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, random_state=random_state))
     logreg.fit(X_train, y_train_clf)
