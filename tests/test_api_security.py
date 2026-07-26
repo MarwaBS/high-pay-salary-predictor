@@ -245,6 +245,25 @@ class TestApiKeyAuth:
                 r = client.post("/predict", json=payload, headers={"X-API-Key": "s3cret"})
                 assert r.status_code == 200, r.text
 
+    def test_key_comparison_is_constant_time(self, monkeypatch):
+        """The presented key must reach ``compare_digest``, not a byte-wise
+        comparison beside it: both return the same statuses, so no response
+        distinguishes them."""
+        seen: list[tuple[bytes, bytes]] = []
+
+        with reloaded_module(API_KEY="s3cret") as m:
+            real = m.secrets.compare_digest
+
+            def _spy(a, b):
+                seen.append((a, b))
+                return real(a, b)
+
+            monkeypatch.setattr(m.secrets, "compare_digest", _spy)
+            r = TestClient(m.app).post("/predict", json={"state": "CA"}, headers={"X-API-Key": "nope"})
+
+        assert r.status_code == 401
+        assert seen == [(b"nope", b"s3cret")], f"comparison never saw the presented key: {seen}"
+
     def test_dev_mode_no_key_required(self):
         with reloaded_module(API_KEY=None) as m:
             with TestClient(m.app) as client:
@@ -355,9 +374,9 @@ class TestCors:
 
 
 class TestRateLimiting:
-    """``/predict`` carries ``@limiter.limit(RATE_LIMIT)``, so these tests drive
-    it with a loaded model. Undecorated routes (``/health``) are intentionally
-    unlimited; ``/drift`` has its own budget, covered in its own class."""
+    """Every route carrying a budget is driven to 429 — here, or in its own class
+    for ``/drift``. ``/health`` and ``/meta`` are deliberately unlimited so a
+    probe cannot be locked out."""
 
     @staticmethod
     def _payload(m):
@@ -383,6 +402,20 @@ class TestRateLimiting:
             assert all(s == 200 for s in statuses[:first_reject]), (
                 f"a request was rejected before the limit: {statuses}"
             )
+
+    def test_batch_limit_enforced_returns_429(self):
+        """``/predict/batch`` carries its own fixed 10/minute budget, not ``RATE_LIMIT``.
+
+        The exact cut is asserted, not just that some 429 appears, so widening the
+        budget by one is caught. The window opens on the first request and the 12
+        calls take milliseconds, so it cannot roll over mid-run.
+        """
+        with reloaded_module() as m:
+            with TestClient(m.app) as client:
+                body = {"items": [self._payload(m)]}
+                statuses = [client.post("/predict/batch", json=body).status_code for _ in range(12)]
+
+        assert statuses == [200] * 10 + [429] * 2, f"batch budget is not exactly 10/minute: {statuses}"
 
     def test_429_body_has_detail(self):
         with reloaded_module(RATE_LIMIT="2/minute") as m:

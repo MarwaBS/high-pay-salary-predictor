@@ -255,7 +255,7 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
-limiter = Limiter(key_func=_client_ip, default_limits=[RATE_LIMIT])
+limiter = Limiter(key_func=_client_ip)
 
 # ── Prediction Cache ─────────────────────────────────────────────────────────
 # Redis-backed deterministic prediction cache. Consulted inside predict()
