@@ -9,4 +9,4 @@ lightgbm>=3.3.0
 optuna>=3.0.0                # HPO exploration in ARCHIVED_04_salary_prediction_model_v1.ipynb
 seaborn>=0.13.2
 shap>=0.51.0
-statsmodels>=0.13.0
+statsmodels>=0.14.6
