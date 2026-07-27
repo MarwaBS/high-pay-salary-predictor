@@ -171,6 +171,7 @@ private/
 !/CHANGELOG.md
 !/CONTRIBUTING.md
 !/MODEL_CARD.md
+!/DESIGN_DECISIONS.md
 !/SECURITY.md
 !/deploy/huggingface/DEPLOY.md
 !/deploy/huggingface/README.md

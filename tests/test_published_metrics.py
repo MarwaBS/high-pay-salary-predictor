@@ -82,6 +82,8 @@ CLAIMS = [
     Claim("README.md", "| P50 R² (backward-compat", rf"\| ~{N} \|", "r2"),
     Claim("README.md", "| CV R² (5-fold, train-only", rf"~{N} ±", "cv_r2_mean"),
     Claim("README.md", "| CV R² (5-fold, train-only", rf"± {N}", "cv_r2_std"),
+    # ── CHANGELOG ───────────────────────────────────────────────────────────
+    Claim("CHANGELOG.md", "to the honest", rf"honest {N}", "cv_r2_mean"),
 ]
 
 

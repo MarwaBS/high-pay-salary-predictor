@@ -27,6 +27,11 @@ updates:
     labels:
       - "ci"
       - "dependencies"
+    ignore:
+      # Major-version bumps are breaking by definition — manage manually in a
+      # dedicated branch after reading the changelog.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
 
   # Docker base image — tracks python:3.12-slim-bookworm digest updates
   - package-ecosystem: "docker"
@@ -37,3 +42,8 @@ updates:
     labels:
       - "docker"
       - "dependencies"
+    ignore:
+      # Major-version bumps are breaking by definition — manage manually in a
+      # dedicated branch after reading the changelog.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

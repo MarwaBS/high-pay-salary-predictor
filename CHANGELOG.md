@@ -47,9 +47,9 @@ project uses SemVer.
   computed over the full training set before folding; each CV fold now
   recomputes its own encoding means, so a validation row is never
   encoded with a mean that saw its own target. `cv_r2_mean` drops from
-  0.029 to the honest 0.0215. Model artefact bytes are unchanged;
+  0.029 to the honest 0.0224. Model artefact bytes are unchanged;
   `model_metrics.json` was regenerated, so its `model_version` now
-  records commit `599f28a7c99a`.
+  records commit `4aa98be6699e`.
 - Drift monitor no longer chronically false-alarms while its window
   fills: per-feature significance is now Šidák-corrected across the ~10
   monitored features and the 0.2 σ effect floor ramp-scales as
