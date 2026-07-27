@@ -32,10 +32,10 @@
 > **The honest numbers** (full detail + baselines in
 > [MODEL_CARD.md](MODEL_CARD.md)): the raw quantile interval covers ≈ 0.77;
 > the API serves a **cross-conformal–calibrated** interval that hits the
-> target 0.80 (≈ 0.80 on held-out test) at a ≈ 3% wider median P10–P90 band
-> (≈ $117K); point-estimate R² ≈ 0.03. The
+> target 0.80 (0.7942 on held-out test) at a ≈ 3% wider median P10–P90 band
+> (≈ $115K); point-estimate R² ≈ 0.03. The
 > premium-tier classifier *slightly trails* a logistic-regression baseline
-> (AUC 0.676 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
+> (AUC 0.674 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
 > production-ML *engineering* around an honestly-hard problem: a
 > leakage-safe, calibrated, observable serving path that holds its
@@ -204,8 +204,8 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 | Metric | Value | Notes |
 |--------|-------|-------|
 | 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
-| 80% coverage — **served (conformal)** | **~0.80** | The API widens `[P10, P90]` by a cross-conformal margin so the served interval hits target. |
-| Median PI width (served) | ~$117K | ~3% wider than raw after the conformal margin; the price of honest 0.80 coverage. |
+| 80% coverage — **served (conformal)** | **~0.79** | The API widens `[P10, P90]` by a cross-conformal margin, closing most of the shortfall against the 0.80 target. |
+| Median PI width (served) | ~$115K | ~3% wider than raw after the conformal margin; the price of closing the coverage gap. |
 | Quantile crossings | **0** | P10 > P50 or P50 > P90 — must stay zero. |
 | P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** — P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
 | CV R² (5-fold, train-only, dollar) | ~0.02 ± 0.02 | Leakage-free per-fold target encoding; same space as test R² — no overfitting, no space mismatch. |

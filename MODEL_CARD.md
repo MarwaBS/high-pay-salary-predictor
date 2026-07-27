@@ -118,9 +118,9 @@ shown in `models/model_metrics.json::train_date`.
 | Metric | Value | What it means |
 |---|---|---|
 | 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
-| 80% coverage — **served (cross-conformal)** | **~0.80** | The API widens the interval by a conformal margin (below) so the served band hits target. |
-| Median PI width — served | ~$117K | ~3% wider than the raw interval; the cost of honest 0.80 coverage. |
-| Conformal margin (log space) | ~0.011 | Symmetric widening added to P10/P90; estimated by 5-fold cross-conformal on train (§ below). |
+| 80% coverage — **served (cross-conformal)** | **~0.79** | The API widens the interval by a conformal margin (below), closing most of the shortfall against the 0.80 target. |
+| Median PI width — served | ~$115K | ~3% wider than the raw interval; the cost of closing the coverage gap. |
+| Conformal margin (log space) | ~0.010 | Symmetric widening added to P10/P90; estimated by 5-fold cross-conformal on train (§ below). |
 | Quantile crossings | **0** | Number of test rows where P10 > P50 or P50 > P90. Must be zero. |
 | P10 pinball loss | ~$6.6K | Quantile loss at α=0.10. |
 | P50 pinball loss | ~$25K | Quantile loss at α=0.50 (equals `0.5 × MAE`). |
@@ -148,10 +148,10 @@ the `data_sha256` is what actually binds a metric set to its input.
 
 | Metric | Value | Honesty note |
 |---|---|---|
-| Test R² (P50) | ~0.028 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
+| Test R² (P50) | ~0.026 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
 | Test MAE | ~$50K | |
 | Test RMSE | ~$108K | |
-| CV R² (5-fold, train only, dollar space) | ~0.022 ± 0.015 | Leakage-free per-fold target encoding; close to test R² — no overfitting, no space mismatch. |
+| CV R² (5-fold, train only, dollar space) | ~0.022 ± 0.017 | Leakage-free per-fold target encoding; close to test R² — no overfitting, no space mismatch. |
 
 ### CV alignment
 
@@ -167,10 +167,10 @@ across 5 seeds and records mean ± std in `model_metrics.json`:
 
 | Metric | Mean ± std (5 seeds) |
 |---|---|
-| P50 R² | ~0.018 ± 0.012 |
-| 80% coverage | ~0.782 ± 0.013 |
-| Classifier ROC-AUC | ~0.695 ± 0.008 |
-| Classifier Brier | ~0.213 ± 0.002 |
+| P50 R² | ~0.017 ± 0.010 |
+| 80% coverage | ~0.782 ± 0.011 |
+| Classifier ROC-AUC | ~0.696 ± 0.008 |
+| Classifier Brier | ~0.213 ± 0.001 |
 
 The tight std bands confirm the metrics are stable across splits, not
 single-split artefacts — including the honest one: the near-zero R² is a
@@ -209,10 +209,10 @@ At HEAD, on the held-out test split:
 | Metric | Value | What it means |
 |---|---|---|
 | Positive rate (test) | ~0.39 | Fraction of the test cohort earning ≥ `$150,000`. |
-| ROC-AUC | ~0.68 | Discrimination across the full threshold sweep. |
+| ROC-AUC | ~0.67 | Discrimination across the full threshold sweep. |
 | PR-AUC | ~0.55 | Precision-recall AUC — more informative than ROC on the ~40% positive rate. |
 | F1 @ 0.5 | ~0.50 | Balanced F1 at the default decision threshold. |
-| **Brier score** | **~0.217** vs **0.237** no-skill | Calibration of the served probability — lower is better; beats the constant-base-rate predictor. |
+| **Brier score** | **~0.218** vs **0.237** no-skill | Calibration of the served probability — lower is better; beats the constant-base-rate predictor. |
 | Subgroup ROC-AUC | 0.64–0.70 across Gender / Region | No fairness collapse — all slices stay comfortably above 0.5. |
 
 **Baselines — does the GBM earn its place?** Recorded in
@@ -221,7 +221,7 @@ At HEAD, on the held-out test split:
 | Baseline | Value | Verdict |
 |---|---|---|
 | Majority-class accuracy | ~0.61 | XGBoost accuracy (~0.65) beats it, but only modestly. |
-| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head slightly trails a scaled logistic regression (0.676 vs ~0.68).** |
+| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head slightly trails a scaled logistic regression (0.674 vs ~0.68).** |
 
 The honest conclusion: on this feature set the gradient-booster buys
 nothing over linear logistic regression — the signal ceiling is the
@@ -267,7 +267,7 @@ validated empirically at ≈0.80 on the held-out test set. The shipped model
 still trains on all of train and its bytes are unchanged. The margin is persisted to
 `models/conformal_delta.json` (content-addressed alongside the other
 artefacts) and applied at serve time; P50 is never shifted. Result: served
-coverage ≈ 0.80 at ~3% wider intervals.
+coverage 0.7942 against the 0.80 target, at ~3% wider intervals.
 
 Quantile crossings (P10 > P90) are clamped defensively inside
 `api/inference.build_response`, so clients never see an inverted range
