@@ -66,7 +66,7 @@ def sha256_file(path: str | Path) -> str:
 
 #: Full feature vector used by the production XGBoost model.
 #: ``Annual Mean Wage`` is intentionally excluded — it is a near-perfect linear
-#: transform of ``Hourly Mean`` (correlation 0.9999, VIF ≈ 2.3×10⁷).
+#: transform of ``Hourly Mean`` (correlation 1.0000 to 4 dp, VIF ≈ 2.3×10⁷).
 FEATURES_FULL: list[str] = [
     "Age",
     "Education_Ord",

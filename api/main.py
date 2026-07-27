@@ -7,7 +7,7 @@ Endpoints:
   GET  /            — API info
   GET  /health      — liveness probe
   GET  /meta        — valid states, occupations, education levels
-  GET  /metrics     — Prometheus metrics (auto-instrumented)
+  GET  /metrics     — Prometheus metrics (auto-instrumented; keyed)
   POST /predict     — salary prediction with contextual benchmarks and PI
   POST /predict/batch — up to 1000 predictions scored in one vectorised call
   GET  /drift       — feature drift report (cluster-wide with Redis; keyed)
@@ -22,8 +22,8 @@ Environment variables:
   CORS_ORIGINS          Comma-separated list of allowed origins. Defaults to
                         empty (rejects cross-origin requests). Set to "*"
                         for local dev or an explicit allow-list for prod.
-  API_KEY               If set, /predict, /predict/batch and /drift require
-                        X-API-Key. Unset = dev mode (no auth).
+  API_KEY               If set, /predict, /predict/batch, /drift and /metrics
+                        require X-API-Key. Unset = dev mode (no auth).
   RATE_LIMIT            Per-IP rate limit for /predict and /drift, counted per
                         route rather than shared (default: "60/minute").
   TRUSTED_PROXY_HOPS    Number of reverse proxies in front of the API. The
@@ -652,8 +652,18 @@ async def request_id_middleware(request: Request, call_next):
 
 
 # ── Prometheus Metrics ───────────────────────────────────────────────────────
+# Keyed on the same terms as /predict and /drift. The series here include a
+# per-route request counter that equals the observation count /drift reports, so
+# leaving it open would re-expose through telemetry what those routes authenticate.
+# Scrapers must send X-API-Key; k8s does this via the prometheus.io/... annotations
+# on the Deployment.
 
-Instrumentator().instrument(app).expose(app, endpoint="/metrics", include_in_schema=False)
+Instrumentator().instrument(app).expose(
+    app,
+    endpoint="/metrics",
+    include_in_schema=False,
+    dependencies=[Depends(verify_api_key)],
+)
 
 # Counts predictions whose raw quantiles crossed (p10>p50 or p50>p90) and were
 # clamped by build_response. A rising rate is a model-health signal, so it is
