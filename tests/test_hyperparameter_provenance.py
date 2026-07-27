@@ -65,6 +65,20 @@ def test_shipped_value_is_the_one_the_study_retained(study, key):
 
 
 @pytest.mark.parametrize("key", TUNED_KEYS)
+def test_config_matches_the_artefact_that_was_actually_trained(key):
+    """``model_metrics.json`` records what the shipped model was fitted with.
+
+    Config and the study agreeing is not enough: both are editable text, so a
+    value neither run ever used could sit in both. The artefact is the only
+    record produced by training, which makes it the tie-breaker.
+    """
+    trained = json.loads((REPO_ROOT / "models" / "model_metrics.json").read_text(encoding="utf-8"))
+    assert CFG[key] == trained["hyperparameters"][key], (
+        f"config ships {key}={CFG[key]!r} but the trained artefact records {trained['hyperparameters'][key]!r}"
+    )
+
+
+@pytest.mark.parametrize("key", TUNED_KEYS)
 def test_shipped_value_lies_inside_the_searched_space(key):
     """A value outside the space was never a candidate, so the study cannot vouch for it."""
     kind, low, high = SEARCH_SPACE[key]
@@ -233,4 +247,34 @@ def test_a_real_run_records_the_argmin_as_best(tmp_path):
     assert produced["best"]["trial"] == winner["trial"], "the run did not select its own argmin"
     assert produced["improvement_vs_incumbent"] == pytest.approx(
         produced["incumbent"]["cv_pinball"] - produced["best"]["cv_pinball"], abs=1e-6
+    )
+
+
+def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
+    """Recompute the incumbent's score instead of trusting the file.
+
+    Arithmetic consistency is not enough: a record can be internally coherent
+    and still report a number no run produced. Re-running the CV is the only
+    check a forged score cannot satisfy, so it pays the ~4s.
+
+    The tolerance is relative, not exact. XGBoost's float reductions differ by
+    build: the same parameters and seed give 17524.88 on the machine that
+    recorded the study, 17541.41 under Linux/CPython 3.11 and 17544.54 under
+    3.12 — a 0.11% spread. Asserting equality would be asserting a portability
+    the repo does not have; 1% still separates a real run from a fabricated one
+    by orders of magnitude.
+    """
+    raw = pd.read_csv(REPO_ROOT / "Data" / "cleaned_high_pay_data.csv")
+    train = training_frame(raw, test_size=CFG["test_size"], seed=study["seed"])
+    recomputed = cv_pinball(
+        train,
+        study["incumbent"]["params"],
+        seed=study["seed"],
+        folds=study["cv_folds"],
+        n_jobs=study["n_jobs"],
+        **tune_inputs,
+    )
+    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=0.01), (
+        f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} — "
+        "further apart than build-to-build float variation explains"
     )

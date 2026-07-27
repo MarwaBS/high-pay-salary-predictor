@@ -5,7 +5,6 @@ openpyxl>=3.0.0          # Excel I/O for BLS OEWS data
 
 # ── Visualization ──────────────────────────────────────────────────────────────
 matplotlib>=3.5.0
-seaborn>=0.13.2
 plotly>=6.9.0            # Interactive charts in Streamlit
 
 # ── Geospatial ─────────────────────────────────────────────────────────────────
@@ -15,12 +14,9 @@ pyshp>=2.3.1
 # ── Machine Learning ───────────────────────────────────────────────────────────
 scikit-learn>=1.1.0
 xgboost>=1.7.0
-lightgbm>=3.3.0
-shap>=0.51.0
 
 # ── Statistical Analysis ───────────────────────────────────────────────────────
 scipy>=1.9.0
-statsmodels>=0.13.0
 
 # ── Dashboard ─────────────────────────────────────────────────────────────────
 streamlit>=1.20.0
@@ -45,7 +41,6 @@ pyyaml>=6.0              # config.yaml loading
 
 # ── Development & Testing ─────────────────────────────────────────────────────
 jupyter>=1.0.0
-optuna>=3.0.0                # HPO exploration in ARCHIVED_04_salary_prediction_model_v1.ipynb
 pytest>=7.2.0
 pytest-cov>=4.0.0            # coverage reporting (make coverage)
 ruff==0.15.16                # fast linter + formatter (replaces flake8 + black + isort)

@@ -32,10 +32,10 @@
 > **The honest numbers** (full detail + baselines in
 > [MODEL_CARD.md](MODEL_CARD.md)): the raw quantile interval covers ≈ 0.77;
 > the API serves a **cross-conformal–calibrated** interval that hits the
-> target 0.80 (≈ 0.80 on held-out test) at a ≈ 3% wider median P10–P90 band
-> (≈ $117K); point-estimate R² ≈ 0.03. The
+> target 0.80 (0.7942 on held-out test) at a ≈ 3% wider median P10–P90 band
+> (≈ $115K); point-estimate R² ≈ 0.03. The
 > premium-tier classifier *slightly trails* a logistic-regression baseline
-> (AUC 0.676 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
+> (AUC 0.674 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
 > production-ML *engineering* around an honestly-hard problem: a
 > leakage-safe, calibrated, observable serving path that holds its
@@ -204,8 +204,8 @@ The primary SLO is **calibrated quantile coverage**, not R². See
 | Metric | Value | Notes |
 |--------|-------|-------|
 | 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
-| 80% coverage — **served (conformal)** | **~0.80** | The API widens `[P10, P90]` by a cross-conformal margin so the served interval hits target. |
-| Median PI width (served) | ~$117K | ~3% wider than raw after the conformal margin; the price of honest 0.80 coverage. |
+| 80% coverage — **served (conformal)** | **~0.79** | The API widens `[P10, P90]` by a cross-conformal margin, closing most of the shortfall against the 0.80 target. |
+| Median PI width (served) | ~$115K | ~3% wider than raw after the conformal margin; the price of closing the coverage gap. |
 | Quantile crossings | **0** | P10 > P50 or P50 > P90 — must stay zero. |
 | P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** — P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
 | CV R² (5-fold, train-only, dollar) | ~0.02 ± 0.02 | Leakage-free per-fold target encoding; same space as test R² — no overfitting, no space mismatch. |
@@ -263,7 +263,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Security & Reproducibility
 
-- **Blocking `pip-audit` CVE gate** in CI, run against all five requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
+- **Blocking `pip-audit` CVE gate** in CI, run against all five production requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. `requirements-notebooks.txt` is deliberately outside the gate: it is exploratory-only, never installed in an image, and its packages have no importer in the serving path. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
 - **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull the Streamlit/viz stack (`streamlit` / `plotly` / `matplotlib`) it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
 - **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
@@ -285,7 +285,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **170+ tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **460+ tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -372,7 +372,7 @@ uvicorn api.main:app --reload --port 8000
 | `GET` | `/meta` | Valid states, occupations, education levels |
 | `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
 | `POST` | `/predict/batch` | Up to 1,000 predictions in one call (auth; own 10/minute budget) |
-| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) |
+| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) — auth |
 | `GET` | `/drift` | Feature drift report (Šidák-corrected SE z-test + effect floor vs training baseline) — auth + rate limited |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
@@ -389,7 +389,7 @@ curl -X POST http://localhost:8000/predict \
 
 **Top occupations by average income**
 ![Top 10 Occupations by Average Income](./Images/Top_Occupations_Avg_Income.png)
-Securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
+Among occupations with at least 30 records, securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Without that floor the top slot goes to a 4-record occupation, which is noise. Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
 
 **Average income by education level**
 ![Average Income by Education Level](./Images/Average_Income_by_Education_Level.png)
@@ -401,7 +401,7 @@ Right-skewed distributions with long upper tails in every role — the primary j
 
 **Correlation among numeric features**
 ![Correlation Heatmap](./Images/Correlation_Annual_Income.png)
-`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r ≈ 0.9999). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
+`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r = 0.99999998, which is 1.0000 to 4 dp). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
 
 **Age vs annual income**
 ![Age vs Income](./Images/Age_Annual_Income.png)
@@ -421,15 +421,15 @@ At every education tier, male workers outnumber female within the $100K+ cohort.
 
 **Distribution of $100K+ individuals by state**
 ![High-Paid Individuals by State](./Images/High_Paid_Individuals_by_State.png)
-CA, NY, TX, and FL lead in absolute headcount (large populations). MD, VA, and WA punch above their weight on a per-capita basis, reflecting federal contractor and tech cluster concentration.
+CA (2,405), NY (1,029) and TX (667) lead in absolute headcount; NJ, VA and MA follow, and FL is ninth. MD, VA and WA punch above their weight on a per-capita basis, reflecting federal contractor and tech cluster concentration.
 
 **Average income by state (bar)**
 ![Average Income by State](./Images/Average_Highest_Income_state_Viz.png)
-New England and Mid-Atlantic states dominate average income. The model captures this through `Region_Code` and `State_Mean_Income` — the Northeast carries the strongest regional signal of the four Census regions in exploratory analysis, confirming regional signal is real and learnable.
+The West leads on mean income (~$171.8K), ahead of the Midwest (~$168.7K), the Northeast (~$168.4K) and the South (~$163.2K); no Northeast state appears in the top ten by mean. The spread across regions is narrow — under $9K separates first from last — which is why `Region_Code` ranks seventh of the ten model features by rank correlation.
 
 **Location Quotient by state**
 ![LQ by State](./Images/High_Paying_Jobs_LQ_Distribution_Viz.png)
-MD, VA, DC and WA show LQ > 1.5, meaning high-paying jobs are over-represented relative to national employment share. These states, not the largest by population, are the densest clusters of premium roles — an insight job seekers optimizing for salary should weight over absolute headcount.
+MD, VA and WA show LQ > 1.5 (the dataset covers the 50 states and not DC), meaning high-paying jobs are over-represented relative to national employment share. These states, not the largest by population, are the densest clusters of premium roles — an insight job seekers optimizing for salary should weight over absolute headcount.
 
 **Dominant education level by state**
 ![Dominant Education by State](./Images/Dominant_education_by_state_Viz.png)
@@ -527,7 +527,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 170+ tests — every fix is a locked regression guard
+├── tests/                                     # ★ 460+ tests — every fix is a locked regression guard
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
@@ -586,7 +586,7 @@ high-pay-salary-predictor/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **170+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **460+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold — the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)

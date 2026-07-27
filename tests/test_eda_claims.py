@@ -168,7 +168,7 @@ class TestGenderGap:
     @pytest.mark.parametrize(
         ("keys", "pattern"),
         [
-            (("Occupation", "State Abbreviation"), r"≈ ([0-9.]+) within the same occupation"),
+            (("Occupation", "State Abbreviation"), r"≈ ([0-9.]+) within the same occupation and state"),
             (("Education Level", "Region"), r"≈ ([0-9.]+) within education and region"),
         ],
         ids=["occupation-state", "education-region"],
