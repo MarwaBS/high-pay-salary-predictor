@@ -13,8 +13,9 @@ name: Train & Release Model
 #
 # This is the pragmatic "model registry" for a portfolio project:
 # free, versioned, rollback-able storage that does not require
-# standing up MLflow Registry or an S3 bucket. Any operator can
-# download a historical artefact from the releases page and redeploy.
+# standing up MLflow Registry or an S3 bucket. The `files:` list below is the
+# contract the initContainer depends on; tests/test_model_registry.py checks it
+# against config.yaml so an artefact the API loads cannot go unpublished.
 #
 # The release is idempotent — if a release with the same
 # ``MODEL_VERSION`` tag already exists the workflow uploads the new

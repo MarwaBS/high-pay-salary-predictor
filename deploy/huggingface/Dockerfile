@@ -38,8 +38,6 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements-space.txt
 
 # ── Project source ──────────────────────────────────────────────────────────
-# Explicit COPY list keeps the image lean and avoids pulling notebooks,
-# raw Resources, test assets, or the private/ directory.
 COPY --chown=user:user api/            /home/user/app/api/
 COPY --chown=user:user scripts/        /home/user/app/scripts/
 COPY --chown=user:user pipeline.py     /home/user/app/

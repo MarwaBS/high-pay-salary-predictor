@@ -569,8 +569,8 @@ class TestConfigSchema:
         with pytest.raises(ValidationError):
             ProjectConfig(**broken)
 
-    def test_duplicate_state_raises(self, cfg):
-        """A state appearing in two regions should fail the 50-state check."""
+    def test_missing_state_raises(self, cfg):
+        """49 states with no repeat, so only the count check can raise."""
         import copy
 
         from pydantic import ValidationError
@@ -578,8 +578,22 @@ class TestConfigSchema:
         from config_schema import ProjectConfig
 
         broken = copy.deepcopy(cfg)
-        broken["regions"]["West"].append("CA")  # CA already in West — now 51 entries
-        with pytest.raises(ValidationError):
+        broken["regions"]["West"].remove("WY")
+        with pytest.raises(ValidationError, match="exactly 50 states, got 49"):
+            ProjectConfig(**broken)
+
+    def test_duplicate_state_raises(self, cfg):
+        """A repeated state with the total still at 50, so only the duplicate check can raise."""
+        import copy
+
+        from pydantic import ValidationError
+
+        from config_schema import ProjectConfig
+
+        broken = copy.deepcopy(cfg)
+        broken["regions"]["West"].remove("WY")
+        broken["regions"]["Midwest"].append("CA")  # CA is already in West
+        with pytest.raises(ValidationError, match="duplicate states in regions"):
             ProjectConfig(**broken)
 
     def test_non_ordinal_education_raises(self, cfg):

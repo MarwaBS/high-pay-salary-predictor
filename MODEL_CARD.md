@@ -83,7 +83,7 @@ Feature set is unchanged from v1.0.0 — only the training objective changed.
 | `Employment` | float | BLS OEWS | |
 | `Location Quotient` | float | BLS OEWS | |
 | `Jobs per 1000` | float | BLS OEWS | |
-| `Hourly Mean` | float | BLS OEWS | `Annual Mean Wage` dropped (VIF ≈ 5.4×10⁸, corr=0.9999) |
+| `Hourly Mean` | float | BLS OEWS | `Annual Mean Wage` dropped (VIF ≈ 2.3×10⁷, corr=0.9999) |
 | `Occ_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
 | `State_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
 
@@ -97,8 +97,16 @@ target = log1p(Annual Income)
 
 A single XGBoost model outputs all three quantiles simultaneously. At
 inference the raw `(n, 3)` output is back-transformed via `expm1` into
-dollar space. Hyperparameters are inherited from `config.yaml` — no HPO
-re-run was needed since the objective change drives the improvement.
+dollar space. Hyperparameters come from `config.yaml` and are chosen by
+`scripts/tune.py`, which scores candidates on leakage-free 5-fold pinball loss
+over the training split only. The committed study
+(`models/tuning_study.json`, seed 42, 60 trials) found nothing better than the
+shipped values, so they were retained. Read that as a tie, not a win: the best
+candidate was 0.81 worse on a paired per-fold standard error of 35.0
+(t = 0.02, p = 0.98), and the top seven candidates span 17 of loss, so this
+region of the space is flat. The 4,006 total spread comes from the poor
+candidates. `tests/test_hyperparameter_provenance.py` binds config, study and
+search space together.
 
 ## Performance
 
@@ -170,16 +178,13 @@ single-split artefacts — including the honest one: the near-zero R² is a
 
 ### Serving latency
 
-Single `POST /predict`, in-process (FastAPI `TestClient`, excludes
-network/proxy), N = 1,500 on dev hardware:
+`tests/test_performance.py` drives 100 sequential in-process `POST /predict`
+calls (FastAPI `TestClient`, excludes network/proxy) and fails the build if the
+nearest-rank p99 exceeds the 200 ms SLO. No absolute millisecond figure is
+published here: it would describe the machine that ran it, and nothing in this
+repo regenerates it.
 
-| Percentile | Latency |
-|---|---|
-| p50 | ~3.6 ms |
-| p95 | ~4.6 ms |
-| p99 | ~5.2 ms |
-
-The sub-6 ms p99 is a direct result of moving every per-request lookup to
+The hot path stays off the DataFrame by moving every per-request lookup to
 an O(1) dict get / O(log n) binary search precomputed at startup
 (`build_benchmark_lookup`, `build_bls_defaults_lookup`, and the fallback
 means) — the hot path performs no DataFrame scans.

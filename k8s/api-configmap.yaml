@@ -1,9 +1,10 @@
 # ── Config for the salary-api Deployment ───────────────────────────────────
 # Points the initContainer at the model registry: the gated GitHub Release
 # published by .github/workflows/train.yml, which runs the metric-band tests +
-# artefact-integrity gate BEFORE publishing. `releases/latest/download/` always
-# resolves to the newest gated release, so a redeploy pulls the current model +
-# dataset from one source — no split-brain, no manual version bump.
+# artefact-integrity gate BEFORE publishing. `releases/latest/download/` tracks
+# the newest gated release, so a redeploy needs no manual version bump. Two of
+# these URLs 404 until the next training run: conformal_delta.json and the CSV
+# joined the published asset set after the newest release was cut.
 apiVersion: v1
 kind: ConfigMap
 metadata:

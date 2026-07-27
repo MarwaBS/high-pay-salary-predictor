@@ -44,9 +44,9 @@ Expect acknowledgement within 72 hours.
 
 ### pip-audit suppressions
 
-None. The `security` CI step runs `pip-audit` clean against both
-`requirements.txt` and the pinned `requirements-lock.txt`, and
-`.pip-audit-ignore.txt` lists no suppressions. The CI gate carries no
+None. The `security` CI step runs `pip-audit` clean against every requirement
+file in the repo. There is no ignore-file mechanism to inspect — `pip-audit`
+reads none, so a suppression can only be a flag. The CI gate carries no
 `--ignore-vuln` flags, so there is no active suppression path — a new CVE fails
 the build until it is fixed, or until an explicit, rationale-carrying
 `--ignore-vuln` is added to `ci.yml`.

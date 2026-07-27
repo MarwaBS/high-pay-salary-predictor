@@ -62,7 +62,7 @@ class TestDriftDetection:
         (0.3) never crosses threshold, but the standard-error z-score flags it
         (≈4.7 SE at n=250). During ramp-up the detector is deliberately
         conservative (ramp-scaled effect floor + Šidák correction — an
-        uncorrected z>2 cut false-alarmed on ~37% of stationary n=30 windows),
+        uncorrected z>2 cut leaves the ~10-feature union at ≈37%),
         so a 0.3σ shift is below the n=50 floor (2·√(2/50) ≈ 0.4σ) but well
         above the settled floor (0.2σ) once n ≥ 2·(z/d)² = 200."""
         mon = DriftMonitor(baseline_stats, window=300, alert_threshold=2.0)
@@ -163,9 +163,9 @@ class TestDriftSensitivityAtWindow500:
 
     def test_iid_from_baseline_at_n500_does_not_alarm(self):
         """Drawing 500 observations straight from the baseline distribution — i.e.
-        NO real drift — must not alarm. Without the effect-size floor, significance
-        alone would falsely alarm on ~50% of windows (each feature ~5% × several
-        features)."""
+        NO real drift — must not alarm. Without the effect-size floor these four
+        tests alarm on ≈4.5% of windows even with the Šidák correction in place,
+        and on 1 - (1 - 0.0455)^4 ≈ 17% if the correction goes too."""
         import numpy as np
 
         rng = np.random.default_rng(20260617)
@@ -220,8 +220,8 @@ class TestDriftRampUpFalseAlarms:
     ``any_drifted`` is the union of ~10 per-feature tests. An UNcorrected
     per-feature cut at z > 2 (per-test α ≈ 4.55%) leaves the union ungated, and
     below n = (z/d)² = 100 a fixed 0.2σ effect floor is implied by significance
-    alone — a perfectly stationary window then false-alarms on ~37% of trials at
-    both n=30 and n=100 (measured, 2000 bootstrap trials on the real baseline).
+    alone — so up to that fill a perfectly stationary window false-alarms with
+    probability 1 - (1 - 0.0455)^10 ≈ 37%, and less once the floor starts to bind.
     The monitor therefore Šidák-corrects the per-feature α across the k tested
     features AND ramp-scales the effect floor (max(0.2, z·√(2/n))), bounding the
     familywise false-alarm rate at ≈ erfc(2/√2) ≈ 4.6% at ANY window fill —

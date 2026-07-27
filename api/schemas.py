@@ -273,8 +273,7 @@ class HealthResponse(BaseModel):
             "``git_sha`` fragment into ``git show`` to recover the exact "
             "training code, and compare the ``data_sha256`` fragment "
             "against a local re-hash of ``data/cleaned_high_pay_data.csv`` "
-            'to prove the training data matches. Returns ``"unknown"`` '
-            "for pre-provenance artefacts."
+            "to prove the training data matches."
         ),
     )
     artifact_sha256: dict[str, str] = Field(

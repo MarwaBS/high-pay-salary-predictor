@@ -1,15 +1,5 @@
 # pip-audit ignore list
 # ---------------------
-# Add vulnerability IDs here (one per line) ONLY when:
-#   1. No upstream patch exists yet
-#   2. The risk is mitigated by other controls
-#   3. A tracking issue is linked
-#
-# Format: GHSA-xxxx-yyyy-zzzz   or   PYSEC-YYYY-NNNNN   or   CVE-YYYY-NNNNN
-#
-# There are currently NO suppressions: the CVE gate in CI runs clean against
-# both requirements.txt and the pinned requirements-lock.txt. A prior entry
-# suppressed a diskcache CVE attributed to "dvc-data → dvc", but dvc is not a
-# dependency of this project and diskcache is not in the tree at all, so the
-# suppression was vestigial and has been removed. The real CVE that pip-audit
-# surfaces (starlette < 1.3.1) was fixed by upgrading, not suppressed.
+# pip-audit does not read this file: the CI gate passes no --ignore-vuln flag,
+# so an ID added here suppresses nothing. Suppressing a finding means adding an
+# explicit --ignore-vuln to .github/workflows/ci.yml with inline rationale.

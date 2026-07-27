@@ -1,0 +1,7 @@
+# SHA-256 of each private repository name that must never appear in this repo.
+# Plaintext is deliberately absent: a guard listing the strings would republish them.
+# Add one by running: python -c "import hashlib;print(hashlib.sha256(b'<name>'.lower()).hexdigest())"
+
+5b8561d1f6b89ea574ca32fe87622d06c9a230105b7695d520ca908ce877ac34
+e5e897dfe3ae261a5b4220d9cad1a14d877e09219bc1da9eac85f52928c19dc3
+80cde3f62d6aac066f2aee671dbb9797f32cb3b25036b248a86fed59709104a8
