@@ -150,7 +150,11 @@ METRIC_SECTIONS = (
     "Stability across seeds",
     "Classifier",
     "Baselines",
+    "Model performance",
 )
+# A heading this tuple does not match scans nothing, and a scan of nothing passes
+# whatever it is pointed at, so each doc must be shown to have rows to check.
+MINIMUM_ROWS_SCANNED = {"README.md": 7, "MODEL_CARD.md": 25}
 # Rows pinned by a standalone assertion rather than a Claim entry, because the
 # published figure is derived from a nested map rather than a single key.
 ANCHORS_PINNED_ELSEWHERE = ("| Subgroup ROC-AUC |",)
@@ -182,11 +186,12 @@ def test_every_metric_row_is_pinned(doc):
     compared to anything, which is how the stale set accumulated in the first
     place.
     """
+    rows = _rows_under_metric_sections(doc)
+    assert len(rows) >= MINIMUM_ROWS_SCANNED[doc], (
+        f"only {len(rows)} metric rows found in {doc}; a renamed heading leaves this check "
+        f"scanning nothing, which passes for the wrong reason"
+    )
     anchors = [c.anchor for c in CLAIMS if c.doc == doc] + list(ANCHORS_PINNED_ELSEWHERE)
-    unpinned = [
-        row
-        for row in _rows_under_metric_sections(doc)
-        if not any(a in row for a in anchors) and not row.startswith(EXEMPT_ROW_PREFIXES)
-    ]
+    unpinned = [row for row in rows if not any(a in row for a in anchors) and not row.startswith(EXEMPT_ROW_PREFIXES)]
     detail = "\n".join(f"  {row[:100]}" for row in unpinned)
     assert not unpinned, f"unpinned metric rows in {doc}:\n{detail}"

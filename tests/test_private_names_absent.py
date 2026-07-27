@@ -103,3 +103,58 @@ def test_a_separated_name_reduces_to_the_same_digest():
 def test_tracked_file_names_no_private_repository(path):
     found = _offending(path.read_text(encoding="utf-8"), _banned_digests())
     assert not found, f"{path.relative_to(REPO_ROOT)} names a private repository"
+
+
+# Removing a name from the working tree does not remove it from the history that
+# was already published, and scanning `git ls-files` never looks there. This one
+# commit predates the guard; rewriting it needs a force-push, so it is named here
+# and every other commit is held to zero. The test below fails once it is scrubbed,
+# so the entry cannot outlive the leak it records.
+KNOWN_LEAKING_COMMITS = {"f71be272e211ad5ad77c665237037fd7016ad1e6"}
+
+
+def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
+
+
+def _default_branch_ref() -> str:
+    """Whichever name the default branch has here.
+
+    A CI checkout of a pull request has no origin/main; a local clone does.
+    HEAD is the last resort and still reaches the same history.
+    """
+    for ref in ("origin/main", "main", "HEAD"):
+        if _git("rev-parse", "--verify", "--quiet", ref).returncode == 0:
+            return ref
+    raise AssertionError("no ref to sweep")
+
+
+def _commit_messages() -> list[tuple[str, str]]:
+    assert _git("rev-parse", "--is-shallow-repository").stdout.strip() == "false", (
+        "shallow clone: a sweep of a truncated history passes for the wrong reason "
+        "(CI needs actions/checkout with fetch-depth: 0)"
+    )
+    out = _git("log", "--format=%H%x1f%B%x1e", _default_branch_ref()).stdout
+    records = []
+    for record in out.split("\x1e"):
+        if sha_and_body := record.strip().split("\x1f"):
+            if len(sha_and_body) == 2:
+                records.append((sha_and_body[0], sha_and_body[1]))
+    return records
+
+
+def test_no_unrecorded_commit_message_names_a_private_repository():
+    banned = _banned_digests()
+    messages = _commit_messages()
+    assert messages, "no commits scanned — this would pass on an empty history"
+    offenders = {sha for sha, body in messages if _offending(body, banned)}
+    assert not offenders - KNOWN_LEAKING_COMMITS, f"new leak in commit messages: {offenders - KNOWN_LEAKING_COMMITS}"
+
+
+def test_each_recorded_leak_is_still_present():
+    """A stale entry would silently widen the exception; scrubbing must retire it."""
+    banned = _banned_digests()
+    leaking = {sha for sha, body in _commit_messages() if _offending(body, banned)}
+    assert KNOWN_LEAKING_COMMITS <= leaking, (
+        f"{KNOWN_LEAKING_COMMITS - leaking} no longer leaks — delete it from KNOWN_LEAKING_COMMITS"
+    )
