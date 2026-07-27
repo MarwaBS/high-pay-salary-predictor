@@ -389,7 +389,7 @@ curl -X POST http://localhost:8000/predict \
 
 **Top occupations by average income**
 ![Top 10 Occupations by Average Income](./Images/Top_Occupations_Avg_Income.png)
-Securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
+Among occupations with at least 30 records, securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Without that floor the top slot goes to a 4-record occupation, which is noise. Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
 
 **Average income by education level**
 ![Average Income by Education Level](./Images/Average_Income_by_Education_Level.png)
@@ -401,7 +401,7 @@ Right-skewed distributions with long upper tails in every role — the primary j
 
 **Correlation among numeric features**
 ![Correlation Heatmap](./Images/Correlation_Annual_Income.png)
-`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r ≈ 0.9999). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
+`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r = 0.99999998, which is 1.0000 to 4 dp). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
 
 **Age vs annual income**
 ![Age vs Income](./Images/Age_Annual_Income.png)
@@ -421,15 +421,15 @@ At every education tier, male workers outnumber female within the $100K+ cohort.
 
 **Distribution of $100K+ individuals by state**
 ![High-Paid Individuals by State](./Images/High_Paid_Individuals_by_State.png)
-CA, NY, TX, and FL lead in absolute headcount (large populations). MD, VA, and WA punch above their weight on a per-capita basis, reflecting federal contractor and tech cluster concentration.
+CA (2,405), NY (1,029) and TX (667) lead in absolute headcount; NJ, VA and MA follow, and FL is ninth. MD, VA and WA punch above their weight on a per-capita basis, reflecting federal contractor and tech cluster concentration.
 
 **Average income by state (bar)**
 ![Average Income by State](./Images/Average_Highest_Income_state_Viz.png)
-New England and Mid-Atlantic states dominate average income. The model captures this through `Region_Code` and `State_Mean_Income` — the Northeast carries the strongest regional signal of the four Census regions in exploratory analysis, confirming regional signal is real and learnable.
+The West leads on mean income (~$171.8K), ahead of the Midwest (~$168.7K), the Northeast (~$168.4K) and the South (~$163.2K); no Northeast state appears in the top ten by mean. The spread across regions is narrow — under $9K separates first from last — which is why `Region_Code` ranks seventh of the ten model features by rank correlation.
 
 **Location Quotient by state**
 ![LQ by State](./Images/High_Paying_Jobs_LQ_Distribution_Viz.png)
-MD, VA, DC and WA show LQ > 1.5, meaning high-paying jobs are over-represented relative to national employment share. These states, not the largest by population, are the densest clusters of premium roles — an insight job seekers optimizing for salary should weight over absolute headcount.
+MD, VA and WA show LQ > 1.5 (the dataset covers the 50 states and not DC), meaning high-paying jobs are over-represented relative to national employment share. These states, not the largest by population, are the densest clusters of premium roles — an insight job seekers optimizing for salary should weight over absolute headcount.
 
 **Dominant education level by state**
 ![Dominant Education by State](./Images/Dominant_education_by_state_Viz.png)

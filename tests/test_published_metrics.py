@@ -23,6 +23,8 @@ METRICS = json.loads((REPO_ROOT / "models" / "model_metrics.json").read_text(enc
 # A printed figure. Bounded rather than a character class so it stops at the
 # sentence period in "R² ≈ 0.03." instead of capturing an unparseable "0.03.".
 N = r"([0-9]+(?:\.[0-9]+)?)"
+# Row counts print with thousands separators; stripped before comparison.
+NC = r"([0-9][0-9,]*)"
 
 
 @dataclass(frozen=True)
@@ -82,6 +84,13 @@ CLAIMS = [
     Claim("README.md", "| P50 R² (backward-compat", rf"\| ~{N} \|", "r2"),
     Claim("README.md", "| CV R² (5-fold, train-only", rf"~{N} ±", "cv_r2_mean"),
     Claim("README.md", "| CV R² (5-fold, train-only", rf"± {N}", "cv_r2_std"),
+    Claim("README.md", "on held-out test)", rf"\({N} on held-out test\)", "conformal_coverage_80"),
+    Claim("MODEL_CARD.md", "coverage 0.7", rf"coverage {N} against", "conformal_coverage_80"),
+    Claim("MODEL_CARD.md", "| Test MAE |", rf"~\${N}K", "mae", 1000),
+    Claim("MODEL_CARD.md", "| Test RMSE |", rf"~\${N}K", "rmse", 1000),
+    Claim("README.md", "| Train / test |", rf"\| {NC} / ", "n_train"),
+    Claim("README.md", "| Train / test |", rf"/ {NC} \|", "n_test"),
+    Claim("MODEL_CARD.md", "| Positive rate (test)", rf"\| ~{N} \|", "classifier_positive_rate_test"),
     # ── CHANGELOG ───────────────────────────────────────────────────────────
     Claim("CHANGELOG.md", "to the honest", rf"honest {N}", "cv_r2_mean"),
 ]
@@ -106,7 +115,7 @@ def test_published_metric_matches_the_artefact(claim: Claim):
     match = re.search(claim.pattern, line)
     assert match, f"{claim.doc}: {claim.pattern!r} found no number in {line.strip()!r}"
 
-    printed = match.group(1)
+    printed = match.group(1).replace(",", "")
     places = len(printed.split(".")[1]) if "." in printed else 0
     recorded = _rounded(METRICS[claim.key] / claim.scale, places)
 

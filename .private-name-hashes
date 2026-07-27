@@ -1,7 +1,8 @@
-# SHA-256 of each private repository name that must never appear in this repo.
+# SHA-256 of each private repository name, normalised to lowercase alphanumerics.
 # Plaintext is deliberately absent: a guard listing the strings would republish them.
-# Add one by running: python -c "import hashlib;print(hashlib.sha256(b'<name>'.lower()).hexdigest())"
+# Normalisation means a name split by punctuation shares its digest with the plain form.
+# Add one with:
+#   python -c "import hashlib,re,sys;print(hashlib.sha256(re.sub(r'[^a-z0-9]','',sys.argv[1].lower()).encode()).hexdigest())" NAME
 
+3a5815780c2055868b574d651f3849d3f0882a5eb573794eb646eaccfa37e454
 5b8561d1f6b89ea574ca32fe87622d06c9a230105b7695d520ca908ce877ac34
-e5e897dfe3ae261a5b4220d9cad1a14d877e09219bc1da9eac85f52928c19dc3
-80cde3f62d6aac066f2aee671dbb9797f32cb3b25036b248a86fed59709104a8
