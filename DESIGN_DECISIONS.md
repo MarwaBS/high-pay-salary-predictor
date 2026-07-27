@@ -58,9 +58,30 @@ unauthenticated caller cannot drain a keyed operator's budget.
 **What would reverse it:** a deployment that needs anonymous drift reads would
 have to state how the traffic summary stops being sensitive.
 
-**Residual, unresolved:** `/metrics` is unauthenticated and publishes a
-per-route request counter equal to `/drift`'s observation count.
-`k8s/api-deployment.yaml` scrapes it, so keying it breaks scraping; a
-NetworkPolicy is the usual answer. Not decided here.
-
 **Evidence:** `tests/test_api_security.py::TestDriftReportIsProtected`.
+
+---
+
+## D-003 — `/metrics` carries the same key as `/predict` and `/drift`
+
+**Decided:** `/metrics` authenticates with `X-API-Key` whenever `API_KEY` is set.
+
+**Why it came up:** it published a per-route request counter equal to the
+observation count `/drift` reports. Authenticating two routes while a third
+serves the same figure is not a policy, it is a gap — and it was recorded here
+as an open residual, which is not a state a security inconsistency gets to stay in.
+
+**Measured:** no key 401, wrong key 401, correct key 200 serving
+`salary_quantile_crossings`; an open deployment (`API_KEY` unset) is unchanged at
+200. Removing the dependency turns two tests red.
+
+**Cost, stated:** `k8s/api-deployment.yaml`'s `prometheus.io/*` annotations carry
+no headers, so the scrape job must now supply the key in its `scrape_config` or
+it will collect 401s. That is written into the manifest beside the annotations.
+Reopening the endpoint to keep scraping simple was the alternative and is
+rejected: it would re-expose through telemetry exactly what D-002 withholds.
+
+**What would reverse it:** moving telemetry to a sidecar or mesh that never
+exposes the series on the public listener would make the key unnecessary.
+
+**Evidence:** `tests/test_api_security.py::TestMetricsEndpointIsProtected`.

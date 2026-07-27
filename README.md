@@ -263,7 +263,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Security & Reproducibility
 
-- **Blocking `pip-audit` CVE gate** in CI, run against all five requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
+- **Blocking `pip-audit` CVE gate** in CI, run against all five production requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. `requirements-notebooks.txt` is deliberately outside the gate: it is exploratory-only, never installed in an image, and its packages have no importer in the serving path. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
 - **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull the Streamlit/viz stack (`streamlit` / `plotly` / `matplotlib`) it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
 - **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
@@ -372,7 +372,7 @@ uvicorn api.main:app --reload --port 8000
 | `GET` | `/meta` | Valid states, occupations, education levels |
 | `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
 | `POST` | `/predict/batch` | Up to 1,000 predictions in one call (auth; own 10/minute budget) |
-| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) |
+| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) — auth |
 | `GET` | `/drift` | Feature drift report (Šidák-corrected SE z-test + effect floor vs training baseline) — auth + rate limited |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 

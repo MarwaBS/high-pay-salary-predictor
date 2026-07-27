@@ -40,6 +40,9 @@ spec:
         prometheus.io/scrape: "true"
         prometheus.io/port: "8000"
         prometheus.io/path: "/metrics"
+        # /metrics requires X-API-Key whenever API_KEY is set. These annotations
+        # carry no headers, so the scrape job needs the key in its scrape_config
+        # or it will receive 401s — stated rather than reopening the endpoint.
     spec:
       # Pod-level security: enforce non-root execution regardless of what
       # the image says. Defence in depth — the Dockerfile already runs as
