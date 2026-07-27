@@ -254,8 +254,15 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
     """Recompute the incumbent's score instead of trusting the file.
 
     Arithmetic consistency is not enough: a record can be internally coherent
-    and still report a number no run produced. This is the only assertion that
-    a forged score cannot satisfy, so it pays the ~4s to re-run the CV.
+    and still report a number no run produced. Re-running the CV is the only
+    check a forged score cannot satisfy, so it pays the ~4s.
+
+    The tolerance is relative, not exact. XGBoost's float reductions differ by
+    build: the same parameters and seed give 17524.88 on the machine that
+    recorded the study, 17541.41 under Linux/CPython 3.11 and 17544.54 under
+    3.12 — a 0.11% spread. Asserting equality would be asserting a portability
+    the repo does not have; 1% still separates a real run from a fabricated one
+    by orders of magnitude.
     """
     raw = pd.read_csv(REPO_ROOT / "Data" / "cleaned_high_pay_data.csv")
     train = training_frame(raw, test_size=CFG["test_size"], seed=study["seed"])
@@ -267,6 +274,7 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
         n_jobs=study["n_jobs"],
         **tune_inputs,
     )
-    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], abs=1e-6), (
-        f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed}"
+    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=0.01), (
+        f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} — "
+        "further apart than build-to-build float variation explains"
     )

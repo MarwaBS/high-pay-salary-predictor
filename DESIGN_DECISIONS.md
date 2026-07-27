@@ -28,6 +28,15 @@ standard error of 35.0 (t = 0.02, p = 0.98), and the top seven candidates span
 17 of loss. The region is flat. The 4,006 spread across the whole study comes
 from the poor candidates, not from any signal near the optimum.
 
+**The scores are also build-dependent, which settles it.** The same parameters
+and seed produce 17524.88 on the machine that recorded the study, 17541.41 under
+Linux/CPython 3.11 and 17544.54 under 3.12 — XGBoost's float reductions differ by
+build. That 19.7 spread is **24x the 0.81 margin** between the incumbent and the
+best candidate. The ranking of two configurations this close is therefore not a
+portable fact, and no amount of re-running settles it. Only the absolute scores
+are recorded here; the conclusion drawn from them is "nothing beat the incumbent
+by more than noise", not "the incumbent is optimal".
+
 **What would reverse it:** a study that beats the incumbent by more than the
 paired standard error, or a change to the input data — `models/tuning_study.json`
 records the `data_sha256` it was run against, and
@@ -94,6 +103,15 @@ exposes the series on the public listener would make the key unnecessary.
 Carried deliberately, not overlooked. Each states why it is open and what would
 close it, so a reader does not have to infer the difference between a decision
 and an omission.
+
+- **The tuning study's absolute scores are not portable across builds.** See
+  D-001: the observed cross-build spread is 24x the margin the study turns on.
+  `tests/test_hyperparameter_provenance.py` therefore re-derives the incumbent
+  score against a 1% relative tolerance rather than exactly, which catches a
+  fabricated score but cannot catch one hidden inside build noise. A forgery
+  that flips the study's conclusion is caught instead by the retained-value
+  chain, which compares `config.yaml` against whichever parameters the study
+  says won — verified by mutation.
 
 - **The paired standard error, t and p in D-001 have no committed producer.**
   `models/tuning_study.json` records per-trial means only, so the per-fold losses
