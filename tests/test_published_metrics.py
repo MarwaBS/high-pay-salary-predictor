@@ -91,6 +91,8 @@ CLAIMS = [
     Claim("README.md", "| Train / test |", rf"\| {NC} / ", "n_train"),
     Claim("README.md", "| Train / test |", rf"/ {NC} \|", "n_test"),
     Claim("MODEL_CARD.md", "| Positive rate (test)", rf"\| ~{N} \|", "classifier_positive_rate_test"),
+    Claim("README.md", "| Quantile crossings |", rf"\*\*{N}\*\*", "quantile_crossings"),
+    Claim("MODEL_CARD.md", "| Quantile crossings |", rf"\*\*{N}\*\*", "quantile_crossings"),
     # ── CHANGELOG ───────────────────────────────────────────────────────────
     Claim("CHANGELOG.md", "to the honest", rf"honest {N}", "cv_r2_mean"),
 ]
@@ -129,3 +131,62 @@ def test_every_claim_names_a_recorded_metric():
     """A pin against a key the trainer stopped emitting would never compare anything."""
     missing = sorted({c.key for c in CLAIMS} - set(METRICS))
     assert not missing, f"pinned keys absent from model_metrics.json: {missing}"
+
+
+def test_subgroup_roc_auc_range_matches_the_artefact():
+    """The published range is a min and a max over the recorded subgroup map."""
+    recorded = METRICS["classifier_subgroup_roc_auc"].values()
+    line = _claiming_line(Claim("MODEL_CARD.md", "| Subgroup ROC-AUC |", "", "classifier_roc_auc"))
+    low, high = (float(x) for x in re.findall(r"min ([0-9.]+), max ([0-9.]+)", line)[0])
+    assert _rounded(min(recorded), 2) == Decimal(str(low))
+    assert _rounded(max(recorded), 2) == Decimal(str(high))
+
+
+# Headings whose tables publish measured values. A numeric row under one of these
+# must be pinned above; rows elsewhere (ports, dtypes, Make targets) need not be.
+METRIC_SECTIONS = (
+    "Quantile metrics",
+    "Point-estimate metrics",
+    "Stability across seeds",
+    "Classifier",
+    "Baselines",
+)
+# Rows pinned by a standalone assertion rather than a Claim entry, because the
+# published figure is derived from a nested map rather than a single key.
+ANCHORS_PINNED_ELSEWHERE = ("| Subgroup ROC-AUC |",)
+# Rows under a metric heading that carry a number but assert no measurement.
+EXEMPT_ROW_PREFIXES = (
+    "| Metric ",
+    "| Percentile ",
+    "| --",
+    "|---",
+)
+
+
+def _rows_under_metric_sections(doc: str) -> list[str]:
+    lines = (REPO_ROOT / doc).read_text(encoding="utf-8").splitlines()
+    inside, rows = False, []
+    for line in lines:
+        if line.startswith("#"):
+            inside = any(section.lower() in line.lower() for section in METRIC_SECTIONS)
+        elif inside and line.startswith("| ") and re.search(r"\d", line):
+            rows.append(line)
+    return rows
+
+
+@pytest.mark.parametrize("doc", ["README.md", "MODEL_CARD.md"])
+def test_every_metric_row_is_pinned(doc):
+    """The reverse of the pins above: a published figure with no pin is the gap.
+
+    Checking only that each pin resolves would let a new row be added and never
+    compared to anything, which is how the stale set accumulated in the first
+    place.
+    """
+    anchors = [c.anchor for c in CLAIMS if c.doc == doc] + list(ANCHORS_PINNED_ELSEWHERE)
+    unpinned = [
+        row
+        for row in _rows_under_metric_sections(doc)
+        if not any(a in row for a in anchors) and not row.startswith(EXEMPT_ROW_PREFIXES)
+    ]
+    detail = "\n".join(f"  {row[:100]}" for row in unpinned)
+    assert not unpinned, f"unpinned metric rows in {doc}:\n{detail}"

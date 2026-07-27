@@ -213,7 +213,7 @@ At HEAD, on the held-out test split:
 | PR-AUC | ~0.55 | Precision-recall AUC — more informative than ROC on the ~40% positive rate. |
 | F1 @ 0.5 | ~0.50 | Balanced F1 at the default decision threshold. |
 | **Brier score** | **~0.218** vs **0.237** no-skill | Calibration of the served probability — lower is better; beats the constant-base-rate predictor. |
-| Subgroup ROC-AUC | 0.64–0.70 across Gender / Region | No fairness collapse — all slices stay comfortably above 0.5. |
+| Subgroup ROC-AUC | 0.64–0.70 across Gender / Region (min 0.64, max 0.70) | No fairness collapse — all slices stay comfortably above 0.5. |
 
 **Baselines — does the GBM earn its place?** Recorded in
 `model_metrics.json`, same split:

@@ -85,3 +85,34 @@ rejected: it would re-expose through telemetry exactly what D-002 withholds.
 exposes the series on the public listener would make the key unnecessary.
 
 **Evidence:** `tests/test_api_security.py::TestMetricsEndpointIsProtected`.
+
+
+---
+
+## Known gaps
+
+Carried deliberately, not overlooked. Each states why it is open and what would
+close it, so a reader does not have to infer the difference between a decision
+and an omission.
+
+- **The paired standard error, t and p in D-001 have no committed producer.**
+  `models/tuning_study.json` records per-trial means only, so the per-fold losses
+  those statistics come from are not in the repo. The figures reproduce — anyone
+  can re-run the CV for both parameter sets — but nothing regenerates them on
+  demand. Closing it means having `scripts/tune.py` record per-fold losses.
+
+- **`scripts/tune.py` is the least-covered module (~53%).** Its `main()` is
+  exercised end-to-end by `tests/test_hyperparameter_provenance.py`, but through
+  a subprocess, which coverage cannot instrument. The behaviour is tested; the
+  lines are not counted. Closing it means calling `main()` in-process.
+
+- **`requirements-lock.txt` still pins the notebook-only packages.** The split in
+  `requirements.txt` does not extend to the lock, because the lock is the
+  reproducibility contract the trainer installs to regenerate byte-identical
+  artefacts. Regenerating it is a deliberate act that has to be followed by a
+  bit-identical retrain check, not a side effect of a dependency tidy-up.
+
+- **Both private repository names remain on `main`** in `.gitignore`,
+  `.trivyignore` and one published commit message. This branch removes them from
+  the working tree and `tests/test_private_names_absent.py` blocks re-entry, but
+  a published message can only be changed by rewriting history and force-pushing.
