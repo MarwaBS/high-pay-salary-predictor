@@ -5,10 +5,8 @@ Optuna) no longer exists; a reference to it in a docstring or user-facing
 error message would tell a user to run a file that isn't there.
 
 This test walks the repo and asserts the string ``train_model.py``
-appears nowhere in tracked, user-visible source — tests, docs, reports,
-Python modules, YAML workflows, Dockerfiles, and Makefile. Anything
-under ``private/`` or ``.git/`` is exempt (the private/ directory
-intentionally preserves historical notes).
+appears nowhere in user-visible source — tests, docs, Python modules,
+YAML workflows, Dockerfiles, and Makefile.
 
 The guard is a plain substring search rather than an AST walk because the
 references it must catch live in **comments and docstrings** (a JSON
@@ -22,31 +20,18 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 
-# Directories / files that are allowed to still mention `train_model.py`.
-# - private/                 : notes tracking historical decisions
-# - .git/                    : git internals
-# - .venv/, venv/            : developer virtualenvs
-# - __pycache__/             : compiled caches
-# - tests/test_single_trainer.py : this file's sibling, which intentionally
-#                              asserts the legacy trainer does not exist
-#                              and therefore references it by name inside
-#                              its own guard assertion message.
-# - tests/test_no_dangling_trainer_refs.py : this file itself, which
-#                              mentions the string in its docstring.
+# Directories that never hold source: git internals, virtualenvs, caches.
 _EXCLUDED_DIR_PARTS = {"private", ".git", ".venv", "venv", "__pycache__", "node_modules"}
-# Any path segment ending in these suffixes is treated as a build-tool
-# artefact (pip egg-info, setuptools dist-info, mypy cache, etc.). These
-# are generated files, usually gitignored, and often stale by design —
-# scanning them produces noise, not signal.
+# Generated build-tool output, usually gitignored and often stale by design.
 _EXCLUDED_DIR_SUFFIXES = (".egg-info", ".dist-info", ".mypy_cache", ".pytest_cache", ".ruff_cache")
+# Both guard files name the legacy trainer on purpose, inside their own assertions.
 _EXCLUDED_FILES = {
     Path("tests") / "test_single_trainer.py",
     Path("tests") / "test_no_dangling_trainer_refs.py",
 }
 
-# File extensions the guard actually scans. Skipping binaries, images,
-# notebooks (they embed ANSI output that can produce false positives),
-# and lockfiles.
+# Notebooks are skipped because they embed ANSI output that produces false
+# positives; binaries and images have nothing to match.
 _SCAN_SUFFIXES = {
     ".py",
     ".md",

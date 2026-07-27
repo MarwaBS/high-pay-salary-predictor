@@ -245,6 +245,25 @@ class TestApiKeyAuth:
                 r = client.post("/predict", json=payload, headers={"X-API-Key": "s3cret"})
                 assert r.status_code == 200, r.text
 
+    def test_key_comparison_is_constant_time(self, monkeypatch):
+        """The presented key must reach ``compare_digest``, not a byte-wise
+        comparison beside it: both return the same statuses, so no response
+        distinguishes them."""
+        seen: list[tuple[bytes, bytes]] = []
+
+        with reloaded_module(API_KEY="s3cret") as m:
+            real = m.secrets.compare_digest
+
+            def _spy(a, b):
+                seen.append((a, b))
+                return real(a, b)
+
+            monkeypatch.setattr(m.secrets, "compare_digest", _spy)
+            r = TestClient(m.app).post("/predict", json={"state": "CA"}, headers={"X-API-Key": "nope"})
+
+        assert r.status_code == 401
+        assert seen == [(b"nope", b"s3cret")], f"comparison never saw the presented key: {seen}"
+
     def test_dev_mode_no_key_required(self):
         with reloaded_module(API_KEY=None) as m:
             with TestClient(m.app) as client:
@@ -258,6 +277,55 @@ class TestApiKeyAuth:
                 }
                 r = client.post("/predict", json=payload)
                 assert r.status_code == 200, r.text
+
+
+# ── Monitoring endpoint exposure ──────────────────────────────────────────────
+
+
+class TestDriftReportIsProtected:
+    """``/drift`` aggregates the traffic that arrived through ``/predict``.
+
+    Its report carries per-feature means of live requests, so a deployment that
+    authenticates predictions must not serve the summary of them anonymously.
+    """
+
+    def test_missing_key_rejected_401(self):
+        with reloaded_module(API_KEY="s3cret") as m:
+            client = TestClient(m.app)  # no lifespan needed: auth runs first
+            assert client.get("/drift").status_code == 401
+
+    def test_wrong_key_rejected_401(self):
+        with reloaded_module(API_KEY="s3cret") as m:
+            client = TestClient(m.app)
+            assert client.get("/drift", headers={"X-API-Key": "nope"}).status_code == 401
+
+    def test_right_key_still_reports(self):
+        with reloaded_module(API_KEY="s3cret") as m:
+            with TestClient(m.app) as client:
+                r = client.get("/drift", headers={"X-API-Key": "s3cret"})
+            assert r.status_code == 200, r.text
+            assert "observations" in r.json(), r.text
+
+    def test_open_deployment_is_unchanged(self):
+        """With no API_KEY configured the report stays reachable, as before."""
+        with reloaded_module(API_KEY=None) as m:
+            with TestClient(m.app) as client:
+                assert client.get("/drift").status_code == 200
+
+    def test_liveness_probe_stays_anonymous(self):
+        """``/health`` is what the orchestrator polls; it must not need a key."""
+        with reloaded_module(API_KEY="s3cret") as m:
+            with TestClient(m.app) as client:
+                assert client.get("/health").status_code == 200
+
+    def test_limit_enforced_returns_429(self):
+        with reloaded_module(API_KEY="s3cret", RATE_LIMIT="5/minute") as m:
+            with TestClient(m.app) as client:
+                codes = [client.get("/drift", headers={"X-API-Key": "s3cret"}).status_code for _ in range(8)]
+            assert codes[0] == 200, codes
+            assert 429 in codes, f"rate limit was never enforced: {codes}"
+            first_reject = codes.index(429)
+            assert all(c == 200 for c in codes[:first_reject]), codes
 
 
 # ── CORS allow-list ───────────────────────────────────────────────────────────
@@ -306,9 +374,9 @@ class TestCors:
 
 
 class TestRateLimiting:
-    """The limiter is wired to ``/predict`` via ``@limiter.limit(RATE_LIMIT)``;
-    undecorated routes (``/health``) are intentionally unlimited, so these tests
-    drive ``/predict`` with a loaded model."""
+    """Every route carrying a budget is driven to 429 — here, or in its own class
+    for ``/drift``. ``/health`` and ``/meta`` are deliberately unlimited so a
+    probe cannot be locked out."""
 
     @staticmethod
     def _payload(m):
@@ -334,6 +402,20 @@ class TestRateLimiting:
             assert all(s == 200 for s in statuses[:first_reject]), (
                 f"a request was rejected before the limit: {statuses}"
             )
+
+    def test_batch_limit_enforced_returns_429(self):
+        """``/predict/batch`` carries its own fixed 10/minute budget, not ``RATE_LIMIT``.
+
+        The exact cut is asserted, not just that some 429 appears, so widening the
+        budget by one is caught. The window opens on the first request and the 12
+        calls take milliseconds, so it cannot roll over mid-run.
+        """
+        with reloaded_module() as m:
+            with TestClient(m.app) as client:
+                body = {"items": [self._payload(m)]}
+                statuses = [client.post("/predict/batch", json=body).status_code for _ in range(12)]
+
+        assert statuses == [200] * 10 + [429] * 2, f"batch budget is not exactly 10/minute: {statuses}"
 
     def test_429_body_has_detail(self):
         with reloaded_module(RATE_LIMIT="2/minute") as m:

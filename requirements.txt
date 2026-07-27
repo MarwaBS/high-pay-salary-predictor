@@ -45,7 +45,7 @@ pyyaml>=6.0              # config.yaml loading
 
 # ── Development & Testing ─────────────────────────────────────────────────────
 jupyter>=1.0.0
-optuna>=3.0.0                # HPO exploration in 04_salary_prediction_model.ipynb (v1 EDA)
+optuna>=3.0.0                # HPO exploration in ARCHIVED_04_salary_prediction_model_v1.ipynb
 pytest>=7.2.0
 pytest-cov>=4.0.0            # coverage reporting (make coverage)
 ruff==0.15.16                # fast linter + formatter (replaces flake8 + black + isort)

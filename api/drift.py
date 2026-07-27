@@ -277,11 +277,10 @@ class DriftMonitor:
         # ``any_drifted`` is the union of k per-feature tests (~10 in
         # production). At a per-feature two-sided cut of z > 2 (alpha_1 =
         # erfc(2/sqrt 2) ~= 4.55%) the familywise false-alarm probability on a
-        # perfectly stationary window is 1 - (1 - 0.0455)^10 ~= 37% — and
-        # measured ~37% at both n=30 and n=100 over 2000 bootstrap trials,
-        # because during ramp-up nothing else gates the decision (see the
-        # effect-floor note below). Sidak inverts that union bound exactly for
-        # independent tests: testing each feature at
+        # perfectly stationary window is 1 - (1 - 0.0455)^10 ~= 37%, and during
+        # ramp-up nothing else gates the decision (see the effect-floor note
+        # below). Sidak inverts that union bound exactly for independent tests:
+        # testing each feature at
         #     alpha_k = 1 - (1 - alpha_family)^(1/k)
         # gives P(any false alarm) = alpha_family regardless of k. Features
         # here are only weakly correlated, so alpha_family is a tight upper
@@ -343,8 +342,7 @@ class DriftMonitor:
             # for n > (z_crit/d)^2 — with z_crit ~ 2 and d = 0.2 that is
             # n > 100. Below that, "significant" implies "above the floor",
             # the floor adds nothing, and every feature runs at its full
-            # per-test alpha — exactly the measured ~37%-at-n=30 ramp-up
-            # false-alarm regime. Scaling the floor as
+            # per-test alpha — the ~37% union-bound regime above. Scaling the floor as
             #     floor_n = max(d, alert_threshold * sqrt(2/n))
             # keeps the practical gate a factor sqrt(2) ABOVE the base
             # significance bound in z-units (2.0 -> 2.83 SE; per-feature tail
