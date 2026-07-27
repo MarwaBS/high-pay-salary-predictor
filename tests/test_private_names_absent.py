@@ -113,14 +113,28 @@ def test_tracked_file_names_no_private_repository(path):
 KNOWN_LEAKING_COMMITS = {"f71be272e211ad5ad77c665237037fd7016ad1e6"}
 
 
+def _git(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
+
+
+def _default_branch_ref() -> str:
+    """Whichever name the default branch has here.
+
+    A CI checkout of a pull request has no origin/main; a local clone does.
+    HEAD is the last resort and still reaches the same history.
+    """
+    for ref in ("origin/main", "main", "HEAD"):
+        if _git("rev-parse", "--verify", "--quiet", ref).returncode == 0:
+            return ref
+    raise AssertionError("no ref to sweep")
+
+
 def _commit_messages() -> list[tuple[str, str]]:
-    out = subprocess.run(
-        ["git", "log", "--format=%H%x1f%B%x1e", "origin/main"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout
+    assert _git("rev-parse", "--is-shallow-repository").stdout.strip() == "false", (
+        "shallow clone: a sweep of a truncated history passes for the wrong reason "
+        "(CI needs actions/checkout with fetch-depth: 0)"
+    )
+    out = _git("log", "--format=%H%x1f%B%x1e", _default_branch_ref()).stdout
     records = []
     for record in out.split("\x1e"):
         if sha_and_body := record.strip().split("\x1f"):
