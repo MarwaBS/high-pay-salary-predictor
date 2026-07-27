@@ -4,7 +4,7 @@ numpy>=1.21.0
 openpyxl>=3.0.0          # Excel I/O for BLS OEWS data
 
 # ── Visualization ──────────────────────────────────────────────────────────────
-matplotlib>=3.5.0
+matplotlib>=3.11.1
 plotly>=6.9.0            # Interactive charts in Streamlit
 
 # ── Geospatial ─────────────────────────────────────────────────────────────────
