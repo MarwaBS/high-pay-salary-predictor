@@ -22,8 +22,8 @@ Environment variables:
   CORS_ORIGINS          Comma-separated list of allowed origins. Defaults to
                         empty (rejects cross-origin requests). Set to "*"
                         for local dev or an explicit allow-list for prod.
-  API_KEY               If set, /predict, /predict/batch, /drift and /metrics
-                        require X-API-Key. Unset = dev mode (no auth).
+  API_KEY               If set, /predict, /predict/batch and /drift require
+                        X-API-Key. Unset = dev mode (no auth).
   RATE_LIMIT            Per-IP rate limit for /predict and /drift, counted per
                         route rather than shared (default: "60/minute").
   TRUSTED_PROXY_HOPS    Number of reverse proxies in front of the API. The

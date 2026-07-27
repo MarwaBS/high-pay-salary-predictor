@@ -83,7 +83,7 @@ Feature set is unchanged from v1.0.0 — only the training objective changed.
 | `Employment` | float | BLS OEWS | |
 | `Location Quotient` | float | BLS OEWS | |
 | `Jobs per 1000` | float | BLS OEWS | |
-| `Hourly Mean` | float | BLS OEWS | `Annual Mean Wage` dropped (VIF ≈ 2.3×10⁷, corr = 1.0000 to 4 dp) |
+| `Hourly Mean` | float | BLS OEWS | `Annual Mean Wage` dropped (VIF ≈ 2.3×10⁷, corr=0.9999) |
 | `Occ_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
 | `State_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
 
