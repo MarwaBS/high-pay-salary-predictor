@@ -328,6 +328,33 @@ class TestDriftReportIsProtected:
             assert all(c == 200 for c in codes[:first_reject]), codes
 
 
+class TestMetricsEndpointIsProtected:
+    """``/metrics`` publishes the same request counter ``/drift`` reports.
+
+    Leaving it open would re-expose through telemetry exactly what the keyed
+    routes withhold, so it carries the same dependency.
+    """
+
+    def test_missing_key_rejected_401(self):
+        with reloaded_module(API_KEY="s3cret") as m:
+            assert TestClient(m.app).get("/metrics").status_code == 401
+
+    def test_wrong_key_rejected_401(self):
+        with reloaded_module(API_KEY="s3cret") as m:
+            assert TestClient(m.app).get("/metrics", headers={"X-API-Key": "nope"}).status_code == 401
+
+    def test_right_key_serves_the_series(self):
+        with reloaded_module(API_KEY="s3cret") as m:
+            response = TestClient(m.app).get("/metrics", headers={"X-API-Key": "s3cret"})
+            assert response.status_code == 200
+            assert "salary_quantile_crossings" in response.text
+
+    def test_open_deployment_is_unchanged(self):
+        """No API_KEY means no auth anywhere, including here."""
+        with reloaded_module(API_KEY=None) as m:
+            assert TestClient(m.app).get("/metrics").status_code == 200
+
+
 # ── CORS allow-list ───────────────────────────────────────────────────────────
 
 

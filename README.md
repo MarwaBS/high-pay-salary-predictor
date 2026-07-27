@@ -263,7 +263,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Security & Reproducibility
 
-- **Blocking `pip-audit` CVE gate** in CI, run against all five requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
+- **Blocking `pip-audit` CVE gate** in CI, run against all five production requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. `requirements-notebooks.txt` is deliberately outside the gate: it is exploratory-only, never installed in an image, and its packages have no importer in the serving path. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
 - **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull the Streamlit/viz stack (`streamlit` / `plotly` / `matplotlib`) it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
 - **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
@@ -372,7 +372,7 @@ uvicorn api.main:app --reload --port 8000
 | `GET` | `/meta` | Valid states, occupations, education levels |
 | `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
 | `POST` | `/predict/batch` | Up to 1,000 predictions in one call (auth; own 10/minute budget) |
-| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) |
+| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) — auth |
 | `GET` | `/drift` | Feature drift report (Šidák-corrected SE z-test + effect floor vs training baseline) — auth + rate limited |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
@@ -389,7 +389,7 @@ curl -X POST http://localhost:8000/predict \
 
 **Top occupations by average income**
 ![Top 10 Occupations by Average Income](./Images/Top_Occupations_Avg_Income.png)
-Securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
+Among occupations with at least 30 records, securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Without that floor the top slot goes to a 4-record occupation, which is noise. Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
 
 **Average income by education level**
 ![Average Income by Education Level](./Images/Average_Income_by_Education_Level.png)
@@ -401,7 +401,7 @@ Right-skewed distributions with long upper tails in every role — the primary j
 
 **Correlation among numeric features**
 ![Correlation Heatmap](./Images/Correlation_Annual_Income.png)
-`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r ≈ 0.9999). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
+`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r = 0.99999998, which is 1.0000 to 4 dp). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
 
 **Age vs annual income**
 ![Age vs Income](./Images/Age_Annual_Income.png)
@@ -586,7 +586,7 @@ high-pay-salary-predictor/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **170+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **460+ tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold — the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)
