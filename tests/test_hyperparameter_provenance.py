@@ -148,8 +148,9 @@ class TestTheSearchItself:
 class TestTheStudyRecordIsSelfConsistent:
     """A record whose numbers disagree with each other vouches for nothing.
 
-    Each assertion here is arithmetic on the file alone, so a study edited by
-    hand — rather than produced by a run — fails.
+    Each assertion here is arithmetic on the file alone, so an edit that leaves
+    the record internally coherent passes them. Re-running a score is what a
+    fabricated one cannot survive; that is the two re-derivation tests below.
     """
 
     def test_improvement_equals_the_difference_it_reports(self, study):
@@ -277,4 +278,28 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
     assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=0.01), (
         f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} — "
         "further apart than build-to-build float variation explains"
+    )
+
+
+def test_the_recorded_best_score_re_derives(study, tune_inputs):
+    """The winner's score is re-run too, because the conclusion compares the pair.
+
+    Re-deriving the incumbent alone leaves the other half of the comparison taken
+    on trust, so a record could keep a true incumbent beside an invented winner
+    and stay coherent. The 58 remaining trial scores are not re-run: they cost a
+    full CV each and no conclusion rests on them individually.
+    """
+    raw = pd.read_csv(REPO_ROOT / "Data" / "cleaned_high_pay_data.csv")
+    train = training_frame(raw, test_size=CFG["test_size"], seed=study["seed"])
+    recomputed = cv_pinball(
+        train,
+        study["best"]["params"],
+        seed=study["seed"],
+        folds=study["cv_folds"],
+        n_jobs=study["n_jobs"],
+        **tune_inputs,
+    )
+    assert recomputed == pytest.approx(study["best"]["cv_pinball"], rel=0.01), (
+        f"study records {study['best']['cv_pinball']} for trial {study['best']['trial']}, "
+        f"re-running its parameters gives {recomputed}"
     )

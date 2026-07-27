@@ -3,6 +3,9 @@
 A floor such as "460+" stays true while it rots, so the figure is pinned exactly:
 adding or removing a test fails here until the README is updated with it.
 Collection runs in a subprocess because a suite cannot collect itself.
+
+Scope: only a count written directly before the word "tests" is compared. A subset
+count such as "99 unit tests" asserts something this cannot check.
 """
 
 from __future__ import annotations
@@ -18,8 +21,10 @@ import pytest
 REPO_ROOT = Path(__file__).parent.parent
 README = REPO_ROOT / "README.md"
 
-# The trailing "+" is matched, not excluded: a floor must be caught, not skipped.
-CLAIM = re.compile(r"\b([0-9]{2,})\+?\s+tests\b")
+# The trailing "+" is matched, not excluded: a floor must be pinned, not skipped.
+# The digits are taken as one token, separators included, so "1,506" is read as
+# 1506 rather than as the 506 that a word boundary after the comma would find.
+CLAIM = re.compile(r"(?<![0-9,])([0-9][0-9,]{1,})\+?\s+tests\b")
 
 
 @functools.cache
@@ -39,7 +44,7 @@ def collected_count() -> int:
 def claiming_lines() -> list[tuple[int, str, int]]:
     lines = README.read_text(encoding="utf-8").splitlines()
     return [
-        (number, line, int(match.group(1)))
+        (number, line, int(match.group(1).replace(",", "")))
         for number, line in enumerate(lines, start=1)
         if (match := CLAIM.search(line))
     ]

@@ -113,6 +113,17 @@ and an omission.
   chain, which compares `config.yaml` against whichever parameters the study
   says won — verified by mutation.
 
+- **The classifier head's six hyper-parameters have no producer.**
+  `config.yaml` sets `classifier_n_estimators 200`, `classifier_max_depth 4`,
+  `classifier_learning_rate 0.05`, `classifier_subsample 0.85`,
+  `classifier_colsample_bytree 0.85` and `classifier_reg_lambda 1.0`.
+  `scripts/tune.py` searches the six regressor keys only, so what D-001 says of
+  the regressor before it was tuned is still true here: no script emits them and
+  no record says where they came from. No justification is offered for the values,
+  because one written now would be written after the fact. Closing it means
+  extending the search to the classifier head and running it — which can force a
+  retrain, so it is a scheduled action rather than a tidy-up.
+
 - **The paired standard error, t and p in D-001 have no committed producer.**
   `models/tuning_study.json` records per-trial means only, so the per-fold losses
   those statistics come from are not in the repo. The figures reproduce — anyone
