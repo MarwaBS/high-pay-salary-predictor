@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import re
 import subprocess
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -105,14 +106,6 @@ def test_tracked_file_names_no_private_repository(path):
     assert not found, f"{path.relative_to(REPO_ROOT)} names a private repository"
 
 
-# Removing a name from the working tree does not remove it from the history that
-# was already published, and scanning `git ls-files` never looks there. This one
-# commit predates the guard; rewriting it needs a force-push, so it is named here
-# and every other commit is held to zero. The test below fails once it is scrubbed,
-# so the entry cannot outlive the leak it records.
-KNOWN_LEAKING_COMMITS = {"f71be272e211ad5ad77c665237037fd7016ad1e6"}
-
-
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
 
@@ -143,18 +136,20 @@ def _commit_messages() -> list[tuple[str, str]]:
     return records
 
 
-def test_no_unrecorded_commit_message_names_a_private_repository():
+def test_no_commit_message_names_a_private_repository():
+    """`git ls-files` never reaches history, so published messages need their own sweep."""
     banned = _banned_digests()
     messages = _commit_messages()
     assert messages, "no commits scanned — this would pass on an empty history"
     offenders = {sha for sha, body in messages if _offending(body, banned)}
-    assert not offenders - KNOWN_LEAKING_COMMITS, f"new leak in commit messages: {offenders - KNOWN_LEAKING_COMMITS}"
+    assert not offenders, f"commit messages name a private repository: {offenders}"
 
 
-def test_each_recorded_leak_is_still_present():
-    """A stale entry would silently widen the exception; scrubbing must retire it."""
-    banned = _banned_digests()
-    leaking = {sha for sha, body in _commit_messages() if _offending(body, banned)}
-    assert KNOWN_LEAKING_COMMITS <= leaking, (
-        f"{KNOWN_LEAKING_COMMITS - leaking} no longer leaks — delete it from KNOWN_LEAKING_COMMITS"
-    )
+def test_the_message_sweep_reads_real_bodies():
+    """Bodies parsed as empty would make the sweep above pass on any history."""
+    messages = _commit_messages()
+    tokens = Counter(token for _, body in messages for token in TOKEN.findall(body))
+    assert tokens, "no tokens parsed from any commit body"
+    most_common, _ = tokens.most_common(1)[0]
+    offenders = {sha for sha, body in messages if _offending(body, {_digest(most_common)})}
+    assert offenders, "found nothing for a token taken from the history itself"
