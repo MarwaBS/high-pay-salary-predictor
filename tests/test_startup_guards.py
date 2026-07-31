@@ -179,3 +179,25 @@ class TestClassifierHeadIsActuallyServed:
             payload = {**PAYLOAD, "occupation": m.state.occupations[0]}
             body = client.post("/predict/batch", json={"items": [payload]}).json()
             assert body["items"][0]["p_above_premium_threshold"] is not None
+
+
+class TestServedCoverageWiring:
+    """The coverage the API reports must come through the helper that treats a
+    recorded 0.0 as a real measurement, not as a missing value."""
+
+    def test_a_recorded_zero_coverage_survives_startup(self, monkeypatch):
+        real_load_metrics = m.load_metrics
+
+        def _zero_conformal(path):
+            metrics = dict(real_load_metrics(path))
+            metrics["conformal_coverage_80"] = 0.0
+            metrics["quantile_coverage_80"] = 0.8
+            return metrics
+
+        monkeypatch.setattr(m, "load_metrics", _zero_conformal)
+        with TestClient(m.app):
+            assert m.state.quantile_coverage_80 == 0.0
+
+    def test_the_helper_prefers_the_conformalized_number(self):
+        assert m._served_interval_coverage({"conformal_coverage_80": 0.0, "quantile_coverage_80": 0.8}) == 0.0
+        assert m._served_interval_coverage({"quantile_coverage_80": 0.8}) == 0.8

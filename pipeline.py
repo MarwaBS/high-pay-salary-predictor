@@ -159,8 +159,9 @@ def engineer_features(
 
     Raises
     ------
-    ValueError  if any required column is missing, or if any Education Level,
-                Gender, or State Abbreviation value has no mapping — encoding
+    ValueError  if any required column is missing, if any Education Level,
+                Gender, or State Abbreviation value has no mapping, or if
+                *region_map* names a region absent from REGION_CODES — encoding
                 an unknown category silently (NaN, or a Region_Code 0 collision)
                 would ship a quietly-degraded model on a config typo.
     """
@@ -181,6 +182,12 @@ def engineer_features(
     bad_states = sorted(set(df["State Abbreviation"].unique()) - set(region_map), key=str)
     if bad_states:
         raise ValueError(f"engineer_features: unmapped State Abbreviation values {bad_states}")
+    bad_regions = sorted(set(region_map.values()) - set(REGION_CODES), key=str)
+    if bad_regions:
+        raise ValueError(
+            f"engineer_features: region names {bad_regions} are absent from REGION_CODES; "
+            f"expected one of {sorted(REGION_CODES)}"
+        )
 
     out = df.copy()
     out["Education_Ord"] = out["Education Level"].map(edu_order)

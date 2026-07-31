@@ -324,6 +324,19 @@ state = AppState()
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
 
 
+def _served_interval_coverage(metrics: dict[str, Any]) -> float:
+    """Coverage of the interval the API actually serves.
+
+    With a conformal margin applied that is the conformalized coverage, not the
+    raw quantile coverage — surfacing the raw number would understate the served
+    interval. A recorded 0.0 is a real measurement, not a missing one.
+    """
+    coverage = metrics.get("conformal_coverage_80")
+    if coverage is None:
+        coverage = metrics.get("quantile_coverage_80", 0.0)
+    return float(coverage)
+
+
 def _artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
     """Return a problem string for every artefact not proven identical to its
     recorded SHA-256. An unrecorded or absent artefact counts: verifying only
@@ -429,11 +442,7 @@ async def lifespan(app: FastAPI):
     # for a quick operator sanity check; intervals come from the model's
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
-    # Report the coverage of the interval the API actually serves. With a
-    # conformal margin applied that is the conformalized coverage, not the raw
-    # quantile coverage — surfacing the raw number would understate the served
-    # interval. Falls back to the raw coverage when no margin is calibrated.
-    state.quantile_coverage_80 = float(metrics.get("conformal_coverage_80") or metrics.get("quantile_coverage_80", 0.0))
+    state.quantile_coverage_80 = _served_interval_coverage(metrics)
     # Model provenance string (``{service_version}+{git_sha}.{data_sha}``)
     # emitted by scripts/train_quantile.py alongside the digests required below.
     state.model_version = str(metrics.get("model_version", "unknown"))
@@ -823,6 +832,18 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     return response
 
 
+def _complete_batch(responses: list[PredictResponse | None]) -> list[PredictResponse]:
+    """Drop nothing silently: the schema promises one result per input item.
+
+    Raising lets the global handler log the trace and return the generic 500 with
+    a request id, rather than a caller receiving a shorter list than it sent.
+    """
+    items = [r for r in responses if r is not None]
+    if len(items) != len(responses):
+        raise RuntimeError(f"batch response incomplete: {len(items)} of {len(responses)} items")
+    return items
+
+
 @app.post("/predict/batch", response_model=PredictBatchResponse, tags=["Prediction"])
 @limiter.limit("10/minute")
 def predict_batch(
@@ -916,12 +937,14 @@ def predict_batch(
             cache.set(item.model_dump(), resp.model_dump())
             responses[global_idx] = resp
 
-    return PredictBatchResponse(items=[r for r in responses if r is not None])
+    return PredictBatchResponse(items=_complete_batch(responses))
 
 
 @app.get("/drift", tags=["Monitoring"])
 @limiter.limit(RATE_LIMIT)
-async def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):
+# Sync, so Starlette runs it in the threadpool: check_drift reads the window over
+# the blocking Redis client and would otherwise stall the event loop.
+def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):
     """Return feature drift report comparing recent predictions to training baseline.
 
     Carries the same key and budget as ``/predict``: the report aggregates the

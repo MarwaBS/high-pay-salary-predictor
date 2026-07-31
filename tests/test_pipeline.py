@@ -431,6 +431,13 @@ class TestEngineerFeaturesGuards:
         assert out["Gender_Bin"].iloc[0] == 1
         assert out["Region_Code"].iloc[0] == REGION_CODES["West"]
 
+    def test_region_absent_from_region_codes_raises_naming_it(self):
+        # Renaming a region in config.yaml otherwise dies later as an opaque
+        # IntCastingNaNError from the Region_Code cast.
+        with pytest.raises(ValueError) as exc:
+            engineer_features(self._frame(), self.EDU, {"CA": "Pacific", "NY": "Northeast"})
+        assert "Pacific" in str(exc.value) and "REGION_CODES" in str(exc.value)
+
     def test_unmapped_education_raises_naming_the_label(self):
         with pytest.raises(ValueError) as exc:
             engineer_features(self._frame(**{"Education Level": "Some College"}), self.EDU, self.REGION)

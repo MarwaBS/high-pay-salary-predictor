@@ -7,6 +7,12 @@ project uses SemVer.
 ## [Unreleased]
 
 ### Changed
+- **`GET /drift` returns `any_drifted: null` in two further cases** — fewer than
+  30 observations, and no observed feature matching the baseline (a renamed
+  feature is the realistic trigger). Both previously returned `false`, which
+  reads as "no drift" when in fact nothing was testable. Callers treating the
+  field as a boolean should treat `null` as "verdict withheld"; `message` says
+  which case applies.
 - **`GET /drift` now requires `X-API-Key` when `API_KEY` is set, and spends
   the same per-IP `RATE_LIMIT` budget as `/predict`** (breaking for any caller
   that read it anonymously). It aggregates live request traffic down to

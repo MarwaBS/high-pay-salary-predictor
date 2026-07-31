@@ -27,7 +27,7 @@ Usage
 -----
     monitor = DriftMonitor.from_baseline("models/baseline_stats.json")
     monitor.observe({"Age": 42, "Education_Ord": 2, ...})
-    report = monitor.check_drift()  # {"features": {...}, "any_drifted": bool}
+    report = monitor.check_drift()  # {"features": {...}, "any_drifted": bool | None}
 """
 
 from __future__ import annotations
@@ -221,9 +221,11 @@ class DriftMonitor:
                             baseline_mean, n_observed, drifted}}
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
-                           the (ramp-scaled) practical effect-size floor; ``None``
-                           when ``degraded`` (verdict withheld — never a clean
-                           False from a window that is missing traffic)
+                           the (ramp-scaled) practical effect-size floor. ``None``
+                           whenever no verdict can be reached — a degraded window,
+                           fewer than 30 observations, or no observed feature
+                           matching the baseline. Never a clean False from a
+                           window that could not be tested; ``message`` says which.
         """
         observations, total_count, backend, degraded = self._read_window()
         dropped = self._dropped_writes
@@ -256,7 +258,7 @@ class DriftMonitor:
                 "backend": backend,
                 "degraded": False,
                 "features": {},
-                "any_drifted": False,
+                "any_drifted": None,
                 "dropped_observations": 0,
                 "message": f"Need at least 30 observations (have {len(observations)})",
             }
@@ -272,6 +274,20 @@ class DriftMonitor:
             for feat in self.baseline
         }
         n_tested = sum(1 for vals in feature_values.values() if vals)
+
+        # Nothing testable: a renamed or absent feature set would otherwise score
+        # every feature n_observed=0, drifted=False and report a clean pass.
+        if not n_tested:
+            return {
+                "observations": total_count,
+                "window_size": len(observations),
+                "backend": backend,
+                "degraded": False,
+                "features": {},
+                "any_drifted": None,
+                "dropped_observations": 0,
+                "message": "No observed feature matches a baseline feature — verdict withheld",
+            }
 
         # ── Familywise error control (Sidak) ──────────────────────────────
         # ``any_drifted`` is the union of k per-feature tests (~10 in
@@ -290,7 +306,7 @@ class DriftMonitor:
         # (erfc(z/sqrt 2)) against alpha_k — equivalent to raising the
         # per-feature z cut to ~2.8 at k=10, without needing an inverse-CDF.
         alpha_family = math.erfc(self.alert_threshold / math.sqrt(2.0))
-        alpha_per_feature = 1.0 - (1.0 - alpha_family) ** (1.0 / n_tested) if n_tested else alpha_family
+        alpha_per_feature = 1.0 - (1.0 - alpha_family) ** (1.0 / n_tested)
 
         result: dict[str, dict] = {}
         for feat, stats in self.baseline.items():

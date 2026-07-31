@@ -4,6 +4,7 @@ Uses FastAPI's TestClient (synchronous, no server needed).
 Run: pytest tests/test_api.py -v
 """
 
+import inspect
 from unittest.mock import MagicMock
 
 import pytest
@@ -335,6 +336,26 @@ class TestPredictBatch:
         assert "predicted_p90" in item
         assert item["predicted_p10"] <= item["predicted_p50"] <= item["predicted_p90"]
 
+    def test_incomplete_batch_raises_rather_than_shortening(self):
+        """The schema promises one result per input item."""
+        with pytest.raises(RuntimeError, match="incomplete"):
+            api_main._complete_batch([None])
+
+    def test_complete_batch_preserves_order(self):
+        filled = ["first", "second", "third"]
+        assert api_main._complete_batch(filled) == filled
+
+    def test_the_route_actually_calls_the_completeness_check(self, client, base_payload, monkeypatch):
+        """Testing the helper alone leaves the wiring unproven: a check whose
+        result is never consulted looks identical to one that is enforced."""
+
+        def _refuse(responses):
+            raise RuntimeError("completeness check reached")
+
+        monkeypatch.setattr(api_main, "_complete_batch", _refuse)
+        with pytest.raises(RuntimeError, match="completeness check reached"):
+            client.post("/predict/batch", json={"items": [base_payload]})
+
 
 # ── Drift Endpoint ───────────────────────────────────────────────────────────
 
@@ -387,3 +408,10 @@ class TestFallbackMeansCounter:
         resp = client.post("/predict/batch", json={"items": [base_payload, base_payload]})
         assert resp.status_code == 200
         assert api_main.FALLBACK_MEANS_USED._value.get() == before + 2
+
+
+class TestDriftRouteIsSync:
+    def test_drift_is_sync_so_blocking_redis_leaves_the_loop_free(self):
+        """check_drift reads the window over the blocking Redis client."""
+        endpoints = {r.path: r.endpoint for r in app.routes if hasattr(r, "endpoint")}
+        assert not inspect.iscoroutinefunction(endpoints["/drift"])

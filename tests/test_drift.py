@@ -649,3 +649,27 @@ class TestBaselinePersistence:
         """Loading a nonexistent baseline should raise FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
             DriftMonitor.from_baseline(str(tmp_path / "nonexistent.json"))
+
+
+class TestVerdictWithheldWhenNothingTestable:
+    """A window that could not be tested must not read as a clean pass.
+
+    Both branches return ``any_drifted: None``; asserting ``not any_drifted``
+    would pass on ``False`` too, so these assert identity.
+    """
+
+    def test_under_thirty_observations_withholds_the_verdict(self, monitor):
+        for _ in range(29):
+            monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
+        report = monitor.check_drift()
+        assert report["any_drifted"] is None
+        assert report["degraded"] is False
+
+    def test_no_observed_feature_matching_the_baseline_withholds_the_verdict(self, monitor):
+        # A renamed feature is the realistic trigger: the window fills, but no
+        # key matches, so every feature would otherwise score n_observed=0.
+        for _ in range(40):
+            monitor.observe({"Age_renamed": 40.0, "Education_Ord_renamed": 2.0})
+        report = monitor.check_drift()
+        assert report["any_drifted"] is None
+        assert report["degraded"] is False
