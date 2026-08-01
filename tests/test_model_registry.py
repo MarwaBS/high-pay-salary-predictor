@@ -51,13 +51,39 @@ def _release_artifacts() -> set[str]:
     raise AssertionError("no action-gh-release step found in train.yml")
 
 
-def _k8s_download_artifacts() -> set[str]:
-    """Basenames the api-deployment initContainer curls into /shared-models."""
-    text = (REPO_ROOT / "k8s" / "api-deployment.yaml").read_text(encoding="utf-8")
+def _k8s_download_artifacts(manifest: str = "api-deployment.yaml") -> set[str]:
+    """Basenames a deployment's initContainer curls into /shared-models."""
+    text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
     # The initContainer stages artefacts with `curl ... -o /shared-models/<name>`.
     names = set(re.findall(r"-o\s+/shared-models/(\S+)", text))
-    assert names, "no /shared-models downloads found in k8s/api-deployment.yaml"
+    assert names, f"no /shared-models downloads found in k8s/{manifest}"
     return names
+
+
+def _artifacts_a_module_resolves(module: str) -> set[str]:
+    """Artefact basenames a module reads out of ``CFG["model"][...]``.
+
+    Read from the source rather than listed here: a module that starts loading
+    another artefact must pull it into its own pod's download list, and a list
+    maintained by hand only covers the artefacts someone remembered.
+    """
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    tree = ast.parse((REPO_ROOT / module).read_text(encoding="utf-8"))
+    keys = {
+        node.slice.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Subscript)
+        and isinstance(node.slice, ast.Constant)
+        and isinstance(node.value, ast.Subscript)
+        and isinstance(node.value.value, ast.Name)
+        and node.value.value.id == "CFG"
+        and isinstance(node.value.slice, ast.Constant)
+        and node.value.slice.value == "model"
+    }
+    resolved = {Path(cfg["model"][k]).name for k in keys if isinstance(cfg["model"].get(k), str)}
+    artefacts = {name for name in resolved if name.endswith((".ubj", ".json"))}
+    assert artefacts, f"no config-resolved artefacts found in {module} — parser drift"
+    return artefacts
 
 
 def test_release_publishes_every_serving_artifact() -> None:
@@ -78,6 +104,21 @@ def test_k8s_initcontainer_downloads_every_serving_artifact() -> None:
     assert not missing, (
         f"k8s initContainer does not download {sorted(missing)} — the API pod "
         f"would start without them. Add a curl for each to api-deployment.yaml."
+    )
+
+
+def test_k8s_dashboard_initcontainer_downloads_every_artefact_it_reads() -> None:
+    """The dashboard pod stages its own artefacts into an emptyDir.
+
+    Anything ``streamlit_app`` resolves from config but the initContainer never
+    fetches is absent at render time, and the tab raises rather than degrading.
+    """
+    required = _artifacts_a_module_resolves("streamlit_app.py")
+    missing = required - _k8s_download_artifacts("dashboard-deployment.yaml")
+    assert not missing, (
+        f"k8s dashboard initContainer does not download {sorted(missing)} — the "
+        f"dashboard reads them from config and would raise on first render. "
+        f"Add a curl for each to dashboard-deployment.yaml."
     )
 
 

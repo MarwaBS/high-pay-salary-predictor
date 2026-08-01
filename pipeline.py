@@ -241,6 +241,16 @@ def training_age_support(baseline_stats_path: str | Path) -> tuple[int, int]:
     return int(age["min"]), int(age["max"])
 
 
+def typical_training_age(baseline_stats_path: str | Path) -> int:
+    """Mean age of the training rows, for a UI that must open on some value.
+
+    The midpoint of the support would sit near its 90th percentile, so a first
+    view would demonstrate the model on an atypical profile.
+    """
+    with open(baseline_stats_path) as f:
+        return round(float(json.load(f)["Age"]["mean"]))
+
+
 def train_test_positions(n_rows: int, *, test_size: float, random_state: int) -> tuple[np.ndarray, np.ndarray]:
     """Return (train, test) positional row indices for the project's single split.
 

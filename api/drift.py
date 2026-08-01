@@ -25,7 +25,7 @@ whether a Redis client is provided / available.
 
 Usage
 -----
-    monitor = DriftMonitor.from_baseline("models/baseline_stats.json")
+    monitor = DriftMonitor.from_baseline("models/baseline_stats.json", window=500)
     monitor.observe({"Age": 42, "Education_Ord": 2, ...})
     report = monitor.check_drift()  # {"features": {...}, "any_drifted": bool | None}
 """

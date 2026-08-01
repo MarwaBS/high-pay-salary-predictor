@@ -28,6 +28,7 @@ from pipeline import (
     predict_quantiles_batch,
     train_test_positions,
     training_age_support,
+    typical_training_age,
 )
 
 warnings.filterwarnings("ignore")
@@ -357,10 +358,11 @@ def tab_predictor(df: pd.DataFrame) -> None:
         gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
 
     with col2:
-        # Bounded by the model's training support, and defaulted inside it, so a
-        # retrain that moves the support moves the widget with it.
-        low, high = training_age_support(ROOT / CFG["model"]["baseline_stats_path"])
-        age = st.slider("Age", min_value=low, max_value=high, value=(low + high) // 2)
+        # Bounded by the model's training support and opened at its mean, so a
+        # retrain that moves the distribution moves the widget with it.
+        baseline_path = ROOT / CFG["model"]["baseline_stats_path"]
+        low, high = training_age_support(baseline_path)
+        age = st.slider("Age", min_value=low, max_value=high, value=typical_training_age(baseline_path))
         show_adv = st.checkbox("Show advanced inputs (BLS context)")
         if show_adv:
             employment = st.number_input("State-Occupation Employment", value=1000, min_value=0)

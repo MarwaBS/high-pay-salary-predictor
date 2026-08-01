@@ -165,7 +165,7 @@ class TestDriftSensitivityAtTheConfiguredWindow:
     }
 
     def test_iid_from_baseline_at_the_configured_window_does_not_alarm(self):
-        """Drawing 500 observations straight from the baseline distribution — i.e.
+        """Drawing a full window straight from the baseline distribution — i.e.
         NO real drift — must not alarm. Without the effect-size floor these four
         tests alarm on ≈4.5% of windows even with the Šidák correction in place,
         and on 1 - (1 - 0.0455)^4 ≈ 17% if the correction goes too."""
@@ -176,21 +176,21 @@ class TestDriftSensitivityAtTheConfiguredWindow:
         trials = 25
         for _ in range(trials):
             mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
-            for _ in range(500):
+            for _ in range(CONFIGURED_WINDOW):
                 mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
             if mon.check_drift()["any_drifted"]:
                 false_alarms += 1
         # Allow a hair of slack for the rare tail, but it must be near-zero.
         assert false_alarms <= 1, f"{false_alarms}/{trials} i.i.d. windows alarmed"
 
-    def test_genuine_consistent_shift_still_alarms_at_n500(self):
+    def test_genuine_consistent_shift_still_alarms_at_the_configured_window(self):
         """A consistent >= min_effect_size shift in a feature mean must still be
         caught at the real window — the fix must not make the monitor deaf."""
         import numpy as np
 
         rng = np.random.default_rng(7)
         mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
-        for _ in range(500):
+        for _ in range(CONFIGURED_WINDOW):
             obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
             obs["Age"] = 40.0 + 0.5 * 10.0  # consistent +0.5 std shift on Age
             mon.observe(obs)
@@ -201,11 +201,11 @@ class TestDriftSensitivityAtTheConfiguredWindow:
 
     def test_significant_but_trivial_effect_does_not_alarm(self):
         """The precise failure mode: a statistically significant (SE z > 2) but
-        practically trivial (< 0.2 std) mean shift must NOT alarm at n=500."""
-        # +0.1 std on Age: at n=500 the SE z-score is 0.1*sqrt(500) ~= 2.24 > 2
-        # (significant), but the effect size is 0.1 < 0.2 (trivial) -> no alarm.
+        practically trivial (< 0.2 std) mean shift must NOT alarm at the real window."""
+        # +0.1 std on Age: over a full window the SE z-score clears 2 (significant)
+        # while the effect size stays 0.1 < 0.2 (trivial) -> no alarm.
         mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
-        for _ in range(500):
+        for _ in range(CONFIGURED_WINDOW):
             mon.observe({"Age": 41.0})  # exactly +0.1 std, zero sample variance
         report = mon.check_drift()
         age = report["features"]["Age"]
@@ -228,7 +228,7 @@ class TestDriftRampUpFalseAlarms:
     The monitor therefore Šidák-corrects the per-feature α across the k tested
     features AND ramp-scales the effect floor (max(0.2, z·√(2/n))), bounding the
     familywise false-alarm rate at ≈ erfc(2/√2) ≈ 4.6% at ANY window fill —
-    without touching the n=500 operating point (see TestDriftSensitivityAtWindow500).
+    without touching the configured operating point (see TestDriftSensitivityAtTheConfiguredWindow).
     """
 
     # Ten features, mirroring the width of the production baseline — the
@@ -684,29 +684,46 @@ class TestVerdictWithheldWhenNothingTestable:
 class TestConfiguredWindowClearsTheEffectFloorHandover:
     """``config.yaml::drift.window`` must put normal operation past the ramp.
 
-    A configured window at or below the handover leaves the advertised
-    ``min_effect_size`` sensitivity permanently masked. Driven through behaviour
-    rather than by re-deriving the formula, which would only restate the code.
+    Below the handover the ramp term rules and the advertised
+    ``min_effect_size`` sensitivity is unreachable — a shift just over the
+    advertised floor goes unreported. The probe is exactly that limiting shift,
+    so the window at which it stops being masked IS the handover; a bigger probe
+    would clear the ramp early and pass at windows the bound forbids.
     """
 
+    ALERT_THRESHOLD = 2.0
+    MIN_EFFECT_SIZE = 0.2
+    HANDOVER = round(2 * (ALERT_THRESHOLD / MIN_EFFECT_SIZE) ** 2)
     BASELINE = {"Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0}}
-    # Between the settled floor (0.2) and the ramp floor at n=100 (≈0.283).
-    SHIFTED_AGE = 40.0 + 0.25 * 10.0
+    PROBE_EFFECT = MIN_EFFECT_SIZE * 1.0005
 
     def _verdict_at(self, window: int) -> bool:
-        mon = DriftMonitor(self.BASELINE, window=window, alert_threshold=2.0, min_effect_size=0.2)
+        mon = DriftMonitor(
+            self.BASELINE,
+            window=window,
+            alert_threshold=self.ALERT_THRESHOLD,
+            min_effect_size=self.MIN_EFFECT_SIZE,
+        )
+        shifted = self.BASELINE["Age"]["mean"] + self.PROBE_EFFECT * self.BASELINE["Age"]["std"]
         for _ in range(window):
-            mon.observe({"Age": self.SHIFTED_AGE})
+            mon.observe({"Age": shifted})
         return bool(mon.check_drift()["any_drifted"])
 
-    def test_a_shift_above_min_effect_size_is_caught_at_the_configured_window(self):
-        assert self._verdict_at(CONFIGURED_WINDOW) is True
+    def test_the_advertised_sensitivity_is_reached_at_the_handover(self):
+        assert self._verdict_at(self.HANDOVER) is True
 
-    def test_the_same_shift_is_masked_below_the_handover(self):
-        """At n=100 the ramp floor (≈0.283σ) exceeds the shift, so the alarm is
-        suppressed even though the mean difference is statistically significant.
-        This is what a too-small default window would buy."""
-        assert self._verdict_at(100) is False
+    def test_one_observation_short_of_the_handover_still_masks_it(self):
+        """Pins where the ramp stops binding, so the bound below is a real line."""
+        assert self._verdict_at(self.HANDOVER - 1) is False
+
+    def test_the_configured_window_is_not_below_the_handover(self):
+        assert CONFIGURED_WINDOW >= self.HANDOVER, (
+            f"config.yaml::drift.window={CONFIGURED_WINDOW} cannot reach the advertised "
+            f"{self.MIN_EFFECT_SIZE}-std sensitivity; the ramp binds until {self.HANDOVER}"
+        )
+
+    def test_the_configured_window_reports_that_shift(self):
+        assert self._verdict_at(CONFIGURED_WINDOW) is True
 
 
 class TestVerdictFloorStaysInTheNormalApproximation:

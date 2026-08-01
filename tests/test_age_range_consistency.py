@@ -9,8 +9,8 @@ serving routes, not through the ``Field`` metadata, which a narrowing added in a
 validator or a route guard would never appear in.
 
 The dashboard holds no bounds of its own and is checked statically, by where its
-widget's bounds come from. What no static check can see is the range the widget
-actually renders, so that is not claimed.
+widget's bounds come from. The range it actually renders is beyond any static
+check, so that is not claimed here.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 
 import api.main as m
 from api.schemas import PredictRequest
-from pipeline import training_age_support
+from pipeline import training_age_support, typical_training_age
 
 REPO_ROOT = Path(__file__).parent.parent
 BASELINE_STATS = REPO_ROOT / "models" / "baseline_stats.json"
@@ -61,6 +61,15 @@ def test_the_support_helper_reports_what_the_artefact_records():
     rather than to whatever the helper happens to return."""
     age = json.loads(BASELINE_STATS.read_text(encoding="utf-8"))["Age"]
     assert training_age_support(BASELINE_STATS) == (int(age["min"]), int(age["max"]))
+
+
+def test_the_dashboards_opening_age_sits_inside_the_support_and_near_its_centre():
+    """A default outside the bounds would break the widget; one at the midpoint
+    of the support would open on its 90th percentile."""
+    low, high = training_age_support(BASELINE_STATS)
+    typical = typical_training_age(BASELINE_STATS)
+    assert low <= typical <= high
+    assert abs(typical - (low + high) / 2) > 1, "the default drifted back to the midpoint of the support"
 
 
 def test_schema_bounds_equal_the_training_support():
@@ -105,33 +114,53 @@ def _widget_label(call: ast.Call) -> str:
     return str(node.value) if isinstance(node, ast.Constant) else ""
 
 
-def _bound_arguments(call: ast.Call) -> list[ast.expr]:
-    """The ``min_value``/``max_value`` a widget was given, however they were passed."""
-    by_keyword = [kw.value for kw in call.keywords if kw.arg in {"min_value", "max_value"}]
-    return by_keyword or list(call.args[1:3])
+def _widget_argument(call: ast.Call, names: set[str], position: slice) -> list[ast.expr]:
+    """A widget's arguments by name, falling back to the positions they occupy."""
+    by_keyword = [kw.value for kw in call.keywords if kw.arg in names]
+    return by_keyword or list(call.args[position])
 
 
-def test_the_dashboards_age_bounds_come_from_the_shared_derivation():
-    """The bounds the age widget is built from must be the values
-    ``training_age_support`` returned, not numbers written beside it.
+def _derives_from(node: ast.expr, function: str, tree: ast.AST) -> bool:
+    """True if ``node`` is that function's result, directly or through one name."""
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == function:
+        return True
+    return isinstance(node, ast.Name) and node.id in _names_assigned_from(tree, function)
 
-    Checks where the values come from, so passing them positionally, by keyword,
-    or to a different widget makes no difference. Relabelling the widget away
-    from "Age" does defeat it, and nothing static can see the rendered range —
-    the module docstring says so rather than implying otherwise.
-    """
-    tree = ast.parse((REPO_ROOT / "streamlit_app.py").read_text(encoding="utf-8"))
-    derived = {
+
+def _names_assigned_from(tree: ast.AST, function: str) -> set[str]:
+    return {
         target.id
         for node in ast.walk(tree)
         if isinstance(node, ast.Assign)
         and isinstance(node.value, ast.Call)
         and isinstance(node.value.func, ast.Name)
-        and node.value.func.id == "training_age_support"
+        and node.value.func.id == function
         for element in node.targets
         for target in (element.elts if isinstance(element, ast.Tuple) else [element])
         if isinstance(target, ast.Name)
     }
+
+
+def _assignments_of(tree: ast.AST, name: str) -> int:
+    return sum(
+        isinstance(target, ast.Name) and target.id == name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for element in node.targets
+        for target in (element.elts if isinstance(element, ast.Tuple) else [element])
+    )
+
+
+def test_the_dashboards_age_bounds_come_from_the_shared_derivation():
+    """Every number the age widget is built from — both bounds and the value it
+    opens on — must come from the artefact, not be written beside it.
+
+    Checks where each argument comes from, so how it is passed makes no
+    difference; and each derived name must be assigned once, so the derivation
+    cannot be run and then overwritten. What it cannot see: a transform applied
+    to the widget's own result, or a label carrying no form of the word age.
+    """
+    tree = ast.parse((REPO_ROOT / "streamlit_app.py").read_text(encoding="utf-8"))
     age_widgets = [
         node
         for node in ast.walk(tree)
@@ -141,7 +170,15 @@ def test_the_dashboards_age_bounds_come_from_the_shared_derivation():
         and re.search(r"\bage\b", _widget_label(node), re.IGNORECASE)
     ]
     assert len(age_widgets) == 1, f"expected one age widget in streamlit_app.py, found {len(age_widgets)}"
-    given = _bound_arguments(age_widgets[0])
-    assert given, "the age widget declares no bounds at all"
-    underived = [ast.unparse(arg) for arg in given if not (isinstance(arg, ast.Name) and arg.id in derived)]
-    assert not underived, f"age widget bounded by {underived} instead of training_age_support's result"
+    widget = age_widgets[0]
+
+    for names, position, source in (
+        ({"min_value", "max_value"}, slice(1, 3), "training_age_support"),
+        ({"value"}, slice(3, 4), "typical_training_age"),
+    ):
+        given = _widget_argument(widget, names, position)
+        assert given, f"the age widget passes no {sorted(names)}"
+        underived = [ast.unparse(arg) for arg in given if not _derives_from(arg, source, tree)]
+        assert not underived, f"age widget takes {underived} for {sorted(names)} instead of {source}'s result"
+        rebound = [name for name in _names_assigned_from(tree, source) if _assignments_of(tree, name) > 1]
+        assert not rebound, f"{rebound} reassigned after {source}, so the widget need not see the artefact"

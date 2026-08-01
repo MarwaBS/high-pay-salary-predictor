@@ -11,6 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.main as m
+from api.drift import DriftMonitor
 from pipeline import load_metrics
 
 
@@ -228,3 +229,28 @@ class TestConfiguredArtefactPaths:
         with pytest.raises(RuntimeError, match="renamed_baseline.json"):
             with TestClient(m.app):
                 pass
+
+
+class TestTheConfiguredDriftWindowReachesTheMonitor:
+    """``config.yaml::drift.window`` has to be what the served monitor runs on.
+
+    Startup is the only place the two meet, so a monitor built with anything
+    else — a literal, or a default re-added to ``DriftMonitor`` — leaves the
+    config key decorative while every other drift test still passes.
+    """
+
+    def test_the_served_monitor_runs_on_the_configured_window(self):
+        with TestClient(m.app):
+            assert m.state.drift_monitor.window == m.VALIDATED_CFG.drift.window
+
+    def test_changing_the_configured_window_moves_the_served_one(self, monkeypatch):
+        """Equality against the config alone would also hold for a hardcoded 500."""
+        moved = m.VALIDATED_CFG.drift.model_copy(update={"window": m.VALIDATED_CFG.drift.window + 137})
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", moved)
+        with TestClient(m.app):
+            assert m.state.drift_monitor.window == moved.window
+
+    def test_the_monitor_refuses_to_pick_a_window_for_its_caller(self):
+        """A default would let a caller that forgets the config still start."""
+        with pytest.raises(TypeError):
+            DriftMonitor(baseline_stats={"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}})
