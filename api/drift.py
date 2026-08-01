@@ -48,6 +48,17 @@ logger = logging.getLogger(__name__)
 #: writes to and reads from the same key.
 REDIS_DRIFT_KEY = "drift:observations"
 
+#: Smallest window ``check_drift`` will rule on. It reads its p-value off the
+#: normal tail, which needs the CLT to have taken hold for skewed features like
+#: Employment; 30 is the conventional floor for that approximation.
+MIN_WINDOW_FOR_VERDICT = 30
+
+#: Default rolling-window size. ``check_drift``'s ramp-scaled effect floor hands
+#: over to the fixed ``min_effect_size`` at n = 2*(alert_threshold/d)**2 = 200 on
+#: the defaults; below that the ramp binds instead and the advertised 0.2-std
+#: sensitivity is unreachable. 500 clears the handover with margin.
+DEFAULT_WINDOW = 500
+
 
 class DriftMonitor:
     """Rolling-window drift detector using z-score deviation from baseline.
@@ -63,7 +74,7 @@ class DriftMonitor:
     def __init__(
         self,
         baseline_stats: dict[str, dict[str, float]],
-        window: int = 500,
+        window: int = DEFAULT_WINDOW,
         alert_threshold: float = 2.0,
         min_effect_size: float = 0.2,
         redis_client: Any | None = None,
@@ -222,10 +233,11 @@ class DriftMonitor:
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
                            the (ramp-scaled) practical effect-size floor. ``None``
-                           whenever no verdict can be reached — a degraded window,
-                           fewer than 30 observations, or no observed feature
-                           matching the baseline. Never a clean False from a
-                           window that could not be tested; ``message`` says which.
+                           whenever no verdict can be reached — a degraded
+                           window, fewer than ``MIN_WINDOW_FOR_VERDICT``
+                           observations, or no observed feature matching the
+                           baseline. Never a clean False from a window that
+                           could not be tested; ``message`` says which.
         """
         observations, total_count, backend, degraded = self._read_window()
         dropped = self._dropped_writes
@@ -251,7 +263,7 @@ class DriftMonitor:
                 "message": f"Drift window unavailable: {reason} — verdict withheld",
             }
 
-        if len(observations) < 30:
+        if len(observations) < MIN_WINDOW_FOR_VERDICT:
             return {
                 "observations": total_count,
                 "window_size": len(observations),
@@ -260,7 +272,7 @@ class DriftMonitor:
                 "features": {},
                 "any_drifted": None,
                 "dropped_observations": 0,
-                "message": f"Need at least 30 observations (have {len(observations)})",
+                "message": f"Need at least {MIN_WINDOW_FOR_VERDICT} observations (have {len(observations)})",
             }
 
         # Collect per-feature samples FIRST so the number of tests actually

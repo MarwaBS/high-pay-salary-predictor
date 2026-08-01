@@ -356,7 +356,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
         gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
 
     with col2:
-        age = st.slider("Age", min_value=18, max_value=80, value=35)  # match the API's accepted range
+        age = st.slider("Age", min_value=19, max_value=94, value=35)  # the model's training support
         show_adv = st.checkbox("Show advanced inputs (BLS context)")
         if show_adv:
             employment = st.number_input("State-Occupation Employment", value=1000, min_value=0)

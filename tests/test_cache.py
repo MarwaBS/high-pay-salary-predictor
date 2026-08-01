@@ -8,7 +8,10 @@ use a tiny in-memory fake client (no Redis required) to lock that contract.
 
 from __future__ import annotations
 
-from api.cache import PredictionCache
+import hashlib
+import json
+
+from api.cache import PredictionCache, _feature_hash
 
 
 class _FakeRedis:
@@ -103,3 +106,11 @@ def test_corrupt_cached_value_degrades_to_a_miss():
     key = next(iter(c._client.store))
     c._client.store[key] = "{not-json"
     assert c.get(payload) is None
+
+
+def test_the_key_carries_the_whole_digest():
+    """A truncated digest shrinks the key space below SHA-256's collision
+    resistance, and a cache collision serves one caller another's prediction."""
+    payload = {"state": "CA", "age": 30}
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    assert _feature_hash(payload) == hashlib.sha256(canonical.encode()).hexdigest()

@@ -28,9 +28,9 @@ CACHE_TTL = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour default
 
 
 def _feature_hash(payload: dict[str, Any]) -> str:
-    """Deterministic SHA-256 hash of prediction inputs (first 16 chars)."""
+    """Deterministic SHA-256 hash of prediction inputs."""
     canonical = json.dumps(payload, sort_keys=True, default=str)
-    return hashlib.sha256(canonical.encode()).hexdigest()[:16]
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 class PredictionCache:

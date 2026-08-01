@@ -291,3 +291,36 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
     with pytest.raises(KeyError):
         tq.main()
     assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
+
+
+def test_the_published_fairness_table_is_exactly_the_slices_that_clear_the_floor():
+    """``MIN_SUBGROUP_SIZE`` decides which subgroups get a published coverage
+    number. Raising it drops a slice from the fairness table without saying so,
+    and a table that no longer matches the gate means the committed metrics were
+    produced by different code. Coverage only: the classifier's AUC table carries
+    a second filter for single-class slices."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    df_raw = pd.read_csv(REPO_ROOT / cfg["data"]["cleaned"])
+    region_map = {s: r for r, states in cfg["regions"].items() for s in states}
+    _, df_test, _, _ = tq._prepare_split(
+        df_raw,
+        seed=cfg["model"]["random_state"],
+        test_size=cfg["model"]["test_size"],
+        edu_order=cfg["education_order"],
+        region_map=region_map,
+    )
+    expected = {
+        f"{col}={val}"
+        for col in ("Gender", "Region")
+        for val in sorted(df_test[col].dropna().unique())
+        if (df_test[col] == val).to_numpy().sum() >= tq.MIN_SUBGROUP_SIZE
+    }
+    metrics = json.loads((REPO_ROOT / cfg["model"]["metrics_path"]).read_text())
+    assert set(metrics["subgroup_coverage_80"]) == expected
+
+
+def test_the_subgroup_floor_keeps_a_published_rate_out_of_the_noise():
+    """A coverage rate near the 0.80 target carries a 95% sampling interval of
+    about ±0.14 at n=30. Below that a published subgroup number says more about
+    its own slice size than about fairness."""
+    assert tq.MIN_SUBGROUP_SIZE >= 30

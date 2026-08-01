@@ -7,6 +7,16 @@ project uses SemVer.
 ## [Unreleased]
 
 ### Changed
+- **`age` now accepts 19–94 instead of 18–80** (breaking both ways: `18` is
+  refused, `81`–`94` are accepted). The bounds are the model's training
+  support, recorded as `Age` min/max in `models/baseline_stats.json`. The old
+  range both extrapolated below the support and declined answerable requests
+  inside it. `streamlit_app.py`'s Age slider moves with it, and a test pins
+  both to the artefact so a retrain that shifts the support fails CI.
+- **Prediction cache keys carry the full SHA-256 digest** rather than its first
+  16 hex chars. The truncation bought nothing and left a 64-bit key space in
+  which a collision serves one caller another's prediction. Cached entries
+  written before the change are unreachable and expire on their existing TTL.
 - **`GET /drift` returns `any_drifted: null` in two further cases** — fewer than
   30 observations, and no observed feature matching the baseline (a renamed
   feature is the realistic trigger). Both previously returned `false`, which

@@ -9,7 +9,7 @@ import math
 
 import pytest
 
-from api.drift import DriftMonitor, save_baseline_stats
+from api.drift import DEFAULT_WINDOW, MIN_WINDOW_FOR_VERDICT, DriftMonitor, save_baseline_stats
 
 
 @pytest.fixture
@@ -106,17 +106,17 @@ class TestDriftDetection:
 
 class TestDriftEdgeCases:
     def test_insufficient_observations(self, monitor):
-        """Under 30 observations should return empty features with message."""
+        """Below the floor: no features scored, and the message names the shortfall."""
         for _ in range(10):
             monitor.observe({"Age": 70.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
         assert report["features"] == {}
-        assert "Need at least 30" in report.get("message", "")
-        assert not report["any_drifted"]
+        assert f"Need at least {MIN_WINDOW_FOR_VERDICT}" in report.get("message", "")
+        assert report["any_drifted"] is None
 
-    def test_exactly_30_observations_reports(self, monitor):
-        """Exactly 30 observations should produce a drift report."""
-        for _ in range(30):
+    def test_exactly_at_the_floor_reports(self, monitor):
+        """At the floor a verdict is issued — the gate is ``<``, not ``<=``."""
+        for _ in range(MIN_WINDOW_FOR_VERDICT):
             monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
         assert "features" in report
@@ -256,12 +256,12 @@ class TestDriftRampUpFalseAlarms:
                 false_alarms += 1
         return false_alarms / trials
 
-    def test_stationary_n30_familywise_false_alarm_rate_bounded(self):
-        """At the 30-observation reporting floor, i.i.d.-from-baseline windows
-        (NO real drift) must false-alarm at ≲ the designed familywise ≈4.6% —
-        allow 7% for binomial noise over 150 trials."""
-        rate = self._familywise_false_alarm_rate(n_obs=30, trials=150, seed=20260704)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 exceeds 7% bound"
+    def test_stationary_at_the_floor_familywise_false_alarm_rate_bounded(self):
+        """At the reporting floor, i.i.d.-from-baseline windows (NO real drift)
+        must false-alarm at ≲ the designed familywise ≈4.6% — allow 7% for
+        binomial noise over 150 trials."""
+        rate = self._familywise_false_alarm_rate(n_obs=MIN_WINDOW_FOR_VERDICT, trials=150, seed=20260704)
+        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at the floor exceeds 7% bound"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
         """Same bound at n=100 — the stress point where the fixed 0.2σ floor
@@ -658,8 +658,8 @@ class TestVerdictWithheldWhenNothingTestable:
     would pass on ``False`` too, so these assert identity.
     """
 
-    def test_under_thirty_observations_withholds_the_verdict(self, monitor):
-        for _ in range(29):
+    def test_one_short_of_the_floor_withholds_the_verdict(self, monitor):
+        for _ in range(MIN_WINDOW_FOR_VERDICT - 1):
             monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
         assert report["any_drifted"] is None
@@ -673,3 +673,44 @@ class TestVerdictWithheldWhenNothingTestable:
         report = monitor.check_drift()
         assert report["any_drifted"] is None
         assert report["degraded"] is False
+
+
+# ── Default window vs the ramp-scaled effect floor ───────────────────────────
+
+
+class TestDefaultWindowClearsTheEffectFloorHandover:
+    """``DEFAULT_WINDOW`` exists to put normal operation past the ramp.
+
+    ``check_drift`` gates drift on ``max(min_effect_size, alert_threshold *
+    sqrt(2/n))``. The ramp term dominates until n = 2*(alert_threshold/d)**2, so
+    a default window at or below that handover would leave the advertised
+    ``min_effect_size`` sensitivity permanently masked. These drive that
+    difference through behaviour rather than re-deriving the formula.
+    """
+
+    BASELINE = {"Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0}}
+    # Between the settled floor (0.2) and the ramp floor at n=100 (≈0.283).
+    SHIFTED_AGE = 40.0 + 0.25 * 10.0
+
+    def _verdict_at(self, window: int) -> bool:
+        mon = DriftMonitor(self.BASELINE, window=window, alert_threshold=2.0, min_effect_size=0.2)
+        for _ in range(window):
+            mon.observe({"Age": self.SHIFTED_AGE})
+        return bool(mon.check_drift()["any_drifted"])
+
+    def test_a_shift_above_min_effect_size_is_caught_at_the_default_window(self):
+        assert self._verdict_at(DEFAULT_WINDOW) is True
+
+    def test_the_same_shift_is_masked_below_the_handover(self):
+        """At n=100 the ramp floor (≈0.283σ) exceeds the shift, so the alarm is
+        suppressed even though the mean difference is statistically significant.
+        This is what a too-small default window would buy."""
+        assert self._verdict_at(100) is False
+
+
+class TestVerdictFloorStaysInTheNormalApproximation:
+    def test_the_floor_is_not_lowered_below_the_clt_rule_of_thumb(self):
+        """``check_drift`` reads its p-value off the normal tail. Lowering the
+        floor would issue verdicts — including clean ``False`` ones — from
+        windows too small for that approximation on skewed features."""
+        assert MIN_WINDOW_FOR_VERDICT >= 30

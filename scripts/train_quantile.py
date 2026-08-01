@@ -129,6 +129,12 @@ logger = logging.getLogger(__name__)
 # downstream consumers.
 QUANTILE_ALPHAS: list[float] = [0.10, 0.50, 0.90]
 
+# Smallest slice that gets its own published fairness metric — subgroup
+# coverage below, classifier AUC further down. At n=30 a coverage rate near 0.8
+# already carries a 95% sampling interval of ±0.14, so thinner slices would
+# publish their own sampling noise as unfairness.
+MIN_SUBGROUP_SIZE = 30
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train the multi-quantile salary predictor.")
@@ -501,7 +507,7 @@ def main() -> None:
             continue
         for val in sorted(df_test[col].dropna().unique()):
             mask = (df_test[col] == val).to_numpy()
-            if mask.sum() < 30:
+            if mask.sum() < MIN_SUBGROUP_SIZE:
                 continue
             subgroup_hit = (y_test.values[mask] >= p10_dollar[mask]) & (y_test.values[mask] <= p90_dollar[mask])
             cov = float(subgroup_hit.mean())
@@ -624,7 +630,7 @@ def main() -> None:
             continue
         for val in sorted(df_test[col].dropna().unique()):
             mask = (df_test[col] == val).to_numpy()
-            if mask.sum() < 30:
+            if mask.sum() < MIN_SUBGROUP_SIZE:
                 continue
             y_sub = y_test_clf.values[mask]
             # Skip degenerate slices (all pos or all neg) — AUC is undefined
