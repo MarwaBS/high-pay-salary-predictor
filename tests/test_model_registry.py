@@ -16,18 +16,14 @@ can never drift apart again.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-
-# Artefacts the API loads directly, NOT via a config.yaml `*_path` key, so they
-# won't be discovered by scanning the model config. baseline_stats.json is
-# loaded by api/main.py for the drift monitor; assert that reference exists so
-# this set stays honest if the loader changes.
-_NON_CONFIG_SERVING_ARTIFACTS = {"baseline_stats.json"}
 
 
 def _config_serving_artifacts() -> set[str]:
@@ -40,14 +36,8 @@ def _config_serving_artifacts() -> set[str]:
 
 
 def _required_serving_artifacts() -> set[str]:
-    required = _config_serving_artifacts() | _NON_CONFIG_SERVING_ARTIFACTS
-    # Keep the non-config set honest: baseline_stats.json must actually be loaded.
-    main_src = (REPO_ROOT / "api" / "main.py").read_text(encoding="utf-8")
-    assert "baseline_stats.json" in main_src, (
-        "baseline_stats.json is declared a serving artefact but api/main.py no "
-        "longer references it — update _NON_CONFIG_SERVING_ARTIFACTS"
-    )
-    return required
+    """Every served artefact is discoverable from the model config alone."""
+    return _config_serving_artifacts()
 
 
 def _release_artifacts() -> set[str]:
@@ -136,3 +126,27 @@ def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
         assert "ghcr.io/marwabs/high-pay-salary-predictor/" in text, (
             f"{manifest} must use the GHCR path CI publishes to (ghcr.io/marwabs/high-pay-salary-predictor/*)"
         )
+
+
+def _shipped_modules() -> list[str]:
+    """Every shipped module. Listing consumers by hand makes the gate a
+    whitelist, and the file it forgets is the one that hardcodes a path."""
+    roots = (REPO_ROOT, REPO_ROOT / "api", REPO_ROOT / "scripts")
+    found = sorted(p.relative_to(REPO_ROOT).as_posix() for root in roots for p in root.glob("*.py"))
+    assert found, "no shipped modules discovered — the glob rotted"
+    return found
+
+
+@pytest.mark.parametrize("rel", _shipped_modules())
+def test_no_module_names_an_artefact_file(rel: str) -> None:
+    """Artefact paths come from config.yaml, and the release and k8s gates above
+    derive their coverage from it. A module naming a file directly drops that
+    artefact out of both gates while they stay green."""
+    declared = _config_serving_artifacts()
+    source = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    named = {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and Path(node.value).name in declared
+    }
+    assert not named, f"{rel} names artefact file(s) {sorted(named)} instead of reading config.yaml"

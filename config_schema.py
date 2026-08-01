@@ -59,6 +59,7 @@ class ModelConfig(BaseModel):
     features_path: str
     metrics_path: str
     group_means_path: str
+    baseline_stats_path: str
     # Cross-conformal interval margin. Optional: when absent, the API serves
     # the raw (uncalibrated) interval.
     conformal_path: str | None = None
@@ -78,9 +79,8 @@ class ModelConfig(BaseModel):
     def _classifier_config_is_all_or_nothing(self) -> ModelConfig:
         """A configured classifier needs every hyperparameter the trainer reads.
 
-        The trainer reads six of them unguarded and falls back to 150000 for
-        ``premium_threshold``, so a half-declared classifier either dies partway
-        through or trains against a boundary nobody configured. Enforced at API
+        The trainer reads all seven unguarded, so a half-declared classifier
+        dies partway through training instead of at load. Enforced at API
         startup and in CI, where ``ProjectConfig`` is loaded.
         """
         required = {

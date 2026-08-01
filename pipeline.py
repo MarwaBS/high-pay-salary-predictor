@@ -45,6 +45,25 @@ import pandas as pd
 from xgboost import XGBClassifier, XGBRegressor
 
 
+def artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
+    """Return a problem string for every artefact not proven identical to its
+    recorded SHA-256. An unrecorded or absent artefact counts: verifying only
+    the ones the metrics file happens to name leaves the rest unchecked.
+    """
+    problems = []
+    for key, path in artefact_files.items():
+        want = recorded.get(key)
+        if not want:
+            problems.append(f"{key} ({path.name}): no recorded digest in artifact_sha256")
+        elif not path.exists():
+            problems.append(f"{key}: artefact missing at {path}")
+        else:
+            got = sha256_file(path)
+            if got != want:
+                problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
+    return problems
+
+
 def sha256_file(path: str | Path) -> str:
     """Full SHA-256 hex digest of a file's bytes.
 

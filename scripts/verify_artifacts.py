@@ -18,7 +18,7 @@ from pathlib import Path
 
 import yaml
 
-from pipeline import sha256_file
+from pipeline import artifact_mismatches
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -35,28 +35,16 @@ def verify(config_path: str | Path | None = None) -> list[str]:
     if not recorded:
         return [f"{metrics_path.name} has no artifact_sha256 block — retrain to record it"]
 
-    models_dir = (ROOT / model_cfg["model_path"]).parent
     paths = {
         "model": ROOT / model_cfg["model_path"],
         "classifier": ROOT / model_cfg["classifier_path"],
         "features": ROOT / model_cfg["features_path"],
         "group_means": ROOT / model_cfg["group_means_path"],
-        "baseline_stats": models_dir / "baseline_stats.json",
+        "baseline_stats": ROOT / model_cfg["baseline_stats_path"],
         "conformal": ROOT / model_cfg["conformal_path"],
     }
 
-    problems: list[str] = []
-    for key, path in paths.items():
-        want = recorded.get(key)
-        if not want:
-            problems.append(f"{key}: no recorded digest in artifact_sha256")
-        elif not path.exists():
-            problems.append(f"{key}: artefact missing at {path}")
-        else:
-            got = sha256_file(path)
-            if got != want:
-                problems.append(f"{key}: {path.name} sha256 {got[:12]} != recorded {want[:12]}")
-    return problems
+    return artifact_mismatches(paths, recorded)
 
 
 def main() -> int:

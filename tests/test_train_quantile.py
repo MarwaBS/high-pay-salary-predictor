@@ -22,6 +22,7 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
+from pydantic import ValidationError
 from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold
 
@@ -52,8 +53,7 @@ def trained_in_tmp(tmp_path, monkeypatch):
     cfg_path.write_text(yaml.safe_dump(cfg))
 
     (tmp_path / "models").mkdir(parents=True, exist_ok=True)
-    # ROOT drives every *output* path (model/classifier/metrics + the
-    # hardcoded baseline_stats.json), so redirecting it isolates the run.
+    # ROOT drives every *output* path, so redirecting it isolates the run.
     monkeypatch.setattr(tq, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
 
@@ -249,3 +249,45 @@ def test_cross_val_r2_is_leakage_free():
         "per-fold encoding may have regressed to global encoding"
     )
     assert honest < 0.10, f"honest CV R² {honest:.4f} too high for a pure-noise frame — encoding still leaks"
+
+
+def _config_with(tmp_path, drop=(), overrides=None):
+    """Real config with keys dropped or values overridden, written to tmp."""
+    with open(REPO_ROOT / "config.yaml") as f:
+        cfg = yaml.safe_load(f)
+    cfg["data"]["cleaned"] = str((REPO_ROOT / cfg["data"]["cleaned"]).resolve())
+    for key in drop:
+        del cfg["model"][key]
+    cfg["model"].update(overrides or {})
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    return cfg_path
+
+
+@pytest.mark.parametrize(
+    ("drop", "overrides"),
+    [(["cv_folds"], None), (["premium_threshold"], None), ((), {"test_size": 0.9})],
+    ids=["required-key-absent", "half-declared-classifier", "value-out-of-range"],
+)
+def test_a_config_the_api_would_refuse_never_reaches_a_model_file(tmp_path, monkeypatch, drop, overrides):
+    """Only the schema knows a value is out of range, so this expects
+    ValidationError specifically: a KeyError would mean the trainer tripped over
+    the key on its own and the validation call proved nothing.
+    """
+    cfg_path = _config_with(tmp_path, drop, overrides)
+    monkeypatch.setattr(tq, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
+    with pytest.raises(ValidationError):
+        tq.main()
+    assert not list(tmp_path.glob("**/*.ubj")), "training ran before the config was rejected"
+
+
+def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_path, monkeypatch):
+    """Dropping the classifier makes ``premium_threshold`` optional to the schema,
+    so nothing but the trainer's own unguarded read can stop it here."""
+    cfg_path = _config_with(tmp_path, drop=["premium_threshold", "classifier_path"])
+    monkeypatch.setattr(tq, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
+    with pytest.raises(KeyError):
+        tq.main()
+    assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"

@@ -48,7 +48,7 @@ class TestStartupRefusesToServe:
     def test_artifact_digest_mismatch_aborts_startup(self, monkeypatch):
         """Serving bytes that differ from the recorded digests is a hard stop."""
         monkeypatch.setattr(
-            m, "_artifact_mismatches", lambda _files, _recorded: ["model (x.ubj): loaded a != recorded b"]
+            m, "artifact_mismatches", lambda _files, _recorded: ["model (x.ubj): loaded a != recorded b"]
         )
         with pytest.raises(RuntimeError, match="Artifact integrity check failed"):
             with TestClient(m.app):
@@ -126,10 +126,17 @@ class TestEveryLoadedArtefactIsVerified:
 
         monkeypatch.setattr(m, "load_classifier", _absent)
         monkeypatch.setattr(m.state, "classifier", None)
+        recorded_classifier = m.load_metrics(str(m.ROOT / m.VALIDATED_CFG.model.metrics_path))["artifact_sha256"][
+            "classifier"
+        ]
         with TestClient(m.app) as client:
             digests = client.get("/health").json()["artifact_sha256"]
+            namespace = m.cache.version
         assert "classifier" not in digests
         assert "model" in digests
+        # A pod serving no classifier must not share a cache namespace with one
+        # that does, or it poisons a shared Redis with null probabilities.
+        assert recorded_classifier[:12] not in namespace
 
     @pytest.mark.parametrize("artefact", ARTEFACTS)
     def test_every_recorded_digest_is_compared_against_its_file(self, monkeypatch, artefact):
@@ -149,14 +156,23 @@ class TestCacheNamespaceBindsToTheServedModel:
     model's predictions for a full TTL.
     """
 
-    def test_namespace_includes_the_served_artefact_digest(self):
+    def test_namespace_binds_every_artefact_that_shapes_a_cached_response(self):
+        """A cached body carries the regressor's quantiles, the classifier's
+        probability and the conformal-widened interval, so a retrain of any one
+        of them alone must not reuse the previous namespace."""
         with TestClient(m.app):
-            model_digest = m.state.artifact_sha256["model"]
             assert m.state.model_version in m.cache.version
-            assert model_digest[:12] in m.cache.version, (
-                "cache namespace does not bind to the model bytes, so a "
-                "hyperparameter-only retrain would reuse the previous namespace"
-            )
+            for key in m._CACHE_KEYED_ARTEFACTS:
+                digest = m.state.artifact_sha256.get(key)
+                if digest is None:
+                    continue  # optional artefact this process did not load
+                assert digest[:12] in m.cache.version, f"namespace does not bind to the {key} bytes"
+
+    def test_the_keyed_set_names_every_response_shaping_artefact(self):
+        """Named literally on purpose. The test above iterates the constant, so
+        deriving this expectation from it too would let the constant shrink and
+        take both assertions with it."""
+        assert {"model", "classifier", "conformal"} <= set(m._CACHE_KEYED_ARTEFACTS)
 
 
 class TestClassifierHeadIsActuallyServed:
@@ -201,3 +217,14 @@ class TestServedCoverageWiring:
     def test_the_helper_prefers_the_conformalized_number(self):
         assert m._served_interval_coverage({"conformal_coverage_80": 0.0, "quantile_coverage_80": 0.8}) == 0.0
         assert m._served_interval_coverage({"quantile_coverage_80": 0.8}) == 0.8
+
+
+class TestConfiguredArtefactPaths:
+    def test_the_api_reads_the_configured_baseline_path(self, monkeypatch):
+        """Renaming the artefact in config must move where startup looks, or the
+        key is decorative and the real path is hardcoded."""
+        renamed = m.VALIDATED_CFG.model.model_copy(update={"baseline_stats_path": "models/renamed_baseline.json"})
+        monkeypatch.setattr(m.VALIDATED_CFG, "model", renamed)
+        with pytest.raises(RuntimeError, match="renamed_baseline.json"):
+            with TestClient(m.app):
+                pass

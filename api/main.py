@@ -93,6 +93,7 @@ from api.schemas import (
 from config_schema import ProjectConfig
 from pipeline import (
     REGION_CODES,
+    artifact_mismatches,
     compute_fallback_means,
     engineer_features,
     is_quantile_model,
@@ -102,7 +103,6 @@ from pipeline import (
     load_metrics,
     load_model,
     predict_quantiles_batch,
-    sha256_file,
 )
 
 # ── Structured JSON Logging ──────────────────────────────────────────────────
@@ -324,6 +324,21 @@ state = AppState()
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
 
 
+#: Every artefact whose bytes change a cached response.
+_CACHE_KEYED_ARTEFACTS = ("model", "classifier", "conformal")
+
+
+def _cache_namespace(model_version: str, digests: dict[str, str]) -> str:
+    """Namespace the prediction cache by every artefact it can serve from.
+
+    Binding to the regressor alone lets a classifier-only retrain reuse the
+    namespace, so a shared Redis serves the old probabilities for a full TTL
+    under an unchanged ``model_version``.
+    """
+    keyed = ".".join(digests.get(key, "")[:12] for key in _CACHE_KEYED_ARTEFACTS)
+    return f"{model_version}.{keyed}"
+
+
 def _served_interval_coverage(metrics: dict[str, Any]) -> float:
     """Coverage of the interval the API actually serves.
 
@@ -335,24 +350,6 @@ def _served_interval_coverage(metrics: dict[str, Any]) -> float:
     if coverage is None:
         coverage = metrics.get("quantile_coverage_80", 0.0)
     return float(coverage)
-
-
-def _artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
-    """Return a problem string for every artefact not proven identical to its
-    recorded SHA-256. An unrecorded or absent artefact counts: verifying only
-    the ones the metrics file happens to name leaves the rest unchecked."""
-    problems = []
-    for key, path in artefact_files.items():
-        want = recorded.get(key)
-        if not want:
-            problems.append(f"{key} ({path.name}): no recorded digest in artifact_sha256")
-        elif not path.exists():
-            problems.append(f"{key}: artefact missing at {path}")
-        else:
-            got = sha256_file(path)
-            if got != want:
-                problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
-    return problems
 
 
 @asynccontextmanager
@@ -452,20 +449,17 @@ async def lifespan(app: FastAPI):
     # reports to the files on disk, so a swapped one crashes the probe.
     state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
 
-    # The digest is required: model_version comes from the git SHA and input
-    # CSV, so a hyperparameter-only retrain leaves it identical.
-    cache.version = f"{state.model_version}.{state.artifact_sha256.get('model', '')[:12]}"
     artefact_files = {
         "model": ROOT / VALIDATED_CFG.model.model_path,
         "features": ROOT / VALIDATED_CFG.model.features_path,
         "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
-        "baseline_stats": ROOT / "models" / "baseline_stats.json",
+        "baseline_stats": ROOT / VALIDATED_CFG.model.baseline_stats_path,
     }
     if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
         artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
     if VALIDATED_CFG.model.conformal_path:
         artefact_files["conformal"] = ROOT / VALIDATED_CFG.model.conformal_path
-    mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
+    mismatches = artifact_mismatches(artefact_files, state.artifact_sha256)
     if mismatches:
         raise RuntimeError(
             "Artifact integrity check failed at startup — served files could not be "
@@ -477,6 +471,9 @@ async def lifespan(app: FastAPI):
     # recorded digest for one that did not load would advertise an artefact
     # this process is not serving.
     state.artifact_sha256 = {key: state.artifact_sha256[key] for key in artefact_files}
+    # After the filter: a pod missing an optional artefact must not share a
+    # namespace with one that has it.
+    cache.version = _cache_namespace(state.model_version, state.artifact_sha256)
 
     # Classifier ↔ config threshold consistency check. The trainer writes
     # the exact ``classifier_threshold`` it was fitted against into
@@ -502,7 +499,7 @@ async def lifespan(app: FastAPI):
             )
 
     # Load drift baseline (optional — produced by the training script)
-    baseline_path = ROOT / "models" / "baseline_stats.json"
+    baseline_path = ROOT / VALIDATED_CFG.model.baseline_stats_path
     if baseline_path.exists():
         state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path))
         logger.info("Drift monitor loaded from %s", baseline_path)

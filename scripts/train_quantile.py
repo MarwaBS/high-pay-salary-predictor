@@ -10,9 +10,11 @@ Train two XGBoost heads in a single pass:
 2. **Premium-tier classifier** — predicts ``P(Annual Income >=
    premium_threshold)`` via ``binary:logistic``. Answers the "how
    likely is this profile to cross the premium threshold?" question.
-   Threshold lives in ``config.yaml::model.premium_threshold`` (default
-   $150,000). Trained on the same engineered feature matrix as the
-   regressor to keep the two heads comparable.
+   Threshold lives in ``config.yaml::model.premium_threshold``; the
+   trainer reads it with no fallback, so a missing key stops the run
+   rather than training against a boundary nobody configured. Trained on
+   the same engineered feature matrix as the regressor to keep the two
+   heads comparable.
 
 Why two heads, not one?
 -----------------------
@@ -98,6 +100,7 @@ from xgboost import XGBClassifier, XGBRegressor
 
 from api import __version__ as SERVICE_VERSION
 from api.drift import save_baseline_stats
+from config_schema import ProjectConfig
 from pipeline import (
     FEATURES_FULL,
     compute_group_means,
@@ -409,6 +412,10 @@ def main() -> None:
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
+    # Validate before training: the trainer produces the artefacts the API
+    # loads, so a config the API would refuse must not reach a model file.
+    ProjectConfig.model_validate(cfg)
+
     model_cfg = cfg["model"]
     edu_order = cfg["education_order"]
     region_map = {s: r for r, states in cfg["regions"].items() for s in states}
@@ -507,7 +514,7 @@ def main() -> None:
     cv_r2_mean, cv_r2_std = _cross_val_r2(
         df_train_raw,
         seed=random_state,
-        n_splits=model_cfg.get("cv_folds", 5),
+        n_splits=model_cfg["cv_folds"],
         edu_order=edu_order,
         region_map=region_map,
         params=params,
@@ -522,7 +529,7 @@ def main() -> None:
     conformal_delta, n_conf_scores = _cross_conformal_delta(
         df_train_raw,
         seed=random_state,
-        n_splits=model_cfg.get("cv_folds", 5),
+        n_splits=model_cfg["cv_folds"],
         edu_order=edu_order,
         region_map=region_map,
         params=params,
@@ -545,7 +552,7 @@ def main() -> None:
     # matrix as the quantile regressor. Label: Annual Income >= the
     # premium threshold configured in config.yaml; hyper-parameters come
     # from config.yaml::model.classifier_* alongside the regressor's.
-    premium_threshold = int(model_cfg.get("premium_threshold") or 150_000)
+    premium_threshold = int(model_cfg["premium_threshold"])
     clf_params = {
         "n_estimators": model_cfg["classifier_n_estimators"],
         "max_depth": model_cfg["classifier_max_depth"],
@@ -687,7 +694,7 @@ def main() -> None:
     # alongside the other artefacts below.
     features_path = ROOT / cfg["model"]["features_path"]
     group_means_path = ROOT / cfg["model"]["group_means_path"]
-    baseline_path = primary_model_path.parent / "baseline_stats.json"
+    baseline_path = ROOT / cfg["model"]["baseline_stats_path"]
     baseline_data = {feat: X_train[feat].tolist() for feat in FEATURES_FULL}
     save_baseline_stats(baseline_data, str(baseline_path))
 
