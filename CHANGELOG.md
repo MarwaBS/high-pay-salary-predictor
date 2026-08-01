@@ -20,17 +20,18 @@ project uses SemVer.
   monitor's rolling-window size was a default buried in `DriftMonitor`, where
   nothing could state why it held that value. It is an operating choice, so it
   now lives beside the bound it has to clear, and `DriftMonitor` requires the
-  caller to name one. Values below the `/drift` verdict floor are rejected at
-  load; there is no derivable upper bound, and the trade-off a larger window
-  buys is written beside the key.
+  caller to name one. A window below the detector's effect-floor handover aborts
+  API startup, since the bound depends on the detector's tuning and only both
+  together determine it; there is no derivable upper bound, and the trade-off a
+  larger window buys is written beside the key.
 
 ### Fixed
 - **The k8s dashboard pod now stages `baseline_stats.json`.** Its initContainer
   fetched four artefacts into an `emptyDir`; the dashboard reads a fifth to
   bound its Age input, so the predictor tab would have raised on first render.
-  A test derives each pod's required artefacts from the modules it runs, so a
-  manifest that omits one now fails CI — previously only the API pod's list was
-  checked.
+  Both pods now stage every artefact `config.yaml` declares, rather than a list
+  per pod, and a test holds each manifest to that set — previously only the API
+  pod's list was checked at all.
 - **Prediction cache keys carry the full SHA-256 digest** rather than its first
   16 hex chars. The truncation bought nothing and left a 64-bit key space in
   which a collision serves one caller another's prediction. Cached entries

@@ -8,8 +8,8 @@ Checked where a caller meets the bounds — through the running app on both
 serving routes, not through the ``Field`` metadata, which a narrowing added in a
 validator or a route guard would never appear in.
 
-The dashboard is driven rather than parsed: its Age slider is rendered and the
-arguments it was built with are compared against the same artefact.
+The dashboard is driven rather than parsed: its age control is rendered and the
+set of ages it makes selectable is compared against the same artefact.
 """
 
 from __future__ import annotations
@@ -22,11 +22,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 import api.main as m
+import streamlit_app
 from api.schemas import PredictRequest
 from pipeline import training_age_support, typical_training_age
 
 REPO_ROOT = Path(__file__).parent.parent
 BASELINE_STATS = REPO_ROOT / "models" / "baseline_stats.json"
+#: Widget labels naming an age. Word-bounded so "Wage" is not one.
+_AGE_LABEL = re.compile(r"\bage\b", re.IGNORECASE)
 
 PAYLOAD = {
     "state": "CA",
@@ -100,58 +103,59 @@ class TestEveryServingRouteServesExactlyTheSupport:
             assert self._post(client, route, age) == 422, f"{route} served age {age}, outside the support"
 
 
-class TestTheDashboardWidgetOffersTheSupport:
-    """Drives the real widget rather than reading the source.
+class TestTheDashboardOffersTheWholeSupport:
+    """Drives the widget rather than reading the source.
 
-    Every static version of this check was defeated by a spelling it did not
-    anticipate — a positional argument, a rebound name, a different widget. What
-    the widget is actually constructed with is not a matter of syntax, so it is
-    captured from a run instead.
+    What a caller can pick follows from the arguments the widget is built with,
+    not from how they are written, so they are captured from a render.
     """
 
-    def test_ci_installs_what_these_tests_need_to_run(self):
-        """The renders below skip without streamlit, which would read as green.
+    def _render(self, monkeypatch, picks=None, advanced=False):
+        """Render the tab; return the age controls it drew and the age it sent.
 
-        ``requirements.txt`` is what CI installs, so declaring it there is what
-        keeps that skip out of the pipeline.
+        ``picks`` chooses what the user moves the slider to. The payload is
+        intercepted at the HTTP boundary, so anything applied between widget and
+        request shows up as a difference between the two. ``advanced`` opens the
+        optional-inputs branch, which is otherwise never drawn.
         """
-        declared = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
-        assert any(line.startswith("streamlit") for line in declared), "CI would skip the dashboard render tests"
-
-    def _render(self, monkeypatch, picks=None):
-        """Render the tab, returning the Age slider's arguments and the age sent.
-
-        ``picks`` chooses what the user moves the slider to; the payload is
-        intercepted at the HTTP boundary, so anything applied between the widget
-        and the request shows up as a difference between the two.
-        """
-        streamlit_app = pytest.importorskip("streamlit_app")
-        captured: dict[str, dict] = {}
+        controls: dict[str, dict] = {}
         sent: dict[str, object] = {}
 
         def record(label, *args, **kwargs):
             kwargs = {**dict(zip(("min_value", "max_value", "value"), args, strict=False)), **kwargs}
-            captured[label] = kwargs
+            controls[label] = kwargs
             return picks(kwargs) if picks and label == "Age" else kwargs.get("value")
 
         monkeypatch.setattr(streamlit_app.st, "slider", record)
+        monkeypatch.setattr(streamlit_app.st, "number_input", record)
+        monkeypatch.setattr(streamlit_app.st, "checkbox", lambda *a, **k: advanced)
         monkeypatch.setattr(streamlit_app.st, "button", lambda *a, **k: picks is not None)
         monkeypatch.setattr(streamlit_app, "_call_predict_api", lambda payload: sent.update(payload) or None)
         streamlit_app.tab_predictor(streamlit_app.load_data())
-        assert "Age" in captured, f"no Age slider rendered; saw {sorted(captured)}"
-        return captured["Age"], sent.get("age")
+        return controls, sent.get("age")
 
-    def test_the_widget_spans_exactly_the_training_support(self, monkeypatch):
-        widget, _ = self._render(monkeypatch)
+    def _age_control(self, controls):
+        matches = [kwargs for label, kwargs in controls.items() if _AGE_LABEL.search(label)]
+        assert len(matches) == 1, f"expected one age control, found {len(matches)} in {sorted(controls)}"
+        return matches[0]
+
+    @pytest.mark.parametrize("advanced", [False, True], ids=["basic", "advanced-inputs-open"])
+    def test_every_age_in_the_support_can_be_selected(self, monkeypatch, advanced):
+        """Reachability, not just the endpoints: a step would leave the top of
+        the support unselectable while both bounds still read correctly."""
+        controls, _ = self._render(monkeypatch, advanced=advanced)
+        widget = self._age_control(controls)
         low, high = training_age_support(BASELINE_STATS)
-        assert (widget["min_value"], widget["max_value"]) == (low, high)
+        selectable = set(range(widget["min_value"], widget["max_value"] + 1, widget.get("step") or 1))
+        assert not widget.get("disabled"), "the age control is disabled, so no age is selectable"
+        assert selectable == set(range(low, high + 1))
 
     def test_the_widget_opens_on_the_mean_of_the_training_ages(self, monkeypatch):
-        widget, _ = self._render(monkeypatch)
-        assert widget["value"] == typical_training_age(BASELINE_STATS)
+        controls, _ = self._render(monkeypatch)
+        assert self._age_control(controls)["value"] == typical_training_age(BASELINE_STATS)
 
     @pytest.mark.parametrize("end", ["min_value", "max_value"])
     def test_an_age_picked_at_either_end_reaches_the_request_unchanged(self, monkeypatch, end):
         """A clamp between the widget and the request is invisible to the widget."""
-        widget, age_sent = self._render(monkeypatch, picks=lambda kwargs: kwargs[end])
-        assert age_sent == widget[end], f"age was altered between the slider and the request ({end})"
+        controls, age_sent = self._render(monkeypatch, picks=lambda kwargs: kwargs[end])
+        assert age_sent == self._age_control(controls)[end], f"age was altered before the request ({end})"

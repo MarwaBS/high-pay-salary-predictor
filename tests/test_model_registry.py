@@ -55,7 +55,9 @@ def _k8s_download_artifacts(manifest: str = "api-deployment.yaml") -> set[str]:
     """Basenames a deployment's initContainer curls into /shared-models."""
     text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
     # The initContainer stages artefacts with `curl ... -o /shared-models/<name>`.
-    names = set(re.findall(r"-o\s+/shared-models/(\S+)", text))
+    # Commented lines are skipped: a curl behind a `#` stages nothing.
+    live = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
+    names = {name for line in live for name in re.findall(r"-o\s+/shared-models/(\S+)", line)}
     assert names, f"no /shared-models downloads found in k8s/{manifest}"
     return names
 
@@ -75,10 +77,10 @@ def test_release_publishes_every_serving_artifact() -> None:
 def test_every_pod_stages_every_declared_serving_artifact(manifest: str) -> None:
     """Both pods stage the whole declared set, not the subset each is thought to need.
 
-    A per-pod list has to be kept in step with what that pod's code loads, and
-    the dashboard pod already shipped without an artefact its predictor tab
-    reads — into an emptyDir, so nothing else supplied it. Fetching a few
-    unused files costs a one-time download; guessing wrong crashes a pod.
+    A per-pod list has to be kept in step with what that pod's code loads, which
+    no check can read off the source. The volume is an emptyDir, so an artefact
+    absent from the list is absent at runtime; fetching a few unused files costs
+    one download, guessing wrong crashes a pod.
     """
     missing = _required_serving_artifacts() - _k8s_download_artifacts(manifest)
     assert not missing, (

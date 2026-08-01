@@ -294,6 +294,14 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
     assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
 
 
+def test_a_config_without_a_drift_block_is_refused():
+    """Giving the block a default would restore the buried window this replaced."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    del cfg["drift"]
+    with pytest.raises(ValidationError):
+        ProjectConfig(**cfg)
+
+
 def test_a_mistyped_drift_knob_is_refused(tmp_path):
     """Silently ignored, the monitor would run on the default the typo replaced."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())

@@ -19,11 +19,11 @@ data:
 
 # ── Drift Monitor ──────────────────────────────────────────
 drift:
-  # Rolling observations the /drift verdict is computed over. Must exceed the
-  # effect-floor handover derived in api/drift.py::check_drift — at or below it
-  # the ramp term rules and the advertised 0.2-std sensitivity is unreachable.
-  # That bound is 200 on the detector's defaults; the value above it is an
-  # operational choice (longer window = steadier verdict, slower to react).
+  # Rolling observations the /drift verdict is computed over. Must be at least
+  # DriftMonitor.effect_floor_handover(), below which the ramp term rules and a
+  # shift only just over min_effect_size goes unreported; the API refuses to
+  # start otherwise. Anything above that bound is an operational choice —
+  # a longer window gives a steadier verdict and reacts more slowly.
   window: 500
 
 # ── Cleaning Thresholds ────────────────────────────────────

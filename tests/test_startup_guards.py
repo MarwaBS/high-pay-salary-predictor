@@ -264,6 +264,14 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
             with TestClient(m.app):
                 pass
 
+    def test_a_window_exactly_at_the_handover_is_accepted(self, monkeypatch):
+        """The handover is the first sufficient window, so the guard is ``<``."""
+        monitor = m.DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
+        exact = monitor.effect_floor_handover()
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": exact}))
+        with TestClient(m.app) as client:
+            assert client.get("/health").status_code == 200
+
     def test_retuning_the_detector_moves_the_window_the_guard_demands(self, monkeypatch):
         """The bound follows ``min_effect_size``; a fixed number would not notice."""
         monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (2.0, 0.1, None))

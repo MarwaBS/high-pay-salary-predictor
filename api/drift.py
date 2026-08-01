@@ -92,7 +92,7 @@ class DriftMonitor:
                          magnitude above the headline rate.
         min_effect_size: minimum |mean shift| in baseline-std units required ON
                          TOP OF statistical significance. Significance alone
-                         scales with n — at window=500 a ~0.09-std wobble
+                         scales with n — at n=500 a ~0.09-std wobble
                          clears it — so never-quite-i.i.d. production traffic
                          would alarm forever. Requiring a practical effect too
                          (Cohen's d small = 0.2) keeps an i.i.d. window silent
@@ -366,7 +366,7 @@ class DriftMonitor:
             # Drift requires BOTH a statistically real mean shift (Sidak-
             # corrected p-value, see above) AND a practically meaningful one
             # (effect size). The significance test alone makes the alarm
-            # n-sensitive — at window=500 a ~0.09-std wobble clears it — so
+            # n-sensitive — at n=500 a ~0.09-std wobble clears it — so
             # always-noisy production traffic alarms forever. The effect-size
             # floor is the practical-significance gate.
             #
@@ -382,8 +382,8 @@ class DriftMonitor:
             # significance bound in z-units (2.0 -> 2.83 SE; per-feature tail
             # 0.47% vs 4.55%) for the whole ramp-up, decays as 1/sqrt(n), and
             # hands over to the fixed Cohen's-d floor continuously at
-            # n = 2*(alert_threshold/d)^2 = 200 (defaults) — so behaviour at
-            # the full window=500 operating point is unchanged.
+            # n = 2*(alert_threshold/d)^2 = 200 (defaults) — so a window past
+            # that handover behaves exactly as the fixed floor describes.
             p_value = math.erfc(z_score / math.sqrt(2.0))
             effect_floor = max(self.min_effect_size, self.alert_threshold * math.sqrt(2.0 / n))
             drifted = bool(p_value < alpha_per_feature and effect_size > effect_floor)

@@ -201,16 +201,21 @@ class TestDriftSensitivityAtTheConfiguredWindow:
 
     def test_significant_but_trivial_effect_does_not_alarm(self):
         """The precise failure mode: a statistically significant (SE z > 2) but
-        practically trivial (< 0.2 std) mean shift must NOT alarm at the real window."""
-        # +0.1 std on Age: over a full window the SE z-score clears 2 (significant)
-        # while the effect size stays 0.1 < 0.2 (trivial) -> no alarm.
+        practically trivial mean shift must NOT alarm at the real window."""
         mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
+        # Halfway between what significance alone detects and the effect floor,
+        # so the shift is significant and trivial at whatever window is configured
+        # — a fixed 0.1 would stop being significant below n=401 and fail there
+        # for a reason that has nothing to do with what this test checks.
+        significant_from = mon.alert_threshold / math.sqrt(CONFIGURED_WINDOW)
+        effect = (significant_from + mon.min_effect_size) / 2
+        assert significant_from < effect < mon.min_effect_size, "no trivial-yet-significant shift exists here"
         for _ in range(CONFIGURED_WINDOW):
-            mon.observe({"Age": 41.0})  # exactly +0.1 std, zero sample variance
+            mon.observe({"Age": self.BASELINE["Age"]["mean"] + effect * self.BASELINE["Age"]["std"]})
         report = mon.check_drift()
         age = report["features"]["Age"]
-        assert age["z_score"] > 2.0, "shift should be statistically significant"
-        assert age["effect_size"] == pytest.approx(0.1, abs=1e-6)
+        assert age["z_score"] > mon.alert_threshold, "shift should be statistically significant"
+        assert age["effect_size"] == pytest.approx(effect, abs=1e-3), "reported effect is rounded to 3dp"
         assert age["drifted"] is False, "trivial effect must not alarm"
 
 
