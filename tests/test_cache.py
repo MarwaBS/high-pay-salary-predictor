@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 
-from api.cache import PredictionCache, _feature_hash
+from api.cache import PredictionCache
 
 
 class _FakeRedis:
@@ -108,9 +108,18 @@ def test_corrupt_cached_value_degrades_to_a_miss():
     assert c.get(payload) is None
 
 
-def test_the_key_carries_the_whole_digest():
-    """A truncated digest shrinks the key space below SHA-256's collision
-    resistance, and a cache collision serves one caller another's prediction."""
+def test_the_key_that_reaches_redis_carries_the_whole_digest():
+    """Asserted on the stored key, not on ``_feature_hash``.
+
+    Truncating anywhere between the helper and the key shrinks the space below
+    SHA-256's collision resistance, and a collision serves one caller another
+    caller's prediction. ``get`` builds the key by the same expression, so a
+    truncation there alone breaks the round-trip above instead.
+    """
+    c = _cache_with_fake()
+    c.version = "v1"
     payload = {"state": "CA", "age": 30}
+    c.set(payload, {"predicted_salary": 1.0})
     canonical = json.dumps(payload, sort_keys=True, default=str)
-    assert _feature_hash(payload) == hashlib.sha256(canonical.encode()).hexdigest()
+    stored = next(iter(c._client.store))
+    assert stored == f"predict:v1:{hashlib.sha256(canonical.encode()).hexdigest()}"

@@ -48,15 +48,17 @@ logger = logging.getLogger(__name__)
 #: writes to and reads from the same key.
 REDIS_DRIFT_KEY = "drift:observations"
 
-#: Smallest window ``check_drift`` will rule on. It reads its p-value off the
-#: normal tail, which needs the CLT to have taken hold for skewed features like
-#: Employment; 30 is the conventional floor for that approximation.
+#: Smallest window ``check_drift`` will rule on. Its p-values come off the
+#: normal tail, and every observation carries every baseline feature (``api``
+#: imputes the BLS defaults before observing), so the window length is also the
+#: per-feature sample size behind that tail. 30 is the conventional floor for
+#: the approximation; a shorter window would report clean verdicts from one.
 MIN_WINDOW_FOR_VERDICT = 30
 
-#: Default rolling-window size. ``check_drift``'s ramp-scaled effect floor hands
-#: over to the fixed ``min_effect_size`` at n = 2*(alert_threshold/d)**2 = 200 on
-#: the defaults; below that the ramp binds instead and the advertised 0.2-std
-#: sensitivity is unreachable. 500 clears the handover with margin.
+#: Default rolling-window size. The binding constraint is the effect-floor
+#: handover derived in ``check_drift``: at or below it the ramp term rules and
+#: the advertised ``min_effect_size`` sensitivity is unreachable. 500 is a
+#: rounded operating point above that bound, not a derived optimum.
 DEFAULT_WINDOW = 500
 
 

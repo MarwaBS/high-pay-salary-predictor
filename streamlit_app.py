@@ -7,6 +7,7 @@ Run: streamlit run streamlit_app.py
 
 from __future__ import annotations
 
+import json
 import os
 import warnings
 from pathlib import Path
@@ -71,6 +72,17 @@ def get_model() -> XGBRegressor:
         st.error("Model not found. Run `make model` (or `python -m scripts.train_quantile`) first.")
         st.stop()
         raise  # unreachable, keeps mypy happy
+
+
+@st.cache_data(show_spinner=False)
+def get_age_bounds() -> tuple[int, int]:
+    """The model's training support, read from the drift baseline artefact.
+
+    The API enforces the same range; holding a second copy here would leave the
+    dashboard offering ages the model was never fitted on after a retrain.
+    """
+    stats = json.loads((ROOT / CFG["model"]["baseline_stats_path"]).read_text())
+    return int(stats["Age"]["min"]), int(stats["Age"]["max"])
 
 
 @st.cache_data(show_spinner=False)
@@ -356,7 +368,8 @@ def tab_predictor(df: pd.DataFrame) -> None:
         gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
 
     with col2:
-        age = st.slider("Age", min_value=19, max_value=94, value=35)  # the model's training support
+        support_min, support_max = get_age_bounds()
+        age = st.slider("Age", min_value=support_min, max_value=support_max, value=35)
         show_adv = st.checkbox("Show advanced inputs (BLS context)")
         if show_adv:
             employment = st.number_input("State-Occupation Employment", value=1000, min_value=0)

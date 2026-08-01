@@ -681,11 +681,9 @@ class TestVerdictWithheldWhenNothingTestable:
 class TestDefaultWindowClearsTheEffectFloorHandover:
     """``DEFAULT_WINDOW`` exists to put normal operation past the ramp.
 
-    ``check_drift`` gates drift on ``max(min_effect_size, alert_threshold *
-    sqrt(2/n))``. The ramp term dominates until n = 2*(alert_threshold/d)**2, so
-    a default window at or below that handover would leave the advertised
-    ``min_effect_size`` sensitivity permanently masked. These drive that
-    difference through behaviour rather than re-deriving the formula.
+    A default window at or below the handover would leave the advertised
+    ``min_effect_size`` sensitivity permanently masked. Driven through behaviour
+    rather than by re-deriving the formula, which would only restate the code.
     """
 
     BASELINE = {"Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0}}
@@ -712,5 +710,8 @@ class TestVerdictFloorStaysInTheNormalApproximation:
     def test_the_floor_is_not_lowered_below_the_clt_rule_of_thumb(self):
         """``check_drift`` reads its p-value off the normal tail. Lowering the
         floor would issue verdicts — including clean ``False`` ones — from
-        windows too small for that approximation on skewed features."""
+        windows too small for that approximation on skewed features. A minimum
+        rather than an equality: raising it only withholds more, and no
+        published artefact is derived from this one.
+        """
         assert MIN_WINDOW_FOR_VERDICT >= 30

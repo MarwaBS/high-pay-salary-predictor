@@ -293,12 +293,18 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
     assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
 
 
-def test_the_published_fairness_table_is_exactly_the_slices_that_clear_the_floor():
-    """``MIN_SUBGROUP_SIZE`` decides which subgroups get a published coverage
-    number. Raising it drops a slice from the fairness table without saying so,
-    and a table that no longer matches the gate means the committed metrics were
-    produced by different code. Coverage only: the classifier's AUC table carries
-    a second filter for single-class slices."""
+#: The test's own statement of the floor, deliberately not read from
+#: ``tq.MIN_SUBGROUP_SIZE``: sharing it would let the implementation move the
+#: floor and carry this expectation along with it.
+_MEANINGFUL_SLICE = 30
+
+
+def test_every_slice_big_enough_to_score_is_in_the_published_fairness_table():
+    """Set equality in both directions. Raising the trainer's floor drops a real
+    subgroup from the table — even after a retrain, which is when it would
+    otherwise pass unnoticed — and lowering it publishes a slice whose rate is
+    its own sampling noise. Coverage only: the classifier's AUC table carries a
+    second filter for single-class slices."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     df_raw = pd.read_csv(REPO_ROOT / cfg["data"]["cleaned"])
     region_map = {s: r for r, states in cfg["regions"].items() for s in states}
@@ -313,14 +319,16 @@ def test_the_published_fairness_table_is_exactly_the_slices_that_clear_the_floor
         f"{col}={val}"
         for col in ("Gender", "Region")
         for val in sorted(df_test[col].dropna().unique())
-        if (df_test[col] == val).to_numpy().sum() >= tq.MIN_SUBGROUP_SIZE
+        if (df_test[col] == val).to_numpy().sum() >= _MEANINGFUL_SLICE
     }
     metrics = json.loads((REPO_ROOT / cfg["model"]["metrics_path"]).read_text())
     assert set(metrics["subgroup_coverage_80"]) == expected
 
 
-def test_the_subgroup_floor_keeps_a_published_rate_out_of_the_noise():
+def test_the_trainer_publishes_at_exactly_the_floor_the_policy_states():
     """A coverage rate near the 0.80 target carries a 95% sampling interval of
-    about ±0.14 at n=30. Below that a published subgroup number says more about
-    its own slice size than about fairness."""
-    assert tq.MIN_SUBGROUP_SIZE >= 30
+    about ±0.14 at n=30. Equality, not a minimum: a lower floor publishes a rate
+    that is mostly its own sampling noise, and a higher one hides a real
+    subgroup — including the worst-covered one, which is the one that matters.
+    """
+    assert tq.MIN_SUBGROUP_SIZE == _MEANINGFUL_SLICE
