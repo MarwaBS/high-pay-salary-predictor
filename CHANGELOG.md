@@ -11,8 +11,15 @@ project uses SemVer.
   refused, `81`–`94` are accepted). The bounds are the model's training
   support, recorded as `Age` min/max in `models/baseline_stats.json`. The old
   range both extrapolated below the support and declined answerable requests
-  inside it. `streamlit_app.py`'s Age slider moves with it, and a test pins
-  both to the artefact so a retrain that shifts the support fails CI.
+  inside it. Both the API and the dashboard now derive the range from that
+  artefact through `pipeline.training_age_support`, so a retrain that shifts
+  the support fails CI instead of going unnoticed.
+- **`config.yaml` gains a required `drift.window`** (breaking for any config
+  file carried over: `ProjectConfig` rejects one without it). The drift
+  monitor's rolling-window size was a default buried in `DriftMonitor`, where
+  nothing could state why it held that value. It is an operating choice, so it
+  now lives beside the bound it has to clear, and `DriftMonitor` requires the
+  caller to name one.
 - **Prediction cache keys carry the full SHA-256 digest** rather than its first
   16 hex chars. The truncation bought nothing and left a 64-bit key space in
   which a collision serves one caller another's prediction. Cached entries

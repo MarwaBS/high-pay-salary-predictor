@@ -33,6 +33,10 @@ class ThresholdsConfig(BaseModel):
     min_hourly_mean: float = Field(ge=48.0)
 
 
+class DriftConfig(BaseModel):
+    window: int = Field(ge=1)
+
+
 class ModelConfig(BaseModel):
     # Unknown keys are rejected: a mistyped optional knob (``stabilty_seeds``)
     # would otherwise validate clean and silently fall back to a default.
@@ -118,6 +122,7 @@ class ProjectConfig(BaseModel):
 
     data: DataConfig
     thresholds: ThresholdsConfig
+    drift: DriftConfig
     model: ModelConfig
     visualization: VisualizationConfig
     education_order: dict[str, int]

@@ -6,10 +6,14 @@ Run: pytest tests/test_drift.py -v
 
 import json
 import math
+from pathlib import Path
 
 import pytest
 
-from api.drift import DEFAULT_WINDOW, MIN_WINDOW_FOR_VERDICT, DriftMonitor, save_baseline_stats
+from api.drift import MIN_WINDOW_FOR_VERDICT, DriftMonitor, save_baseline_stats
+from config_schema import ProjectConfig
+
+CONFIGURED_WINDOW = ProjectConfig.from_yaml(Path(__file__).parent.parent / "config.yaml").drift.window
 
 
 @pytest.fixture
@@ -119,7 +123,6 @@ class TestDriftEdgeCases:
         for _ in range(MIN_WINDOW_FOR_VERDICT):
             monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
-        assert "features" in report
         assert len(report["features"]) == 2
 
     def test_zero_std_feature(self):
@@ -144,12 +147,12 @@ class TestDriftEdgeCases:
 # ── Sensitivity at the real operating window ─────────────────────────────────
 
 
-class TestDriftSensitivityAtWindow500:
+class TestDriftSensitivityAtTheConfiguredWindow:
     """The effect-size floor must suppress benign wobble at the real window.
 
     With the SE z-score alone, the alarm fires whenever the window mean shifts by
-    more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the default
-    window=500. Production traffic is never i.i.d. from the training baseline, so
+    more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the configured
+    500. Production traffic is never i.i.d. from the training baseline, so
     significance alone alarms on benign sampling wobble; ``min_effect_size`` gates
     it with a practical effect-size floor on TOP of significance.
     """
@@ -161,7 +164,7 @@ class TestDriftSensitivityAtWindow500:
         "Hourly_Mean": {"mean": 65.7, "std": 13.7, "min": 48.0, "max": 123.0},
     }
 
-    def test_iid_from_baseline_at_n500_does_not_alarm(self):
+    def test_iid_from_baseline_at_the_configured_window_does_not_alarm(self):
         """Drawing 500 observations straight from the baseline distribution — i.e.
         NO real drift — must not alarm. Without the effect-size floor these four
         tests alarm on ≈4.5% of windows even with the Šidák correction in place,
@@ -172,7 +175,7 @@ class TestDriftSensitivityAtWindow500:
         false_alarms = 0
         trials = 25
         for _ in range(trials):
-            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
             for _ in range(500):
                 mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
             if mon.check_drift()["any_drifted"]:
@@ -186,7 +189,7 @@ class TestDriftSensitivityAtWindow500:
         import numpy as np
 
         rng = np.random.default_rng(7)
-        mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+        mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
         for _ in range(500):
             obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
             obs["Age"] = 40.0 + 0.5 * 10.0  # consistent +0.5 std shift on Age
@@ -201,7 +204,7 @@ class TestDriftSensitivityAtWindow500:
         practically trivial (< 0.2 std) mean shift must NOT alarm at n=500."""
         # +0.1 std on Age: at n=500 the SE z-score is 0.1*sqrt(500) ~= 2.24 > 2
         # (significant), but the effect size is 0.1 < 0.2 (trivial) -> no alarm.
-        mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+        mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
         for _ in range(500):
             mon.observe({"Age": 41.0})  # exactly +0.1 std, zero sample variance
         report = mon.check_drift()
@@ -631,7 +634,7 @@ class TestBaselinePersistence:
         path = tmp_path / "baseline.json"
         save_baseline_stats(data, str(path))
 
-        monitor = DriftMonitor.from_baseline(str(path))
+        monitor = DriftMonitor.from_baseline(str(path), window=100)
         assert "Age" in monitor.baseline
         assert monitor.baseline["Age"]["mean"] == pytest.approx(40.0, abs=0.01)
         assert monitor.baseline["Age"]["std"] == pytest.approx(8.1650, abs=0.01)
@@ -648,7 +651,7 @@ class TestBaselinePersistence:
     def test_from_baseline_missing_file_raises(self, tmp_path):
         """Loading a nonexistent baseline should raise FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
-            DriftMonitor.from_baseline(str(tmp_path / "nonexistent.json"))
+            DriftMonitor.from_baseline(str(tmp_path / "nonexistent.json"), window=100)
 
 
 class TestVerdictWithheldWhenNothingTestable:
@@ -675,13 +678,13 @@ class TestVerdictWithheldWhenNothingTestable:
         assert report["degraded"] is False
 
 
-# ── Default window vs the ramp-scaled effect floor ───────────────────────────
+# ── Configured window vs the ramp-scaled effect floor ────────────────────────
 
 
-class TestDefaultWindowClearsTheEffectFloorHandover:
-    """``DEFAULT_WINDOW`` exists to put normal operation past the ramp.
+class TestConfiguredWindowClearsTheEffectFloorHandover:
+    """``config.yaml::drift.window`` must put normal operation past the ramp.
 
-    A default window at or below the handover would leave the advertised
+    A configured window at or below the handover leaves the advertised
     ``min_effect_size`` sensitivity permanently masked. Driven through behaviour
     rather than by re-deriving the formula, which would only restate the code.
     """
@@ -696,8 +699,8 @@ class TestDefaultWindowClearsTheEffectFloorHandover:
             mon.observe({"Age": self.SHIFTED_AGE})
         return bool(mon.check_drift()["any_drifted"])
 
-    def test_a_shift_above_min_effect_size_is_caught_at_the_default_window(self):
-        assert self._verdict_at(DEFAULT_WINDOW) is True
+    def test_a_shift_above_min_effect_size_is_caught_at_the_configured_window(self):
+        assert self._verdict_at(CONFIGURED_WINDOW) is True
 
     def test_the_same_shift_is_masked_below_the_handover(self):
         """At n=100 the ramp floor (≈0.283σ) exceeds the shift, so the alarm is
@@ -708,10 +711,6 @@ class TestDefaultWindowClearsTheEffectFloorHandover:
 
 class TestVerdictFloorStaysInTheNormalApproximation:
     def test_the_floor_is_not_lowered_below_the_clt_rule_of_thumb(self):
-        """``check_drift`` reads its p-value off the normal tail. Lowering the
-        floor would issue verdicts — including clean ``False`` ones — from
-        windows too small for that approximation on skewed features. A minimum
-        rather than an equality: raising it only withholds more, and no
-        published artefact is derived from this one.
-        """
+        """A minimum, not an equality: raising it only withholds more verdicts,
+        while lowering it rules on windows too small for the normal tail."""
         assert MIN_WINDOW_FOR_VERDICT >= 30

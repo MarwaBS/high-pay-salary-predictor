@@ -55,12 +55,6 @@ REDIS_DRIFT_KEY = "drift:observations"
 #: the approximation; a shorter window would report clean verdicts from one.
 MIN_WINDOW_FOR_VERDICT = 30
 
-#: Default rolling-window size. The binding constraint is the effect-floor
-#: handover derived in ``check_drift``: at or below it the ramp term rules and
-#: the advertised ``min_effect_size`` sensitivity is unreachable. 500 is a
-#: rounded operating point above that bound, not a derived optimum.
-DEFAULT_WINDOW = 500
-
 
 class DriftMonitor:
     """Rolling-window drift detector using z-score deviation from baseline.
@@ -76,7 +70,7 @@ class DriftMonitor:
     def __init__(
         self,
         baseline_stats: dict[str, dict[str, float]],
-        window: int = DEFAULT_WINDOW,
+        window: int,
         alert_threshold: float = 2.0,
         min_effect_size: float = 0.2,
         redis_client: Any | None = None,

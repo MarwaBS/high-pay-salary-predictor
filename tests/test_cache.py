@@ -109,13 +109,9 @@ def test_corrupt_cached_value_degrades_to_a_miss():
 
 
 def test_the_key_that_reaches_redis_carries_the_whole_digest():
-    """Asserted on the stored key, not on ``_feature_hash``.
-
-    Truncating anywhere between the helper and the key shrinks the space below
-    SHA-256's collision resistance, and a collision serves one caller another
-    caller's prediction. ``get`` builds the key by the same expression, so a
-    truncation there alone breaks the round-trip above instead.
-    """
+    """Truncating anywhere between the digest and the key shrinks the space
+    below SHA-256's collision resistance, and a collision serves one caller
+    another caller's prediction."""
     c = _cache_with_fake()
     c.version = "v1"
     payload = {"state": "CA", "age": 30}

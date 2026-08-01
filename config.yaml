@@ -17,6 +17,15 @@ data:
   bls_processed: "Data/bls_data.csv"
   census_processed: "Data/census_data.csv"
 
+# ── Drift Monitor ──────────────────────────────────────────
+drift:
+  # Rolling observations the /drift verdict is computed over. Must exceed the
+  # effect-floor handover derived in api/drift.py::check_drift — at or below it
+  # the ramp term rules and the advertised 0.2-std sensitivity is unreachable.
+  # That bound is 200 on the detector's defaults; the value above it is an
+  # operational choice (longer window = steadier verdict, slower to react).
+  window: 500
+
 # ── Cleaning Thresholds ────────────────────────────────────
 thresholds:
   # Minimum annual income (Census CPS variable: INCTOT) to be

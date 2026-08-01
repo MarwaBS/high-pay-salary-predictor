@@ -299,12 +299,8 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
 _MEANINGFUL_SLICE = 30
 
 
-def test_every_slice_big_enough_to_score_is_in_the_published_fairness_table():
-    """Set equality in both directions. Raising the trainer's floor drops a real
-    subgroup from the table — even after a retrain, which is when it would
-    otherwise pass unnoticed — and lowering it publishes a slice whose rate is
-    its own sampling noise. Coverage only: the classifier's AUC table carries a
-    second filter for single-class slices."""
+def _test_split_slices() -> tuple[dict[str, int], dict[str, bool], dict]:
+    """Per-subgroup test-row counts and two-class flags, from the shared split."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     df_raw = pd.read_csv(REPO_ROOT / cfg["data"]["cleaned"])
     region_map = {s: r for r, states in cfg["regions"].items() for s in states}
@@ -315,14 +311,27 @@ def test_every_slice_big_enough_to_score_is_in_the_published_fairness_table():
         edu_order=cfg["education_order"],
         region_map=region_map,
     )
-    expected = {
-        f"{col}={val}"
-        for col in ("Gender", "Region")
-        for val in sorted(df_test[col].dropna().unique())
-        if (df_test[col] == val).to_numpy().sum() >= _MEANINGFUL_SLICE
-    }
+    premium = df_test["Annual Income"] >= cfg["model"]["premium_threshold"]
+    sizes, two_class = {}, {}
+    for col in ("Gender", "Region"):
+        for val in sorted(df_test[col].dropna().unique()):
+            mask = df_test[col] == val
+            sizes[f"{col}={val}"] = int(mask.to_numpy().sum())
+            two_class[f"{col}={val}"] = bool(premium[mask].nunique() == 2)
+    return sizes, two_class, cfg
+
+
+def test_every_slice_big_enough_to_score_is_in_the_published_fairness_table():
+    """Set equality in both directions, on BOTH published tables. Raising the
+    trainer's floor drops a real subgroup — even after a retrain, which is when
+    it would otherwise pass unnoticed — and lowering it publishes a slice whose
+    rate is mostly its own sampling error. The AUC table carries one further
+    exclusion, single-class slices, so that is computed rather than waived."""
+    sizes, two_class, cfg = _test_split_slices()
+    expected = {name for name, n in sizes.items() if n >= _MEANINGFUL_SLICE}
     metrics = json.loads((REPO_ROOT / cfg["model"]["metrics_path"]).read_text())
     assert set(metrics["subgroup_coverage_80"]) == expected
+    assert set(metrics["classifier_subgroup_roc_auc"]) == {n for n in expected if two_class[n]}
 
 
 def test_the_trainer_publishes_at_exactly_the_floor_the_policy_states():
@@ -332,3 +341,29 @@ def test_the_trainer_publishes_at_exactly_the_floor_the_policy_states():
     subgroup — including the worst-covered one, which is the one that matters.
     """
     assert tq.MIN_SUBGROUP_SIZE == _MEANINGFUL_SLICE
+
+
+def test_the_subgroup_gates_read_the_constant_rather_than_a_literal(tmp_path, monkeypatch):
+    """Trains with the floor raised past the smallest slice and checks the table
+    shrinks to match. Gates comparing against a literal would publish the same
+    table whatever the constant says, leaving the pin above asserting nothing.
+    """
+    raised = max(_test_split_slices()[0].values()) // 2
+    sizes, two_class, _ = _test_split_slices()
+    expected = {name for name, n in sizes.items() if n >= raised}
+    assert expected < set(sizes), "floor is not high enough to exclude anything — the check would be vacuous"
+
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    cfg["data"]["cleaned"] = str((REPO_ROOT / cfg["data"]["cleaned"]).resolve())
+    cfg["model"]["stability_seeds"] = [11]
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    (tmp_path / "models").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tq, "ROOT", tmp_path)
+    monkeypatch.setattr(tq, "MIN_SUBGROUP_SIZE", raised)
+    monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
+    tq.main()
+
+    published = json.loads((tmp_path / "models" / "model_metrics.json").read_text())
+    assert set(published["subgroup_coverage_80"]) == expected
+    assert set(published["classifier_subgroup_roc_auc"]) == {n for n in expected if two_class[n]}

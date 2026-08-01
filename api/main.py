@@ -501,7 +501,7 @@ async def lifespan(app: FastAPI):
     # Load drift baseline (optional — produced by the training script)
     baseline_path = ROOT / VALIDATED_CFG.model.baseline_stats_path
     if baseline_path.exists():
-        state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path))
+        state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
         logger.info("Drift monitor loaded from %s", baseline_path)
     else:
         logger.warning("No baseline_stats.json found — drift monitoring disabled")

@@ -229,6 +229,18 @@ def engineer_features(
     return out
 
 
+def training_age_support(baseline_stats_path: str | Path) -> tuple[int, int]:
+    """Youngest and oldest ages the model was fitted on.
+
+    Read from the drift baseline, the one artefact that records the training
+    distribution, so the API and the dashboard bound their inputs by the same
+    numbers rather than each keeping a copy.
+    """
+    with open(baseline_stats_path) as f:
+        age = json.load(f)["Age"]
+    return int(age["min"]), int(age["max"])
+
+
 def train_test_positions(n_rows: int, *, test_size: float, random_state: int) -> tuple[np.ndarray, np.ndarray]:
     """Return (train, test) positional row indices for the project's single split.
 
