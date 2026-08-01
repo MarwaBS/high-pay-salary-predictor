@@ -11,9 +11,10 @@ project uses SemVer.
   refused, `81`–`94` are accepted). The bounds are the model's training
   support, recorded as `Age` min/max in `models/baseline_stats.json`. The old
   range both extrapolated below the support and declined answerable requests
-  inside it. Both the API and the dashboard now derive the range from that
-  artefact through `pipeline.training_age_support`, so a retrain that shifts
-  the support fails CI instead of going unnoticed.
+  inside it. The dashboard derives its range from that artefact through
+  `pipeline.training_age_support`; the API's bounds stay declared on the schema,
+  where `PredictRequest` needs them at class-definition time, and a test holds
+  them to the artefact so a retrain that shifts the support fails CI.
 - **`config.yaml` gains a required `drift.window`** (breaking for any config
   file carried over: `ProjectConfig` rejects one without it). The drift
   monitor's rolling-window size was a default buried in `DriftMonitor`, where

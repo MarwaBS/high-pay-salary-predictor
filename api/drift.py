@@ -124,6 +124,16 @@ class DriftMonitor:
         else:
             logger.info("DriftMonitor using in-process deque (single-replica mode)")
 
+    def effect_floor_handover(self) -> int:
+        """Window size at which the fixed effect floor overtakes the ramped one.
+
+        Solves ``alert_threshold * sqrt(2/n) = min_effect_size`` from the floor
+        ``check_drift`` applies. Below it the ramp rules and a shift only just
+        over ``min_effect_size`` goes unreported, so a monitor run on a smaller
+        window cannot deliver the sensitivity it advertises.
+        """
+        return math.ceil(2 * (self.alert_threshold / self.min_effect_size) ** 2)
+
     # ------------------------------------------------------------------ #
     # Backend discovery
     # ------------------------------------------------------------------ #

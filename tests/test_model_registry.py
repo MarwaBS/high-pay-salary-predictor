@@ -60,32 +60,6 @@ def _k8s_download_artifacts(manifest: str = "api-deployment.yaml") -> set[str]:
     return names
 
 
-def _artifacts_a_module_resolves(module: str) -> set[str]:
-    """Artefact basenames a module reads out of ``CFG["model"][...]``.
-
-    Read from the source rather than listed here: a module that starts loading
-    another artefact must pull it into its own pod's download list, and a list
-    maintained by hand only covers the artefacts someone remembered.
-    """
-    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
-    tree = ast.parse((REPO_ROOT / module).read_text(encoding="utf-8"))
-    keys = {
-        node.slice.value
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Subscript)
-        and isinstance(node.slice, ast.Constant)
-        and isinstance(node.value, ast.Subscript)
-        and isinstance(node.value.value, ast.Name)
-        and node.value.value.id == "CFG"
-        and isinstance(node.value.slice, ast.Constant)
-        and node.value.slice.value == "model"
-    }
-    resolved = {Path(cfg["model"][k]).name for k in keys if isinstance(cfg["model"].get(k), str)}
-    artefacts = {name for name in resolved if name.endswith((".ubj", ".json"))}
-    assert artefacts, f"no config-resolved artefacts found in {module} — parser drift"
-    return artefacts
-
-
 def test_release_publishes_every_serving_artifact() -> None:
     required = _required_serving_artifacts()
     published = _release_artifacts()
@@ -97,28 +71,20 @@ def test_release_publishes_every_serving_artifact() -> None:
     )
 
 
-def test_k8s_initcontainer_downloads_every_serving_artifact() -> None:
-    required = _required_serving_artifacts()
-    downloaded = _k8s_download_artifacts()
-    missing = required - downloaded
-    assert not missing, (
-        f"k8s initContainer does not download {sorted(missing)} — the API pod "
-        f"would start without them. Add a curl for each to api-deployment.yaml."
-    )
+@pytest.mark.parametrize("manifest", ["api-deployment.yaml", "dashboard-deployment.yaml"])
+def test_every_pod_stages_every_declared_serving_artifact(manifest: str) -> None:
+    """Both pods stage the whole declared set, not the subset each is thought to need.
 
-
-def test_k8s_dashboard_initcontainer_downloads_every_artefact_it_reads() -> None:
-    """The dashboard pod stages its own artefacts into an emptyDir.
-
-    Anything ``streamlit_app`` resolves from config but the initContainer never
-    fetches is absent at render time, and the tab raises rather than degrading.
+    A per-pod list has to be kept in step with what that pod's code loads, and
+    the dashboard pod already shipped without an artefact its predictor tab
+    reads — into an emptyDir, so nothing else supplied it. Fetching a few
+    unused files costs a one-time download; guessing wrong crashes a pod.
     """
-    required = _artifacts_a_module_resolves("streamlit_app.py")
-    missing = required - _k8s_download_artifacts("dashboard-deployment.yaml")
+    missing = _required_serving_artifacts() - _k8s_download_artifacts(manifest)
     assert not missing, (
-        f"k8s dashboard initContainer does not download {sorted(missing)} — the "
-        f"dashboard reads them from config and would raise on first render. "
-        f"Add a curl for each to dashboard-deployment.yaml."
+        f"k8s {manifest} initContainer does not download {sorted(missing)} — the pod "
+        f"mounts an emptyDir, so anything absent from this list is absent at runtime. "
+        f"Add a curl for each."
     )
 
 

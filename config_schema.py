@@ -14,8 +14,6 @@ from pathlib import Path
 import yaml
 from pydantic import BaseModel, Field, model_validator
 
-from api.drift import MIN_WINDOW_FOR_VERDICT
-
 
 class DataConfig(BaseModel):
     resources_dir: str
@@ -39,9 +37,10 @@ class DriftConfig(BaseModel):
     # Same reason as ModelConfig: a mistyped knob would validate clean.
     model_config = {"extra": "forbid"}
 
-    # A window under the verdict floor withholds every verdict forever, which
-    # looks identical to a healthy monitor that has simply seen no drift.
-    window: int = Field(ge=MIN_WINDOW_FOR_VERDICT)
+    # Only positivity is checkable here. The binding bound is the detector's
+    # effect-floor handover, which depends on its tuning, so the API checks it
+    # at startup where both are known.
+    window: int = Field(ge=1)
 
 
 class ModelConfig(BaseModel):

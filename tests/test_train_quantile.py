@@ -27,6 +27,7 @@ from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold
 
 import scripts.train_quantile as tq
+from config_schema import ProjectConfig
 from pipeline import FEATURES_FULL, compute_group_means, engineer_features
 
 REPO_ROOT = Path(tq.__file__).resolve().parent.parent
@@ -291,6 +292,22 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
     with pytest.raises(KeyError):
         tq.main()
     assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
+
+
+def test_a_mistyped_drift_knob_is_refused(tmp_path):
+    """Silently ignored, the monitor would run on the default the typo replaced."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    cfg["drift"]["windwo"] = 200
+    with pytest.raises(ValidationError):
+        ProjectConfig(**cfg)
+
+
+def test_a_non_positive_drift_window_is_refused(tmp_path):
+    """A zero window caps the dropped-write backlog at zero: a permanent all-clear."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    cfg["drift"]["window"] = 0
+    with pytest.raises(ValidationError):
+        ProjectConfig(**cfg)
 
 
 #: The test's own statement of the floor, deliberately not read from

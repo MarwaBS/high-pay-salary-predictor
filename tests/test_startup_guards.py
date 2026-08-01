@@ -254,3 +254,19 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
         """A default would let a caller that forgets the config still start."""
         with pytest.raises(TypeError):
             DriftMonitor(baseline_stats={"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}})
+
+    def test_a_window_under_the_handover_aborts_startup(self, monkeypatch):
+        """Serving it would advertise a sensitivity the window cannot deliver."""
+        monitor = m.DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
+        too_small = monitor.effect_floor_handover() - 1
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": too_small}))
+        with pytest.raises(RuntimeError, match="below the effect-floor handover"):
+            with TestClient(m.app):
+                pass
+
+    def test_retuning_the_detector_moves_the_window_the_guard_demands(self, monkeypatch):
+        """The bound follows ``min_effect_size``; a fixed number would not notice."""
+        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (2.0, 0.1, None))
+        with pytest.raises(RuntimeError, match="below the effect-floor handover"):
+            with TestClient(m.app):
+                pass

@@ -8,14 +8,12 @@ Checked where a caller meets the bounds — through the running app on both
 serving routes, not through the ``Field`` metadata, which a narrowing added in a
 validator or a route guard would never appear in.
 
-The dashboard holds no bounds of its own and is checked statically, by where its
-widget's bounds come from. The range it actually renders is beyond any static
-check, so that is not claimed here.
+The dashboard is driven rather than parsed: its Age slider is rendered and the
+arguments it was built with are compared against the same artefact.
 """
 
 from __future__ import annotations
 
-import ast
 import json
 import re
 from pathlib import Path
@@ -63,13 +61,11 @@ def test_the_support_helper_reports_what_the_artefact_records():
     assert training_age_support(BASELINE_STATS) == (int(age["min"]), int(age["max"]))
 
 
-def test_the_dashboards_opening_age_sits_inside_the_support_and_near_its_centre():
-    """A default outside the bounds would break the widget; one at the midpoint
-    of the support would open on its 90th percentile."""
-    low, high = training_age_support(BASELINE_STATS)
-    typical = typical_training_age(BASELINE_STATS)
-    assert low <= typical <= high
-    assert abs(typical - (low + high) / 2) > 1, "the default drifted back to the midpoint of the support"
+def test_the_typical_age_helper_reports_the_mean_of_the_training_ages():
+    """What a UI opens on. The midpoint of the support would be its 90th
+    percentile, so the first thing a visitor sees would be an atypical profile."""
+    age = json.loads(BASELINE_STATS.read_text(encoding="utf-8"))["Age"]
+    assert typical_training_age(BASELINE_STATS) == round(float(age["mean"]))
 
 
 def test_schema_bounds_equal_the_training_support():
@@ -104,81 +100,58 @@ class TestEveryServingRouteServesExactlyTheSupport:
             assert self._post(client, route, age) == 422, f"{route} served age {age}, outside the support"
 
 
-_WIDGETS = {"slider", "number_input", "select_slider"}
+class TestTheDashboardWidgetOffersTheSupport:
+    """Drives the real widget rather than reading the source.
 
-
-def _widget_label(call: ast.Call) -> str:
-    positional = call.args[0] if call.args else None
-    keyword = next((kw.value for kw in call.keywords if kw.arg == "label"), None)
-    node = positional if isinstance(positional, ast.Constant) else keyword
-    return str(node.value) if isinstance(node, ast.Constant) else ""
-
-
-def _widget_argument(call: ast.Call, names: set[str], position: slice) -> list[ast.expr]:
-    """A widget's arguments by name, falling back to the positions they occupy."""
-    by_keyword = [kw.value for kw in call.keywords if kw.arg in names]
-    return by_keyword or list(call.args[position])
-
-
-def _derives_from(node: ast.expr, function: str, tree: ast.AST) -> bool:
-    """True if ``node`` is that function's result, directly or through one name."""
-    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == function:
-        return True
-    return isinstance(node, ast.Name) and node.id in _names_assigned_from(tree, function)
-
-
-def _names_assigned_from(tree: ast.AST, function: str) -> set[str]:
-    return {
-        target.id
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        and isinstance(node.value, ast.Call)
-        and isinstance(node.value.func, ast.Name)
-        and node.value.func.id == function
-        for element in node.targets
-        for target in (element.elts if isinstance(element, ast.Tuple) else [element])
-        if isinstance(target, ast.Name)
-    }
-
-
-def _assignments_of(tree: ast.AST, name: str) -> int:
-    return sum(
-        isinstance(target, ast.Name) and target.id == name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Assign)
-        for element in node.targets
-        for target in (element.elts if isinstance(element, ast.Tuple) else [element])
-    )
-
-
-def test_the_dashboards_age_bounds_come_from_the_shared_derivation():
-    """Every number the age widget is built from — both bounds and the value it
-    opens on — must come from the artefact, not be written beside it.
-
-    Checks where each argument comes from, so how it is passed makes no
-    difference; and each derived name must be assigned once, so the derivation
-    cannot be run and then overwritten. What it cannot see: a transform applied
-    to the widget's own result, or a label carrying no form of the word age.
+    Every static version of this check was defeated by a spelling it did not
+    anticipate — a positional argument, a rebound name, a different widget. What
+    the widget is actually constructed with is not a matter of syntax, so it is
+    captured from a run instead.
     """
-    tree = ast.parse((REPO_ROOT / "streamlit_app.py").read_text(encoding="utf-8"))
-    age_widgets = [
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in _WIDGETS
-        and re.search(r"\bage\b", _widget_label(node), re.IGNORECASE)
-    ]
-    assert len(age_widgets) == 1, f"expected one age widget in streamlit_app.py, found {len(age_widgets)}"
-    widget = age_widgets[0]
 
-    for names, position, source in (
-        ({"min_value", "max_value"}, slice(1, 3), "training_age_support"),
-        ({"value"}, slice(3, 4), "typical_training_age"),
-    ):
-        given = _widget_argument(widget, names, position)
-        assert given, f"the age widget passes no {sorted(names)}"
-        underived = [ast.unparse(arg) for arg in given if not _derives_from(arg, source, tree)]
-        assert not underived, f"age widget takes {underived} for {sorted(names)} instead of {source}'s result"
-        rebound = [name for name in _names_assigned_from(tree, source) if _assignments_of(tree, name) > 1]
-        assert not rebound, f"{rebound} reassigned after {source}, so the widget need not see the artefact"
+    def test_ci_installs_what_these_tests_need_to_run(self):
+        """The renders below skip without streamlit, which would read as green.
+
+        ``requirements.txt`` is what CI installs, so declaring it there is what
+        keeps that skip out of the pipeline.
+        """
+        declared = (REPO_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines()
+        assert any(line.startswith("streamlit") for line in declared), "CI would skip the dashboard render tests"
+
+    def _render(self, monkeypatch, picks=None):
+        """Render the tab, returning the Age slider's arguments and the age sent.
+
+        ``picks`` chooses what the user moves the slider to; the payload is
+        intercepted at the HTTP boundary, so anything applied between the widget
+        and the request shows up as a difference between the two.
+        """
+        streamlit_app = pytest.importorskip("streamlit_app")
+        captured: dict[str, dict] = {}
+        sent: dict[str, object] = {}
+
+        def record(label, *args, **kwargs):
+            kwargs = {**dict(zip(("min_value", "max_value", "value"), args, strict=False)), **kwargs}
+            captured[label] = kwargs
+            return picks(kwargs) if picks and label == "Age" else kwargs.get("value")
+
+        monkeypatch.setattr(streamlit_app.st, "slider", record)
+        monkeypatch.setattr(streamlit_app.st, "button", lambda *a, **k: picks is not None)
+        monkeypatch.setattr(streamlit_app, "_call_predict_api", lambda payload: sent.update(payload) or None)
+        streamlit_app.tab_predictor(streamlit_app.load_data())
+        assert "Age" in captured, f"no Age slider rendered; saw {sorted(captured)}"
+        return captured["Age"], sent.get("age")
+
+    def test_the_widget_spans_exactly_the_training_support(self, monkeypatch):
+        widget, _ = self._render(monkeypatch)
+        low, high = training_age_support(BASELINE_STATS)
+        assert (widget["min_value"], widget["max_value"]) == (low, high)
+
+    def test_the_widget_opens_on_the_mean_of_the_training_ages(self, monkeypatch):
+        widget, _ = self._render(monkeypatch)
+        assert widget["value"] == typical_training_age(BASELINE_STATS)
+
+    @pytest.mark.parametrize("end", ["min_value", "max_value"])
+    def test_an_age_picked_at_either_end_reaches_the_request_unchanged(self, monkeypatch, end):
+        """A clamp between the widget and the request is invisible to the widget."""
+        widget, age_sent = self._render(monkeypatch, picks=lambda kwargs: kwargs[end])
+        assert age_sent == widget[end], f"age was altered between the slider and the request ({end})"

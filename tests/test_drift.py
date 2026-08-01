@@ -691,35 +691,36 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
     would clear the ramp early and pass at windows the bound forbids.
     """
 
-    ALERT_THRESHOLD = 2.0
-    MIN_EFFECT_SIZE = 0.2
-    HANDOVER = round(2 * (ALERT_THRESHOLD / MIN_EFFECT_SIZE) ** 2)
     BASELINE = {"Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0}}
-    PROBE_EFFECT = MIN_EFFECT_SIZE * 1.0005
+
+    def _monitor(self, window: int) -> DriftMonitor:
+        """Built the way ``api.main`` builds it: tuning comes from the defaults."""
+        return DriftMonitor(self.BASELINE, window=window)
+
+    @property
+    def handover(self) -> int:
+        return self._monitor(1).effect_floor_handover()
 
     def _verdict_at(self, window: int) -> bool:
-        mon = DriftMonitor(
-            self.BASELINE,
-            window=window,
-            alert_threshold=self.ALERT_THRESHOLD,
-            min_effect_size=self.MIN_EFFECT_SIZE,
-        )
-        shifted = self.BASELINE["Age"]["mean"] + self.PROBE_EFFECT * self.BASELINE["Age"]["std"]
+        mon = self._monitor(window)
+        # Just over the advertised floor: a larger probe clears the ramp early
+        # and would pass at windows the bound forbids.
+        shifted = self.BASELINE["Age"]["mean"] + mon.min_effect_size * 1.0005 * self.BASELINE["Age"]["std"]
         for _ in range(window):
             mon.observe({"Age": shifted})
         return bool(mon.check_drift()["any_drifted"])
 
     def test_the_advertised_sensitivity_is_reached_at_the_handover(self):
-        assert self._verdict_at(self.HANDOVER) is True
+        assert self._verdict_at(self.handover) is True
 
     def test_one_observation_short_of_the_handover_still_masks_it(self):
         """Pins where the ramp stops binding, so the bound below is a real line."""
-        assert self._verdict_at(self.HANDOVER - 1) is False
+        assert self._verdict_at(self.handover - 1) is False
 
     def test_the_configured_window_is_not_below_the_handover(self):
-        assert CONFIGURED_WINDOW >= self.HANDOVER, (
+        assert CONFIGURED_WINDOW >= self.handover, (
             f"config.yaml::drift.window={CONFIGURED_WINDOW} cannot reach the advertised "
-            f"{self.MIN_EFFECT_SIZE}-std sensitivity; the ramp binds until {self.HANDOVER}"
+            f"sensitivity; the ramp binds until {self.handover}"
         )
 
     def test_the_configured_window_reports_that_shift(self):

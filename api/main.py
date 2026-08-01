@@ -502,6 +502,17 @@ async def lifespan(app: FastAPI):
     baseline_path = ROOT / VALIDATED_CFG.model.baseline_stats_path
     if baseline_path.exists():
         state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
+        # The bound depends on the detector's own tuning, so it can only be
+        # checked once both are in hand: a window under it serves a monitor
+        # quietly less sensitive than the one documented.
+        handover = state.drift_monitor.effect_floor_handover()
+        if state.drift_monitor.window < handover:
+            raise RuntimeError(
+                f"drift.window={state.drift_monitor.window} is below the effect-floor handover "
+                f"({handover}) for alert_threshold={state.drift_monitor.alert_threshold} and "
+                f"min_effect_size={state.drift_monitor.min_effect_size}: /drift could not report a "
+                f"shift at the advertised sensitivity."
+            )
         logger.info("Drift monitor loaded from %s", baseline_path)
     else:
         logger.warning("No baseline_stats.json found — drift monitoring disabled")
