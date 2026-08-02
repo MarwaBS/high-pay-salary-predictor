@@ -197,27 +197,36 @@ def test_every_metric_row_is_pinned(doc):
     assert not unpinned, f"unpinned metric rows in {doc}:\n{detail}"
 
 
-def test_the_published_drift_figures_follow_the_shipped_tuning():
-    """README's alarm-control paragraph quotes numbers the detector's defaults
-    decide. Retuning either default would leave the prose wrong and the drift
-    tests green, because those derive the same numbers rather than reading these.
+def test_every_figure_in_the_alarm_paragraph_is_one_the_code_decides():
+    """Membership, not a list of the figures someone happened to check.
+
+    Each number the paragraph prints follows from the detector's tuning or the
+    baseline it monitors, so every one of them is recomputed and the paragraph
+    may print nothing else. Adding a figure without a source fails here.
     """
+    import json
     import math
 
     from api.drift import DriftMonitor
 
-    mon = DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
+    baseline = json.loads((REPO_ROOT / "models" / "baseline_stats.json").read_text(encoding="utf-8"))
+    mon = DriftMonitor(baseline, window=1)
     designed = math.erfc(mon.alert_threshold / math.sqrt(2.0))
-    bound = designed + 2 * math.sqrt(designed * (1 - designed) / 150)
+    derived = {
+        f"{designed:.1%}".rstrip("%"): "familywise design level",
+        f"{1 - (1 - designed) ** len(baseline):.0%}".rstrip("%"): "uncorrected union over the monitored features",
+        str(len(baseline)): "features monitored",
+        str(mon.min_effect_size): "effect floor",
+        str(round(mon.alert_threshold)): "alert threshold, and the 2 in the ramp term",
+        str(round((mon.alert_threshold / mon.min_effect_size) ** 2)): "window at which the fixed floor starts to bind",
+    }
     paragraph = next(
         line
         for line in (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
         if "Statistically controlled alarms" in line
     )
-    for quoted, actual in (
-        (f"{designed:.1%}", "familywise design level"),
-        (f"{bound:.0%}", "the bound the suite gates at"),
-        (f"{mon.min_effect_size} baseline", "the effect floor"),
-        (f"(z/d)² = {round((mon.alert_threshold / mon.min_effect_size) ** 2)}", "the ramp handover"),
-    ):
-        assert quoted in paragraph, f"README does not state {actual} as {quoted}"
+    printed = set(re.findall(r"\d+(?:\.\d+)?", paragraph))
+    unaccounted = printed - set(derived)
+    assert not unaccounted, f"the paragraph prints {sorted(unaccounted)}, which nothing in the code decides"
+    missing = set(derived) - printed
+    assert not missing, f"the paragraph no longer states {[derived[k] for k in sorted(missing)]}"
