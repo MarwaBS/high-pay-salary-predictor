@@ -296,8 +296,8 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
 
 @pytest.mark.parametrize("drop", ["block", "window"], ids=["no-drift-block", "block-without-window"])
 def test_a_config_that_declares_no_window_is_refused(drop):
-    """Either shape would put the window back in code, where the default it
-    replaced could not be defended and no config file stated it."""
+    """Either shape puts the window back in code, where no config file states it
+    and nothing can say why it holds that value."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     if drop == "block":
         del cfg["drift"]

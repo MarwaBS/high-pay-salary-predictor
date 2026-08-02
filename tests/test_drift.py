@@ -118,6 +118,15 @@ class TestDriftEdgeCases:
         assert f"Need at least {MIN_WINDOW_FOR_VERDICT}" in report.get("message", "")
         assert report["any_drifted"] is None
 
+    def test_the_gate_reads_the_constant_rather_than_a_literal(self, monkeypatch, baseline_stats):
+        """Moving the constant must move the gate, or it is a rename and the
+        derivation beside it defends nothing."""
+        monkeypatch.setattr("api.drift.MIN_WINDOW_FOR_VERDICT", MIN_WINDOW_FOR_VERDICT + 10)
+        mon = DriftMonitor(baseline_stats, window=100)
+        for _ in range(MIN_WINDOW_FOR_VERDICT + 5):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        assert mon.check_drift()["any_drifted"] is None
+
     def test_exactly_at_the_floor_reports(self, monitor):
         """At the floor a verdict is issued — the gate is ``<``, not ``<=``."""
         for _ in range(MIN_WINDOW_FOR_VERDICT):
@@ -720,6 +729,10 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
     def _verdict_at(self, window: int, **tuning: float) -> bool:
         mon = self._monitor(window, **tuning)
         handover = mon.effect_floor_handover()
+        assert handover > MIN_WINDOW_FOR_VERDICT, (
+            f"at this tuning the handover ({handover}) is under the verdict floor, so a withheld "
+            f"verdict — not the ramp — would decide the result"
+        )
         # Halfway between the advertised floor and the ramp one observation short
         # of the handover — the only band that is masked below the handover and
         # reported at it, whatever the tuning makes those two values.
@@ -745,12 +758,26 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
     def test_the_configured_window_reports_that_shift(self):
         assert self._verdict_at(CONFIGURED_WINDOW) is True
 
-    def test_the_handover_rounds_up_to_a_window_that_works(self):
-        """A tuning whose handover is fractional (2*(2.0/0.3)**2 = 88.9). Rounding
-        down would name a window at which the advertised shift is still masked."""
+    # Exact, and fractional on either side of a half, so rounding in any
+    # direction but up is visible.
+    @pytest.mark.parametrize("min_effect_size", [0.2, 0.32, 0.35, 0.3])
+    def test_the_handover_is_the_first_window_the_fixed_floor_binds_at(self, min_effect_size):
+        """The handover is where the two floors cross, so it is asserted as that
+        crossing rather than as a number that holds at one tuning."""
+        mon = self._monitor(1, min_effect_size=min_effect_size)
+        crossing = mon.effect_floor_handover()
+        assert mon.alert_threshold * math.sqrt(2.0 / crossing) <= min_effect_size, (
+            f"the ramp still rules at n={crossing}"
+        )
+        assert mon.alert_threshold * math.sqrt(2.0 / (crossing - 1)) > min_effect_size, (
+            f"the ramp had already yielded at n={crossing - 1}"
+        )
+
+    def test_a_fractional_handover_masks_the_shift_one_observation_below_it(self):
+        """The crossing above is arithmetic; this is the behaviour it buys, at a
+        tuning whose exact handover (88.9) is not a whole number."""
         tuning = {"min_effect_size": 0.3}
         handover = self._monitor(1, **tuning).effect_floor_handover()
-        assert handover == 89, "the handover must round up, not to the nearest integer"
         assert self._verdict_at(handover - 1, **tuning) is False
         assert self._verdict_at(handover, **tuning) is True
 

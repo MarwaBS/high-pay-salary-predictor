@@ -152,6 +152,20 @@ class TestTheDashboardOffersTheWholeSupport:
         assert not widget.get("disabled"), "the age control is disabled, so no age is selectable"
         assert selectable == set(range(low, high + 1))
 
+    def test_the_widget_follows_the_artefact_rather_than_repeating_its_values(self, monkeypatch):
+        """Against numbers the shipped artefact does not carry. Every other check
+        here compares the widget to that artefact, so literals equal to today's
+        values would satisfy all of them."""
+        monkeypatch.setattr(streamlit_app, "training_age_support", lambda _path: (22, 71))
+        monkeypatch.setattr(streamlit_app, "typical_training_age", lambda _path: 48)
+        streamlit_app.get_age_range.clear()  # the derivation is cached per session
+        try:
+            controls, _ = self._render(monkeypatch)
+        finally:
+            streamlit_app.get_age_range.clear()
+        widget = self._age_control(controls)
+        assert (widget["min_value"], widget["max_value"], widget["value"]) == (22, 71, 48)
+
     def test_the_widget_opens_on_the_mean_of_the_training_ages(self, monkeypatch):
         controls, _ = self._render(monkeypatch)
         assert self._age_control(controls)["value"] == typical_training_age(BASELINE_STATS)

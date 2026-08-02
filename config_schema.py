@@ -34,7 +34,6 @@ class ThresholdsConfig(BaseModel):
 
 
 class DriftConfig(BaseModel):
-    # Same reason as ModelConfig: a mistyped knob would validate clean.
     model_config = {"extra": "forbid"}
 
     # Only positivity is checkable here. The binding bound is the detector's
