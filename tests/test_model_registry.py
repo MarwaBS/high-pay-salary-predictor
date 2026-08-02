@@ -18,12 +18,18 @@ from __future__ import annotations
 
 import ast
 import re
-from pathlib import Path
+import shlex
+from pathlib import Path, PurePosixPath
 
 import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# The runtime image's working directory (Dockerfile). config.yaml names model
+# artefacts relative, so this is what makes them absolute at runtime — and
+# therefore the only mountPath at which the staged volume is reachable.
+IMAGE_WORKDIR = PurePosixPath("/app")
 
 
 def _config_serving_artifacts() -> set[str]:
@@ -51,15 +57,44 @@ def _release_artifacts() -> set[str]:
     raise AssertionError("no action-gh-release step found in train.yml")
 
 
-def _k8s_download_artifacts(manifest: str = "api-deployment.yaml") -> set[str]:
-    """Basenames a deployment's initContainer curls into /shared-models."""
-    text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
-    # The initContainer stages artefacts with `curl ... -o /shared-models/<name>`.
-    # Commented lines are skipped: a curl behind a `#` stages nothing.
-    live = [line for line in text.splitlines() if not line.lstrip().startswith("#")]
-    names = {name for line in live for name in re.findall(r"-o\s+/shared-models/(\S+)", line)}
-    assert names, f"no /shared-models downloads found in k8s/{manifest}"
-    return names
+def _app_model_dir() -> PurePosixPath:
+    """Absolute directory the app resolves config.yaml's model artefacts from."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    parents = {
+        PurePosixPath(v).parent for v in cfg["model"].values() if isinstance(v, str) and v.endswith((".ubj", ".json"))
+    }
+    assert len(parents) == 1, f"model artefacts span several directories: {sorted(map(str, parents))}"
+    return IMAGE_WORKDIR / parents.pop()
+
+
+def _staged_for_the_app(manifest: str) -> set[str]:
+    """Basenames a deployment's initContainer leaves where the app reads them.
+
+    Follows the volume rather than the text: a `-o` inside a shell comment
+    writes nothing, and a file written to a volume the app mounts elsewhere is
+    staged into a directory the app never opens.
+    """
+    spec = yaml.safe_load((REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8"))["spec"]["template"]["spec"]
+    (init,) = spec["initContainers"]
+    assert init["command"] == ["sh", "-c"], f"k8s/{manifest} stages artefacts some other way — this check is stale"
+
+    staging = {PurePosixPath(m["mountPath"]): m["name"] for m in init["volumeMounts"]}
+    app_dir = _app_model_dir()
+    readable = {
+        m["name"]
+        for c in spec["containers"]
+        for m in c.get("volumeMounts", [])
+        if PurePosixPath(m["mountPath"]) == app_dir
+    }
+
+    staged = set()
+    for line in "\n".join(init["args"]).splitlines():
+        tokens = shlex.split(line, comments=True)
+        for flag, target in zip(tokens, tokens[1:], strict=False):
+            written = PurePosixPath(target)
+            if flag == "-o" and staging.get(written.parent) in readable:
+                staged.add(written.name)
+    return staged
 
 
 def test_release_publishes_every_serving_artifact() -> None:
@@ -82,11 +117,20 @@ def test_every_pod_stages_every_declared_serving_artifact(manifest: str) -> None
     absent from the list is absent at runtime; fetching a few unused files costs
     one download, guessing wrong crashes a pod.
     """
-    missing = _required_serving_artifacts() - _k8s_download_artifacts(manifest)
+    missing = _required_serving_artifacts() - _staged_for_the_app(manifest)
     assert not missing, (
-        f"k8s {manifest} initContainer does not download {sorted(missing)} — the pod "
-        f"mounts an emptyDir, so anything absent from this list is absent at runtime. "
-        f"Add a curl for each."
+        f"k8s {manifest} does not leave {sorted(missing)} in {_app_model_dir()} — the pod "
+        f"mounts an emptyDir, so anything the initContainer does not write there is absent "
+        f"at runtime. Add a curl for each, and check both mountPaths still agree."
+    )
+
+
+def test_the_image_workdir_the_mountpaths_are_written_for_is_the_one_it_uses() -> None:
+    """Every mountPath above is only correct because the image works from here."""
+    workdirs = re.findall(r"^WORKDIR\s+(\S+)", (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8"), re.M)
+    assert workdirs[-1] == str(IMAGE_WORKDIR), (
+        f"the runtime image now works from {workdirs[-1]}, not {IMAGE_WORKDIR} — the k8s "
+        f"mountPaths point at the old directory and the app will not find its artefacts."
     )
 
 
