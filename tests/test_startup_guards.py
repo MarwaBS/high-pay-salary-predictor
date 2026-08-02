@@ -7,6 +7,8 @@ one that is enforced. These drive the real lifespan so deleting any guard turns
 a test red.
 """
 
+import math
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -272,14 +274,29 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
         with TestClient(m.app) as client:
             assert client.get("/health").status_code == 200
 
-    @pytest.mark.parametrize(
-        "defaults, knob",
-        [((2.0, 0.1, None), "min_effect_size"), ((4.0, 0.2, None), "alert_threshold")],
-    )
-    def test_retuning_either_knob_moves_the_window_the_guard_demands(self, monkeypatch, defaults, knob):
+    @pytest.mark.parametrize("knob", ["min_effect_size", "alert_threshold"])
+    def test_retuning_either_knob_moves_the_window_the_guard_demands(self, monkeypatch, knob):
         """The bound is a function of both; a literal in place of either would
-        keep demanding the window the shipped tuning happened to need."""
-        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", defaults)
+        keep demanding the window the shipped tuning happened to need.
+
+        Each tuning is derived from the configured window so that it is one the
+        window cannot satisfy — a fixed pair would also fail whenever someone
+        raised the window past it, which the config says they may.
+        """
+        configured = m.VALIDATED_CFG.drift.window
+        alert, effect = 2.0, 0.2
+        if knob == "min_effect_size":
+            effect = alert * math.sqrt(2.0 / configured) * 0.9
+        else:
+            alert = effect * math.sqrt(configured / 2.0) * 1.1
+        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (alert, effect, None))
+        with pytest.raises(RuntimeError, match="is below"):
+            with TestClient(m.app):
+                pass
+
+    def test_the_guard_reads_the_verdict_floor_rather_than_a_literal(self, monkeypatch):
+        """Moving the floor must move what the guard demands."""
+        monkeypatch.setattr("api.main.MIN_WINDOW_FOR_VERDICT", m.VALIDATED_CFG.drift.window + 1)
         with pytest.raises(RuntimeError, match="is below"):
             with TestClient(m.app):
                 pass

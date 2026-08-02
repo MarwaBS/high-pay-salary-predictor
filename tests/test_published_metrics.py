@@ -195,3 +195,29 @@ def test_every_metric_row_is_pinned(doc):
     unpinned = [row for row in rows if not any(a in row for a in anchors) and not row.startswith(EXEMPT_ROW_PREFIXES)]
     detail = "\n".join(f"  {row[:100]}" for row in unpinned)
     assert not unpinned, f"unpinned metric rows in {doc}:\n{detail}"
+
+
+def test_the_published_drift_figures_follow_the_shipped_tuning():
+    """README's alarm-control paragraph quotes numbers the detector's defaults
+    decide. Retuning either default would leave the prose wrong and the drift
+    tests green, because those derive the same numbers rather than reading these.
+    """
+    import math
+
+    from api.drift import DriftMonitor
+
+    mon = DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
+    designed = math.erfc(mon.alert_threshold / math.sqrt(2.0))
+    bound = designed + 2 * math.sqrt(designed * (1 - designed) / 150)
+    paragraph = next(
+        line
+        for line in (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+        if "Statistically controlled alarms" in line
+    )
+    for quoted, actual in (
+        (f"{designed:.1%}", "familywise design level"),
+        (f"{bound:.0%}", "the bound the suite gates at"),
+        (f"{mon.min_effect_size} baseline", "the effect floor"),
+        (f"(z/d)² = {round((mon.alert_threshold / mon.min_effect_size) ** 2)}", "the ramp handover"),
+    ):
+        assert quoted in paragraph, f"README does not state {actual} as {quoted}"

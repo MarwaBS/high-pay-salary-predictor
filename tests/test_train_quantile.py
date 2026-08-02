@@ -379,9 +379,13 @@ def test_the_subgroup_gates_read_the_constant_rather_than_a_literal(tmp_path, mo
     table whatever the constant says, leaving the pin above asserting nothing.
     """
     sizes, two_class, _ = _test_split_slices()
-    raised = max(sizes.values()) // 2
+    # The second-smallest slice: high enough to exclude the smallest, and equal to
+    # a slice of its own, so the comparison's own boundary decides whether that
+    # one is published.
+    raised = sorted(sizes.values())[1]
     expected = {name for name, n in sizes.items() if n >= raised}
     assert expected < set(sizes), "floor is not high enough to exclude anything — the check would be vacuous"
+    assert raised in sizes.values(), "no slice sits on the floor, so the boundary is untested"
 
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     cfg["data"]["cleaned"] = str((REPO_ROOT / cfg["data"]["cleaned"]).resolve())
