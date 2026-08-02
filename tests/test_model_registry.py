@@ -26,9 +26,9 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# The runtime image's working directory (Dockerfile). config.yaml names model
-# artefacts relative, so this is what makes them absolute at runtime — and
-# therefore the only mountPath at which the staged volume is reachable.
+# The directory a serving stage's relative COPY destinations resolve against,
+# and so the one each app derives its artefact paths from. The k8s mountPaths
+# are written for it; a stage that moves leaves them pointing nowhere.
 IMAGE_WORKDIR = PurePosixPath("/app")
 
 
@@ -125,12 +125,39 @@ def test_every_pod_stages_every_declared_serving_artifact(manifest: str) -> None
     )
 
 
-def test_the_image_workdir_the_mountpaths_are_written_for_is_the_one_it_uses() -> None:
-    """Every mountPath above is only correct because the image works from here."""
-    workdirs = re.findall(r"^WORKDIR\s+(\S+)", (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8"), re.M)
-    assert workdirs[-1] == str(IMAGE_WORKDIR), (
-        f"the runtime image now works from {workdirs[-1]}, not {IMAGE_WORKDIR} — the k8s "
-        f"mountPaths point at the old directory and the app will not find its artefacts."
+def _stage_workdirs() -> dict[str, str]:
+    """WORKDIR in effect at the end of each named Dockerfile stage."""
+    stage = None
+    workdirs: dict[str, str] = {}
+    for line in (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        if named := re.match(r"^FROM\s+\S+\s+AS\s+(\S+)", line):
+            stage = named.group(1)
+        elif (workdir := re.match(r"^WORKDIR\s+(\S+)", line)) and stage:
+            workdirs[stage] = workdir.group(1)
+    assert workdirs, "no named build stages found in the Dockerfile — this parser is stale"
+    return workdirs
+
+
+def _served_stage(manifest: str) -> str:
+    """The Dockerfile stage a deployment's app container runs."""
+    spec = yaml.safe_load((REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8"))["spec"]["template"]["spec"]
+    (image,) = {c["image"] for c in spec["containers"]}
+    return PurePosixPath(image.rsplit(":", 1)[0]).name
+
+
+@pytest.mark.parametrize("manifest", ["api-deployment.yaml", "dashboard-deployment.yaml"])
+def test_the_image_each_pod_runs_works_from_where_its_mountpaths_assume(manifest: str) -> None:
+    """Both images are checked, because both manifests mount for both.
+
+    Reading one stage covers one image, and the pod running the other fails at
+    startup with the manifest and the suite both looking correct.
+    """
+    stage = _served_stage(manifest)
+    workdirs = _stage_workdirs()
+    assert stage in workdirs, f"k8s/{manifest} runs an image with no matching Dockerfile stage: {stage!r}"
+    assert workdirs[stage] == str(IMAGE_WORKDIR), (
+        f"Dockerfile stage {stage!r} now works from {workdirs[stage]}, not {IMAGE_WORKDIR} — "
+        f"k8s/{manifest} mounts the artefacts at the old directory and the app will not find them."
     )
 
 
