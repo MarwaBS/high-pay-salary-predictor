@@ -285,7 +285,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **576 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **579 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -527,7 +527,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 576 tests — every fix is a locked regression guard
+├── tests/                                     # ★ 579 tests — every fix is a locked regression guard
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
@@ -586,7 +586,7 @@ high-pay-salary-predictor/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **576 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **579 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold — the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)

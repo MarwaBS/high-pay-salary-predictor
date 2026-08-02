@@ -294,10 +294,15 @@ def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_p
     assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
 
 
-def test_a_config_without_a_drift_block_is_refused():
-    """Giving the block a default would restore the buried window this replaced."""
+@pytest.mark.parametrize("drop", ["block", "window"], ids=["no-drift-block", "block-without-window"])
+def test_a_config_that_declares_no_window_is_refused(drop):
+    """Either shape would put the window back in code, where the default it
+    replaced could not be defended and no config file stated it."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
-    del cfg["drift"]
+    if drop == "block":
+        del cfg["drift"]
+    else:
+        del cfg["drift"]["window"]
     with pytest.raises(ValidationError):
         ProjectConfig(**cfg)
 

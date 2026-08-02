@@ -67,12 +67,6 @@ def test_the_helpers_read_the_artefact_they_are_given(tmp_path):
     assert typical_training_age(probe) == 48
 
 
-def test_the_helpers_report_what_the_shipped_artefact_records():
-    age = json.loads(BASELINE_STATS.read_text(encoding="utf-8"))["Age"]
-    assert training_age_support(BASELINE_STATS) == (int(age["min"]), int(age["max"]))
-    assert typical_training_age(BASELINE_STATS) == round(float(age["mean"]))
-
-
 def test_schema_bounds_equal_the_training_support():
     assert _schema_bounds() == training_age_support(BASELINE_STATS)
 
@@ -162,8 +156,10 @@ class TestTheDashboardOffersTheWholeSupport:
         controls, _ = self._render(monkeypatch)
         assert self._age_control(controls)["value"] == typical_training_age(BASELINE_STATS)
 
+    @pytest.mark.parametrize("advanced", [False, True], ids=["basic", "advanced-inputs-open"])
     @pytest.mark.parametrize("end", ["min_value", "max_value"])
-    def test_an_age_picked_at_either_end_reaches_the_request_unchanged(self, monkeypatch, end):
-        """A clamp between the widget and the request is invisible to the widget."""
-        controls, age_sent = self._render(monkeypatch, picks=lambda kwargs: kwargs[end])
+    def test_an_age_picked_at_either_end_reaches_the_request_unchanged(self, monkeypatch, end, advanced):
+        """A clamp between the widget and the request is invisible to the widget,
+        and the optional branch is a second place one could sit."""
+        controls, age_sent = self._render(monkeypatch, picks=lambda kwargs: kwargs[end], advanced=advanced)
         assert age_sent == self._age_control(controls)[end], f"age was altered before the request ({end})"

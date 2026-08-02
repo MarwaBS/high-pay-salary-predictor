@@ -20,10 +20,11 @@ project uses SemVer.
   monitor's rolling-window size was a default buried in `DriftMonitor`, where
   nothing could state why it held that value. It is an operating choice, so it
   now lives beside the bound it has to clear, and `DriftMonitor` requires the
-  caller to name one. A window below the detector's effect-floor handover aborts
-  API startup, since the bound depends on the detector's tuning and only both
-  together determine it; there is no derivable upper bound, and the trade-off a
-  larger window buys is written beside the key.
+  caller to name one. API startup aborts on a window below either floor it has to
+  clear — the detector's effect-floor handover, which moves with its tuning, and
+  the minimum any verdict is issued from — since only startup holds the
+  configured value and the tuning together. There is no derivable upper bound,
+  and the trade-off a larger window buys is written beside the key.
 
 ### Fixed
 - **The k8s dashboard pod now stages `baseline_stats.json`.** Its initContainer

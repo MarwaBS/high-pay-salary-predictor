@@ -264,26 +264,30 @@ class TestDriftRampUpFalseAlarms:
                 false_alarms += 1
         return false_alarms / trials
 
-    def _bound(self) -> float:
-        """The familywise level the shipped ``alert_threshold`` buys, plus room
-        for binomial noise over 150 trials. Derived, so loosening the threshold
-        raises the measured rate against a bound that does not move with it."""
+    #: Familywise level the detector is allowed to design for. A drift alarm is
+    #: a page: at the conventional 5% one stationary window in twenty wakes
+    #: someone, and looser than that the endpoint is noise.
+    DESIGN_CEILING = 0.05
+
+    def _bound(self, trials: int) -> float:
+        """Two binomial standard deviations above the level the shipped tuning
+        designs for — a bound on the measurement, not a second design choice."""
         designed = math.erfc(DriftMonitor(self.BASELINE, window=1).alert_threshold / math.sqrt(2.0))
-        assert designed < 0.06, f"design level {designed:.1%} is already above the rate this class promises"
-        return 0.07
+        assert designed <= self.DESIGN_CEILING, f"the shipped alert_threshold designs for {designed:.1%}"
+        return designed + 2 * math.sqrt(designed * (1 - designed) / trials)
 
     def test_stationary_at_the_floor_familywise_false_alarm_rate_bounded(self):
         """At the reporting floor, i.i.d.-from-baseline windows (NO real drift)
         must false-alarm at ≲ the designed familywise level."""
         rate = self._familywise_false_alarm_rate(n_obs=MIN_WINDOW_FOR_VERDICT, trials=150, seed=20260704)
-        assert rate <= self._bound(), f"familywise FA rate {rate:.1%} at the floor exceeds {self._bound():.1%}"
+        assert rate <= self._bound(150), f"familywise FA rate {rate:.1%} at the floor exceeds {self._bound(150):.1%}"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
         """Same bound at n=100 — the stress point where the fixed 0.2σ floor
         exactly coincides with the uncorrected z>2 bound, so the effect floor
         adds no protection and only the Šidák α-correction bounds the union."""
         rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
-        assert rate <= self._bound(), f"familywise FA rate {rate:.1%} at n=100 exceeds {self._bound():.1%}"
+        assert rate <= self._bound(150), f"familywise FA rate {rate:.1%} at n=100 exceeds {self._bound(150):.1%}"
 
     def test_mid_window_real_drift_still_fires(self):
         """Deaf-check: the ramp-up conservatism must NOT silence real drift
@@ -705,19 +709,24 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
 
     BASELINE = {"Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0}}
 
-    def _monitor(self, window: int) -> DriftMonitor:
+    def _monitor(self, window: int, **tuning: float) -> DriftMonitor:
         """Built the way ``api.main`` builds it: tuning comes from the defaults."""
-        return DriftMonitor(self.BASELINE, window=window)
+        return DriftMonitor(self.BASELINE, window=window, **tuning)
 
     @property
     def handover(self) -> int:
         return self._monitor(1).effect_floor_handover()
 
-    def _verdict_at(self, window: int) -> bool:
-        mon = self._monitor(window)
-        shifted = self.BASELINE["Age"]["mean"] + mon.min_effect_size * 1.0005 * self.BASELINE["Age"]["std"]
+    def _verdict_at(self, window: int, **tuning: float) -> bool:
+        mon = self._monitor(window, **tuning)
+        handover = mon.effect_floor_handover()
+        # Halfway between the advertised floor and the ramp one observation short
+        # of the handover — the only band that is masked below the handover and
+        # reported at it, whatever the tuning makes those two values.
+        ramp_below = mon.alert_threshold * math.sqrt(2.0 / (handover - 1))
+        probe = (mon.min_effect_size + ramp_below) / 2
         for _ in range(window):
-            mon.observe({"Age": shifted})
+            mon.observe({"Age": self.BASELINE["Age"]["mean"] + probe * self.BASELINE["Age"]["std"]})
         return bool(mon.check_drift()["any_drifted"])
 
     def test_the_advertised_sensitivity_is_reached_at_the_handover(self):
@@ -735,6 +744,15 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
 
     def test_the_configured_window_reports_that_shift(self):
         assert self._verdict_at(CONFIGURED_WINDOW) is True
+
+    def test_the_handover_rounds_up_to_a_window_that_works(self):
+        """A tuning whose handover is fractional (2*(2.0/0.3)**2 = 88.9). Rounding
+        down would name a window at which the advertised shift is still masked."""
+        tuning = {"min_effect_size": 0.3}
+        handover = self._monitor(1, **tuning).effect_floor_handover()
+        assert handover == 89, "the handover must round up, not to the nearest integer"
+        assert self._verdict_at(handover - 1, **tuning) is False
+        assert self._verdict_at(handover, **tuning) is True
 
 
 class TestVerdictFloorStaysInTheNormalApproximation:

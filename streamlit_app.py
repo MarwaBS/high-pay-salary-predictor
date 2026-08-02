@@ -76,6 +76,13 @@ def get_model() -> XGBRegressor:
 
 
 @st.cache_data(show_spinner=False)
+def get_age_range() -> tuple[int, int, int]:
+    """Age bounds and opening value, from the drift baseline."""
+    path = ROOT / CFG["model"]["baseline_stats_path"]
+    return (*training_age_support(path), typical_training_age(path))
+
+
+@st.cache_data(show_spinner=False)
 def get_metrics() -> dict:
     """Load pre-computed model metrics from training artefacts."""
     return load_metrics(str(ROOT / CFG["model"]["metrics_path"]))
@@ -360,9 +367,8 @@ def tab_predictor(df: pd.DataFrame) -> None:
     with col2:
         # Bounded by the model's training support and opened at its mean, so a
         # retrain that moves the distribution moves the widget with it.
-        baseline_path = ROOT / CFG["model"]["baseline_stats_path"]
-        low, high = training_age_support(baseline_path)
-        age = st.slider("Age", min_value=low, max_value=high, value=typical_training_age(baseline_path))
+        low, high, typical = get_age_range()
+        age = st.slider("Age", min_value=low, max_value=high, value=typical)
         show_adv = st.checkbox("Show advanced inputs (BLS context)")
         if show_adv:
             employment = st.number_input("State-Occupation Employment", value=1000, min_value=0)
