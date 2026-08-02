@@ -260,7 +260,7 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
         monitor = m.DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
         too_small = monitor.effect_floor_handover() - 1
         monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": too_small}))
-        with pytest.raises(RuntimeError, match="below the effect-floor handover"):
+        with pytest.raises(RuntimeError, match="is below"):
             with TestClient(m.app):
                 pass
 
@@ -272,9 +272,24 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
         with TestClient(m.app) as client:
             assert client.get("/health").status_code == 200
 
-    def test_retuning_the_detector_moves_the_window_the_guard_demands(self, monkeypatch):
-        """The bound follows ``min_effect_size``; a fixed number would not notice."""
-        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (2.0, 0.1, None))
-        with pytest.raises(RuntimeError, match="below the effect-floor handover"):
+    @pytest.mark.parametrize(
+        "defaults, knob",
+        [((2.0, 0.1, None), "min_effect_size"), ((4.0, 0.2, None), "alert_threshold")],
+    )
+    def test_retuning_either_knob_moves_the_window_the_guard_demands(self, monkeypatch, defaults, knob):
+        """The bound is a function of both; a literal in place of either would
+        keep demanding the window the shipped tuning happened to need."""
+        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", defaults)
+        with pytest.raises(RuntimeError, match="is below"):
+            with TestClient(m.app):
+                pass
+
+    def test_a_window_under_the_verdict_floor_aborts_even_when_the_handover_is_lower(self, monkeypatch):
+        """A loose ``min_effect_size`` drops the handover under the verdict floor,
+        at which point the floor is the binding bound and the handover is not."""
+        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (2.0, 1.0, None))
+        below = m.MIN_WINDOW_FOR_VERDICT - 1
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": below}))
+        with pytest.raises(RuntimeError, match="is below"):
             with TestClient(m.app):
                 pass

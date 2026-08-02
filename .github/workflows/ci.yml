@@ -119,8 +119,8 @@ jobs:
           pre-commit run --all-files debug-statements
 
       - name: Type-check with mypy
-        # streamlit_app.py is imported by nothing, so it is only checked when
-        # named; the pre-commit hook covers the rest via import-following.
+        # Named explicitly: the pre-commit hook covers the rest via
+        # import-following, which reaches these only from a test module.
         run: |
           # mypy is pinned in requirements.txt; only the stubs are added here.
           pip install pandas-stubs

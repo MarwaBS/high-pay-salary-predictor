@@ -69,7 +69,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import __version__
 from api.cache import PredictionCache
-from api.drift import DriftMonitor
+from api.drift import MIN_WINDOW_FOR_VERDICT, DriftMonitor
 from api.inference import (
     BlsDefaults,
     GroupStats,
@@ -502,16 +502,19 @@ async def lifespan(app: FastAPI):
     baseline_path = ROOT / VALIDATED_CFG.model.baseline_stats_path
     if baseline_path.exists():
         state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
-        # The bound depends on the detector's own tuning, so it can only be
-        # checked once both are in hand: a window under it serves a monitor
-        # quietly less sensitive than the one documented.
-        handover = state.drift_monitor.effect_floor_handover()
-        if state.drift_monitor.window < handover:
+        # Two floors, and either can be the binding one: the handover moves with
+        # the detector's tuning and drops below the verdict floor once
+        # min_effect_size is loose. Checked here because only startup holds the
+        # configured window and the tuning it must clear at the same time.
+        required = max(state.drift_monitor.effect_floor_handover(), MIN_WINDOW_FOR_VERDICT)
+        if state.drift_monitor.window < required:
             raise RuntimeError(
-                f"drift.window={state.drift_monitor.window} is below the effect-floor handover "
-                f"({handover}) for alert_threshold={state.drift_monitor.alert_threshold} and "
-                f"min_effect_size={state.drift_monitor.min_effect_size}: /drift could not report a "
-                f"shift at the advertised sensitivity."
+                f"drift.window={state.drift_monitor.window} is below {required}, the larger of the "
+                f"effect-floor handover ({state.drift_monitor.effect_floor_handover()}) for "
+                f"alert_threshold={state.drift_monitor.alert_threshold} / "
+                f"min_effect_size={state.drift_monitor.min_effect_size} and the verdict floor "
+                f"({MIN_WINDOW_FOR_VERDICT}): /drift could not report a shift at the advertised "
+                f"sensitivity."
             )
         logger.info("Drift monitor loaded from %s", baseline_path)
     else:

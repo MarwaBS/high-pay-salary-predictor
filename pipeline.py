@@ -242,11 +242,7 @@ def training_age_support(baseline_stats_path: str | Path) -> tuple[int, int]:
 
 
 def typical_training_age(baseline_stats_path: str | Path) -> int:
-    """Mean age of the training rows, for a UI that must open on some value.
-
-    The midpoint of the support would sit near its 90th percentile, so a first
-    view would demonstrate the model on an atypical profile.
-    """
+    """Mean age of the training rows, for a UI that must open on some value."""
     with open(baseline_stats_path) as f:
         return round(float(json.load(f)["Age"]["mean"]))
 

@@ -18,6 +18,7 @@ import json
 import re
 from pathlib import Path
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -57,17 +58,18 @@ def client():
         yield c
 
 
-def test_the_support_helper_reports_what_the_artefact_records():
-    """Every consumer bounds itself by this helper, so it is pinned to the file
-    rather than to whatever the helper happens to return."""
+def test_the_helpers_read_the_artefact_they_are_given(tmp_path):
+    """Against numbers the shipped artefact does not carry, so a helper that
+    returned today's values as literals would still be caught."""
+    probe = tmp_path / "baseline_stats.json"
+    probe.write_text(json.dumps({"Age": {"mean": 47.6, "std": 9.0, "min": 22.0, "max": 71.0}}), encoding="utf-8")
+    assert training_age_support(probe) == (22, 71)
+    assert typical_training_age(probe) == 48
+
+
+def test_the_helpers_report_what_the_shipped_artefact_records():
     age = json.loads(BASELINE_STATS.read_text(encoding="utf-8"))["Age"]
     assert training_age_support(BASELINE_STATS) == (int(age["min"]), int(age["max"]))
-
-
-def test_the_typical_age_helper_reports_the_mean_of_the_training_ages():
-    """What a UI opens on. The midpoint of the support would be its 90th
-    percentile, so the first thing a visitor sees would be an atypical profile."""
-    age = json.loads(BASELINE_STATS.read_text(encoding="utf-8"))["Age"]
     assert typical_training_age(BASELINE_STATS) == round(float(age["mean"]))
 
 
@@ -113,9 +115,10 @@ class TestTheDashboardOffersTheWholeSupport:
     def _render(self, monkeypatch, picks=None, advanced=False):
         """Render the tab; return the age controls it drew and the age it sent.
 
-        ``picks`` chooses what the user moves the slider to. The payload is
-        intercepted at the HTTP boundary, so anything applied between widget and
-        request shows up as a difference between the two. ``advanced`` opens the
+        ``picks`` chooses what the user moves the slider to. The request is
+        intercepted where it leaves the process, so anything applied between the
+        widget and the wire — including inside the dashboard's own API helper —
+        shows up as a difference between the two. ``advanced`` opens the
         optional-inputs branch, which is otherwise never drawn.
         """
         controls: dict[str, dict] = {}
@@ -130,7 +133,12 @@ class TestTheDashboardOffersTheWholeSupport:
         monkeypatch.setattr(streamlit_app.st, "number_input", record)
         monkeypatch.setattr(streamlit_app.st, "checkbox", lambda *a, **k: advanced)
         monkeypatch.setattr(streamlit_app.st, "button", lambda *a, **k: picks is not None)
-        monkeypatch.setattr(streamlit_app, "_call_predict_api", lambda payload: sent.update(payload) or None)
+
+        def intercept(url, json=None, **kwargs):
+            sent.update(json or {})
+            raise httpx.ConnectError("intercepted before the wire")
+
+        monkeypatch.setattr(httpx, "post", intercept)
         streamlit_app.tab_predictor(streamlit_app.load_data())
         return controls, sent.get("age")
 

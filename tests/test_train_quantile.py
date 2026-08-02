@@ -373,8 +373,8 @@ def test_the_subgroup_gates_read_the_constant_rather_than_a_literal(tmp_path, mo
     shrinks to match. Gates comparing against a literal would publish the same
     table whatever the constant says, leaving the pin above asserting nothing.
     """
-    raised = max(_test_split_slices()[0].values()) // 2
     sizes, two_class, _ = _test_split_slices()
+    raised = max(sizes.values()) // 2
     expected = {name for name, n in sizes.items() if n >= raised}
     assert expected < set(sizes), "floor is not high enough to exclude anything — the check would be vacuous"
 

@@ -257,26 +257,33 @@ class TestDriftRampUpFalseAlarms:
         rng = np.random.default_rng(seed)
         false_alarms = 0
         for _ in range(trials):
-            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            mon = DriftMonitor(self.BASELINE, window=500)  # shipped tuning, not a fixed threshold
             for _ in range(n_obs):
                 mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
             if mon.check_drift()["any_drifted"]:
                 false_alarms += 1
         return false_alarms / trials
 
+    def _bound(self) -> float:
+        """The familywise level the shipped ``alert_threshold`` buys, plus room
+        for binomial noise over 150 trials. Derived, so loosening the threshold
+        raises the measured rate against a bound that does not move with it."""
+        designed = math.erfc(DriftMonitor(self.BASELINE, window=1).alert_threshold / math.sqrt(2.0))
+        assert designed < 0.06, f"design level {designed:.1%} is already above the rate this class promises"
+        return 0.07
+
     def test_stationary_at_the_floor_familywise_false_alarm_rate_bounded(self):
         """At the reporting floor, i.i.d.-from-baseline windows (NO real drift)
-        must false-alarm at ≲ the designed familywise ≈4.6% — allow 7% for
-        binomial noise over 150 trials."""
+        must false-alarm at ≲ the designed familywise level."""
         rate = self._familywise_false_alarm_rate(n_obs=MIN_WINDOW_FOR_VERDICT, trials=150, seed=20260704)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at the floor exceeds 7% bound"
+        assert rate <= self._bound(), f"familywise FA rate {rate:.1%} at the floor exceeds {self._bound():.1%}"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
         """Same bound at n=100 — the stress point where the fixed 0.2σ floor
         exactly coincides with the uncorrected z>2 bound, so the effect floor
         adds no protection and only the Šidák α-correction bounds the union."""
         rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 exceeds 7% bound"
+        assert rate <= self._bound(), f"familywise FA rate {rate:.1%} at n=100 exceeds {self._bound():.1%}"
 
     def test_mid_window_real_drift_still_fires(self):
         """Deaf-check: the ramp-up conservatism must NOT silence real drift
@@ -288,7 +295,7 @@ class TestDriftRampUpFalseAlarms:
         detections = 0
         trials = 25
         for _ in range(trials):
-            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            mon = DriftMonitor(self.BASELINE, window=500)
             for _ in range(150):
                 obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
                 obs["Age"] += 5.0  # +0.5 baseline std
@@ -708,8 +715,6 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
 
     def _verdict_at(self, window: int) -> bool:
         mon = self._monitor(window)
-        # Just over the advertised floor: a larger probe clears the ramp early
-        # and would pass at windows the bound forbids.
         shifted = self.BASELINE["Age"]["mean"] + mon.min_effect_size * 1.0005 * self.BASELINE["Age"]["std"]
         for _ in range(window):
             mon.observe({"Age": shifted})
