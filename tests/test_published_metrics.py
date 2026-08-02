@@ -10,12 +10,15 @@ writing ``~0.782`` to three.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
+
+from api.drift import DriftMonitor
 
 REPO_ROOT = Path(__file__).parent.parent
 METRICS = json.loads((REPO_ROOT / "models" / "model_metrics.json").read_text(encoding="utf-8"))
@@ -197,36 +200,59 @@ def test_every_metric_row_is_pinned(doc):
     assert not unpinned, f"unpinned metric rows in {doc}:\n{detail}"
 
 
-def test_every_figure_in_the_alarm_paragraph_is_one_the_code_decides():
-    """Membership, not a list of the figures someone happened to check.
+def _alarm_paragraph() -> str:
+    """The whole alarm bullet, continuation lines included.
 
-    Each number the paragraph prints follows from the detector's tuning or the
-    baseline it monitors, so every one of them is recomputed and the paragraph
-    may print nothing else. Adding a figure without a source fails here.
+    A markdown bullet runs until the next one, so a figure added on a following
+    line is published in the same paragraph and has to be read as part of it.
     """
-    import json
-    import math
+    lines = (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    starts = [i for i, line in enumerate(lines) if "Statistically controlled alarms" in line]
+    assert len(starts) == 1, f"the alarm bullet is anchored {len(starts)} times, expected 1"
+    end = next(
+        (i for i in range(starts[0] + 1, len(lines)) if lines[i].startswith(("-", "#")) or not lines[i].strip()),
+        len(lines),
+    )
+    return " ".join(lines[starts[0] : end])
 
-    from api.drift import DriftMonitor
 
+def _alarm_figures() -> dict[str, tuple[str, str]]:
+    """Each figure the bullet may print, keyed by the claim it stands for.
+
+    Recomputed from the detector's tuning and the baseline it monitors, and
+    paired with the wording that has to carry it — a number matching some other
+    claim in the same sentence would otherwise satisfy a check on the set alone.
+    """
     baseline = json.loads((REPO_ROOT / "models" / "baseline_stats.json").read_text(encoding="utf-8"))
     mon = DriftMonitor(baseline, window=1)
     designed = math.erfc(mon.alert_threshold / math.sqrt(2.0))
-    derived = {
-        f"{designed:.1%}".rstrip("%"): "familywise design level",
-        f"{1 - (1 - designed) ** len(baseline):.0%}".rstrip("%"): "uncorrected union over the monitored features",
-        str(len(baseline)): "features monitored",
-        str(mon.min_effect_size): "effect floor",
-        str(round(mon.alert_threshold)): "alert threshold, and the 2 in the ramp term",
-        str(round((mon.alert_threshold / mon.min_effect_size) ** 2)): "window at which the fixed floor starts to bind",
+    return {
+        "familywise design level": (f"{designed:.1%}".rstrip("%"), r"rate holds at ≈([\d.]+)%"),
+        "uncorrected union": (f"{1 - (1 - designed) ** len(baseline):.0%}".rstrip("%"), r"instead of the ≈(\d+)%"),
+        "features monitored": (str(len(baseline)), r"union of ~(\d+) per-feature"),
+        "effect floor": (str(mon.min_effect_size), r"effect ≥ ([\d.]+) baseline"),
+        "ramp z-multiple": (str(round(mon.alert_threshold)), r"max\(0\.2, (\d+)·"),
+        "where the fixed floor starts to bind": (
+            str(round((mon.alert_threshold / mon.min_effect_size) ** 2)),
+            r"\(z/d\)² = (\d+)",
+        ),
     }
-    paragraph = next(
-        line
-        for line in (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
-        if "Statistically controlled alarms" in line
-    )
-    printed = set(re.findall(r"\d+(?:\.\d+)?", paragraph))
-    unaccounted = printed - set(derived)
-    assert not unaccounted, f"the paragraph prints {sorted(unaccounted)}, which nothing in the code decides"
-    missing = set(derived) - printed
-    assert not missing, f"the paragraph no longer states {[derived[k] for k in sorted(missing)]}"
+
+
+def test_every_figure_in_the_alarm_paragraph_is_one_the_code_decides():
+    """Membership, not a list of the figures someone happened to check: every
+    number the bullet prints is recomputed, and it may print nothing else."""
+    printed = set(re.findall(r"\d+(?:\.\d+)?", _alarm_paragraph()))
+    sourced = {value for value, _ in _alarm_figures().values()}
+    unaccounted = printed - sourced
+    assert not unaccounted, f"the bullet prints {sorted(unaccounted)}, which nothing in the code decides"
+
+
+@pytest.mark.parametrize("claim", sorted(_alarm_figures()))
+def test_each_alarm_figure_stands_where_its_claim_does(claim: str):
+    """Bound to the wording, so two sourced figures cannot swap roles and leave
+    the paragraph stating the opposite of what the code does."""
+    expected, pattern = _alarm_figures()[claim]
+    match = re.search(pattern, _alarm_paragraph())
+    assert match, f"the bullet no longer states the {claim}"
+    assert match.group(1) == expected, f"the bullet gives {match.group(1)} for the {claim}, code says {expected}"
