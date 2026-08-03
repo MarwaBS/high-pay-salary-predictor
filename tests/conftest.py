@@ -1,11 +1,4 @@
-"""
-tests/conftest.py
------------------
-Session-scoped fixtures shared across ALL test modules.
-
-Having fixtures here (instead of duplicated in each test file) means
-pytest auto-discovers them and any test can use them without importing.
-"""
+"""Fixtures shared across all test modules, and the environment they load under."""
 
 import os
 
@@ -22,10 +15,6 @@ import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 from pipeline import engineer_features, load_group_means, load_model  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Session-scope: load once, reuse across the entire test run
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")

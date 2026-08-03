@@ -1,8 +1,8 @@
-"""``requirements-lock.txt`` must be exactly the API runtime plus its audit tooling.
+"""``requirements-lock.txt`` is the freeze the pip-audit gate runs against.
 
-Checked by name in both directions: a runtime package dropping out leaves the
-audited surface smaller than what ships, and a maintainer-only tool leaking in
-makes it larger than what runs.
+Two checks: every API runtime package is in it, so the audited surface is not
+smaller than what ships; and no named maintainer-only tool is, so it does not
+grow to cover software the project never runs.
 """
 
 from __future__ import annotations

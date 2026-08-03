@@ -243,6 +243,11 @@ class TestPipelineConstants:
     def test_region_codes_cover_four_regions(self):
         assert set(REGION_CODES.keys()) == {"Midwest", "Northeast", "South", "West"}
 
+    def test_region_codes_are_the_alphabetical_rank_of_the_region_name(self):
+        """The shipped model was fitted on this encoding, and the notebook derived
+        it as ``pd.Categorical(...).codes``, which is that rank."""
+        assert REGION_CODES == {name: rank for rank, name in enumerate(sorted(REGION_CODES))}
+
     def test_region_codes_unique_integers(self):
         vals = list(REGION_CODES.values())
         assert len(vals) == len(set(vals)), "REGION_CODES values must be unique"

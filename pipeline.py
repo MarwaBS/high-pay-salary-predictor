@@ -2,7 +2,7 @@
 pipeline.py
 -----------
 Single source of truth for:
-  - Feature constants (FEATURES_FULL, FEATURES_DEMO, REGION_CODES)
+  - Feature constants (FEATURES_FULL, REGION_CODES)
   - Feature-engineering function (engineer_features)
   - Group-means helpers (compute_group_means, save/load_group_means)
   - Model save / load helpers (no pickle — XGBoost native + JSON)
@@ -10,10 +10,9 @@ Single source of truth for:
 
 Design notes
 ------------
-* ``Annual Mean Wage`` is excluded from FEATURES_FULL / FEATURES_DEMO because
-  it is a near-perfect linear transformation of ``Hourly Mean`` (×2080,
-  corr ≈ 1.0000, VIF ≈ 2.3×10⁷).  Keeping both distorts feature-importance
-  scores and wastes a feature slot with zero new information.
+* ``Annual Mean Wage`` is excluded from FEATURES_FULL: it is a near-perfect
+  linear transform of ``Hourly Mean`` (x2080, corr 1.0000 to 4 dp, VIF 2.3e7),
+  so keeping both distorts feature importances for no new information.
 
 * ``Occ_Mean_Income`` and ``State_Mean_Income`` are computed from the **training
   set only** during model training (see scripts/train_quantile.py) and saved as
@@ -24,14 +23,6 @@ Design notes
 
 * The model is trained on ``log1p(Annual Income)`` and predicts in log space;
   callers must ``numpy.expm1()`` the raw output to get dollar predictions.
-
-Shared across the entire project:
-
-  - api/main.py
-  - streamlit_app.py
-  - scripts/train_quantile.py
-  - tests/test_pipeline.py
-  - notebooks/ARCHIVED_04_salary_prediction_model_v1.ipynb (archived v1 EDA)
 """
 
 from __future__ import annotations
@@ -79,13 +70,7 @@ def sha256_file(path: str | Path) -> str:
     return hasher.hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# Feature sets
-# ---------------------------------------------------------------------------
-
 #: Full feature vector used by the production XGBoost model.
-#: ``Annual Mean Wage`` is intentionally excluded — it is a near-perfect linear
-#: transform of ``Hourly Mean`` (correlation 1.0000 to 4 dp, VIF ≈ 2.3×10⁷).
 FEATURES_FULL: list[str] = [
     "Age",
     "Education_Ord",
@@ -99,23 +84,9 @@ FEATURES_FULL: list[str] = [
     "State_Mean_Income",
 ]
 
-#: Demographic-only feature vector (no BLS context) used in the
-#: "fairness / demographic gap" model in notebook 4.
-#: ``Annual Mean Wage`` also excluded here for the same collinearity reason.
-FEATURES_DEMO: list[str] = [
-    "Age",
-    "Education_Ord",
-    "Gender_Bin",
-    "Employment",
-    "Location Quotient",
-    "Jobs per 1000",
-    "Hourly Mean",
-    "Occ_Mean_Income",
-    "State_Mean_Income",
-]
-
-#: Region codes the shipped model was fitted against; every consumer imports
-#: this dict, so reordering it silently re-encodes the feature.
+#: Region -> integer encoding the shipped model was fitted against. The values
+#: are the alphabetical rank of the region name, which is what
+#: ``pd.Categorical(...).codes`` produces; changing one re-encodes the feature.
 REGION_CODES: dict[str, int] = {
     "Midwest": 0,
     "Northeast": 1,

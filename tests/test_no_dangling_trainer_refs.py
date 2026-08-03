@@ -1,7 +1,8 @@
-"""No tracked file may name ``scripts/train_model.py`` — it does not exist.
+"""No tracked text file may name ``train_model.py`` — that trainer does not exist.
 
 A substring search rather than an AST walk: the references that matter live in
-comments, docstrings and response bodies, which an AST walk cannot see.
+comments, docstrings and response bodies, which an AST walk cannot see. Scope is
+the suffixes in ``_SCAN_SUFFIXES``; notebooks are excluded, and why is stated there.
 """
 
 from __future__ import annotations
@@ -51,7 +52,6 @@ def _iter_tracked_files():
         rel = Path(name)
         if rel in _EXCLUDED_FILES:
             continue
-        # Match by full filename (Dockerfile, Makefile) or suffix.
         if rel.suffix not in _SCAN_SUFFIXES:
             continue
         path = REPO_ROOT / rel

@@ -119,7 +119,20 @@ without an experiment-tracking stack. Hyper-parameters are pinned in
 `config.yaml` and chosen by `scripts/tune.py`; `models/tuning_study.json` is the
 record. See D-001.
 
----
+**Measured:** the narrow label is a usable task on the shipped data, not a
+degenerate one: positive rate 0.3974 train / 0.3852 test, ROC-AUC 0.6735 against
+a logistic reference of 0.68 and a majority-class accuracy of 0.6148, Brier
+0.2177 against a base-rate 0.2368. The regressor is scored separately on
+quantile coverage and crossings, which a single head could not report.
+
+**What would reverse it:** the unfiltered IPUMS microdata landing in `Data/`,
+which makes the broader "above the $100K line at all?" label supportable and
+turns the classifier's cohort scoping from a data limit into a choice. A
+classifier that stopped beating both reference baselines would retire the head
+rather than rescope it.
+
+**Evidence:** `scripts/train_quantile.py`, `tests/test_classifier.py`,
+`models/model_metrics.json` (`classifier_*` keys).
 
 ---
 
