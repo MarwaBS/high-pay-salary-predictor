@@ -1,16 +1,8 @@
-"""Guards for requirements-lock.txt honesty.
+"""``requirements-lock.txt`` must be exactly the API runtime plus its audit tooling.
 
-The README describes the lock as the exact-version freeze of the API runtime +
-CI/security tooling (the pip-audit target). Two ways that claim rots:
-
-1. A package the API runtime needs drops out of the freeze, so the "audited
-   runtime" no longer covers what actually ships.
-2. A maintainer-machine-only tool leaks into the freeze (e.g.
-   ``git-filter-repo``, a history-rewrite CLI), which both pollutes the
-   reproducibility story and expands the audited surface with software the
-   project never runs.
-
-These check both, by name, so the corrected README claim stays true.
+Checked by name in both directions: a runtime package dropping out leaves the
+audited surface smaller than what ships, and a maintainer-only tool leaking in
+makes it larger than what runs.
 """
 
 from __future__ import annotations

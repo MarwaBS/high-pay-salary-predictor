@@ -1,17 +1,8 @@
-"""The model registry must ship every artefact the API loads.
+"""Every artefact ``config.yaml`` declares must survive a registry deploy.
 
-The GitHub Release published by ``.github/workflows/train.yml`` IS the model
-registry: the k8s initContainer (``k8s/api-deployment.yaml``) downloads the
-serving artefacts from it on every deploy/rollback. If an artefact the API
-loads at startup is absent from the release (or from the initContainer's
-download list), a registry-based deploy silently ships without it: an artefact
-present in git and baked into the Space image but absent from the release and
-the k8s download list is lost on any rollback, so the premium-tier classifier
-head disappears and every ``p_above_premium_threshold`` returns null.
-
-These tests machine-check that the release list and the initContainer download
-list both cover the artefacts config.yaml tells the API to load, so the three
-can never drift apart again.
+The GitHub Release ``train.yml`` publishes is the model registry, and the k8s
+initContainers stage from it into an ``emptyDir`` on every pod start. An artefact
+missing from either list is present in git and absent at runtime.
 """
 
 from __future__ import annotations

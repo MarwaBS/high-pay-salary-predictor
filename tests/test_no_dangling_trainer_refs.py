@@ -1,17 +1,7 @@
-"""Guard against dangling references to the deleted legacy trainer.
+"""No tracked file may name ``scripts/train_model.py`` — it does not exist.
 
-``scripts/train_model.py`` (the v1 point-estimate trainer with MLflow +
-Optuna) no longer exists; a reference to it in a docstring or user-facing
-error message would tell a user to run a file that isn't there.
-
-This test walks the repo and asserts the string ``train_model.py``
-appears nowhere in user-visible source — tests, docs, Python modules,
-YAML workflows, Dockerfiles, and Makefile.
-
-The guard is a plain substring search rather than an AST walk because the
-references it must catch live in **comments and docstrings** (a JSON
-response body, a save_baseline_stats docstring), which an AST walk would
-silently miss.
+A substring search rather than an AST walk: the references that matter live in
+comments, docstrings and response bodies, which an AST walk cannot see.
 """
 
 from __future__ import annotations
@@ -39,7 +29,7 @@ _SCAN_SUFFIXES = {
     ".ini",
     ".txt",
     ".sh",
-    "",  # Dockerfile, Makefile
+    "",  # extensionless: Dockerfile, Makefile
 }
 
 
@@ -47,11 +37,7 @@ def _eligible_tracked_count() -> int:
     """How many tracked files the sweep must reach, counted without its filters."""
     out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
     names = [Path(n) for n in out.splitlines() if n.strip()]
-    eligible = [
-        rel
-        for rel in names
-        if (rel.suffix in _SCAN_SUFFIXES or rel.name in {"Dockerfile", "Makefile"}) and rel not in _EXCLUDED_FILES
-    ]
+    eligible = [rel for rel in names if rel.suffix in _SCAN_SUFFIXES and rel not in _EXCLUDED_FILES]
     assert eligible, "no eligible tracked files found — this counter is stale"
     return len(eligible)
 
@@ -66,7 +52,7 @@ def _iter_tracked_files():
         if rel in _EXCLUDED_FILES:
             continue
         # Match by full filename (Dockerfile, Makefile) or suffix.
-        if rel.suffix not in _SCAN_SUFFIXES and rel.name not in {"Dockerfile", "Makefile"}:
+        if rel.suffix not in _SCAN_SUFFIXES:
             continue
         path = REPO_ROOT / rel
         if path.is_file():

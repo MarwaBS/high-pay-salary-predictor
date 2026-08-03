@@ -96,6 +96,31 @@ exposes the series on the public listener would make the key unnecessary.
 **Evidence:** `tests/test_api_security.py::TestMetricsEndpointIsProtected`.
 
 
+## D-004 — Two heads, and the classifier scoped inside the high-pay cohort
+
+**Decided:** `scripts/train_quantile.py` trains a multi-quantile regressor and a
+premium-tier classifier in one pass, and the classifier's label is
+`Annual Income >= premium_threshold` *within the existing $100K+ cohort*.
+
+**Why two heads:** inside that cohort, individual income has extreme
+within-group variance driven by unobserved factors — equity, bonuses, tenure,
+employer. No point estimator resolves that, so the regressor returns a
+calibrated interval. The classifier answers a different question: is the premium
+tier plausible at all for this profile? A caller needs both.
+
+**Why the narrow label:** it is a supportable binary task on the data that is
+actually in the repo (roughly 40/60 balance, see `models/model_metrics.json`). A
+broader "above the $100K line at all?" membership classifier would need the
+*unfiltered* IPUMS microdata — a separate fetch behind an IPUMS API key, not a
+file in `Data/` — so it is a follow-up, not an omission.
+
+**No MLflow / Optuna.** The trainer stays lean enough to run on a CI worker
+without an experiment-tracking stack. Hyper-parameters are pinned in
+`config.yaml` and chosen by `scripts/tune.py`; `models/tuning_study.json` is the
+record. See D-001.
+
+---
+
 ---
 
 ## Known gaps

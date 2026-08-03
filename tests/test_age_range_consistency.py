@@ -1,15 +1,9 @@
 """The accepted age range must be the model's training support.
 
-Accepting an age outside the support serves extrapolation; refusing one inside
-it declines an answerable request. The support is recorded as ``Age`` min/max in
-``models/baseline_stats.json``, so a retrain that moves it turns these red.
-
-Checked where a caller meets the bounds — through the running app on both
-serving routes, not through the ``Field`` metadata, which a narrowing added in a
-validator or a route guard would never appear in.
-
-The dashboard is driven rather than parsed: its age control is rendered and the
-set of ages it makes selectable is compared against the same artefact.
+The support is ``Age`` min/max in ``models/baseline_stats.json``. Checked where a
+caller meets the bounds — both serving routes are driven and the dashboard's age
+control is rendered — so a narrowing in a validator, a route guard or a clamp
+appears, which ``Field`` metadata would not show.
 """
 
 from __future__ import annotations

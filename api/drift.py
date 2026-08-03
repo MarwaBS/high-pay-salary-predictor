@@ -132,10 +132,6 @@ class DriftMonitor:
         """
         return math.ceil(2 * (self.alert_threshold / self.min_effect_size) ** 2)
 
-    # ------------------------------------------------------------------ #
-    # Backend discovery
-    # ------------------------------------------------------------------ #
-
     @staticmethod
     def _discover_redis() -> Any | None:
         """Try to create a Redis client from ``REDIS_URL``. Returns None on
@@ -159,10 +155,6 @@ class DriftMonitor:
         with open(path) as f:
             stats = json.load(f)
         return cls(baseline_stats=stats, **kwargs)
-
-    # ------------------------------------------------------------------ #
-    # Observation
-    # ------------------------------------------------------------------ #
 
     def observe(self, features: dict[str, float]) -> None:
         """Record a single observation (feature dict from one prediction)."""
@@ -191,10 +183,6 @@ class DriftMonitor:
 
         self.buffer.append(features)
         self._observation_count += 1
-
-    # ------------------------------------------------------------------ #
-    # Read side
-    # ------------------------------------------------------------------ #
 
     def _read_window(self) -> tuple[list[dict[str, float]], int, str, bool]:
         """Return (observations, total_count, backend_used, degraded).
@@ -405,13 +393,19 @@ class DriftMonitor:
         # An unruled feature leaves the union with an untested term, so it can
         # withhold the verdict but not clear it.
         unruled = sorted(feat for feat, v in result.items() if v["drifted"] is None)
+        if any(v["drifted"] for v in result.values()):
+            any_drifted: bool | None = True
+        elif unruled:
+            any_drifted = None
+        else:
+            any_drifted = False
         report: dict[str, Any] = {
             "observations": total_count,
             "window_size": len(observations),
             "backend": backend,
             "degraded": False,
             "features": result,
-            "any_drifted": True if any(v["drifted"] for v in result.values()) else (None if unruled else False),
+            "any_drifted": any_drifted,
             "dropped_observations": 0,
         }
         if unruled:

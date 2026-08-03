@@ -1,13 +1,10 @@
 """No private repository name may appear in a tracked file.
 
-Two of them reached `.gitignore` and `.trivyignore` once and survived three
-reviews, because nothing checked. This is that check. It compares SHA-256
-digests from ``.private-name-hashes`` rather than plaintext patterns, so the
-guard cannot become the leak it exists to prevent.
-
-Matching is on a normalised form — lowercase, alphanumerics only — so a name
-split by punctuation, suffixed, or run into a neighbouring word reduces to the
-same digest as the plain form.
+Compares SHA-256 digests from ``.private-name-hashes`` rather than plaintext
+patterns, so the guard cannot become the leak it exists to prevent. Matching is
+on a normalised form — lowercase, alphanumerics only — so a name split by
+punctuation, suffixed, or run into a neighbouring word reduces to the same
+digest as the plain form.
 """
 
 from __future__ import annotations

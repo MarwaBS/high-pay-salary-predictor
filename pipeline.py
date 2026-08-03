@@ -114,13 +114,8 @@ FEATURES_DEMO: list[str] = [
     "State_Mean_Income",
 ]
 
-# ---------------------------------------------------------------------------
-# Deterministic region → integer encoding
-# ---------------------------------------------------------------------------
-# Alphabetical order matches both pd.Categorical default and the API's
-# enumerate(sorted(...)) approach — guaranteeing consistent encoding across
-# training (notebook), serving (API), and the dashboard (Streamlit).
-
+#: Region codes the shipped model was fitted against; every consumer imports
+#: this dict, so reordering it silently re-encodes the feature.
 REGION_CODES: dict[str, int] = {
     "Midwest": 0,
     "Northeast": 1,

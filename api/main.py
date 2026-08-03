@@ -261,6 +261,8 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# Route handlers must keep a parameter literally named `request`: slowapi reads
+# the bucket key from it, so the unused-argument suppressions below are load-bearing.
 limiter = Limiter(key_func=_client_ip)
 
 # ── Prediction Cache ─────────────────────────────────────────────────────────
@@ -773,7 +775,6 @@ async def meta():
 
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
 @limiter.limit(RATE_LIMIT)
-# slowapi resolves the limiter key from a parameter named `request`.
 def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Predict annual income for a given demographic + occupational profile.
 
@@ -865,7 +866,7 @@ def _complete_batch(responses: list[PredictResponse | None]) -> list[PredictResp
 @app.post("/predict/batch", response_model=PredictBatchResponse, tags=["Prediction"])
 @limiter.limit(BATCH_RATE_LIMIT)
 def predict_batch(
-    request: Request,  # noqa: ARG001 — slowapi resolves the limiter key from this name
+    request: Request,  # noqa: ARG001
     req: PredictBatchRequest,
     _key: str | None = Depends(verify_api_key),
 ):
@@ -879,8 +880,7 @@ def predict_batch(
 
     Items that fail domain validation raise 422 for the whole batch.
     """
-    # 1. Validate every item up-front so a bad item at position N doesn't
-    #    waste inference work on items 0..N-1.
+    # Validated up-front so a bad item at position N wastes no inference on 0..N-1.
     for idx, item in enumerate(req.items):
         try:
             _validate_domain(item)
@@ -890,9 +890,7 @@ def predict_batch(
                 detail=f"Item {idx}: {exc.detail}",
             ) from exc
 
-    # 2. Encode every item once and observe drift for ALL of them (cache hits
-    #    included) so the drift monitor sees all batch traffic — consistent
-    #    with /predict, where only inference is cached, never observation.
+    # Cache hits are observed too: only inference is cached, never observation.
     encoded_all = [
         encode_feature_values(
             item,
@@ -916,7 +914,6 @@ def predict_batch(
     responses: list[PredictResponse | None] = [None] * len(req.items)
     rows_to_score: list[tuple[int, PredictRequest]] = []
 
-    # 3. Cache pass — return hits without touching the model.
     for idx, item in enumerate(req.items):
         cached = cache.get(item.model_dump())
         if cached is not None:
@@ -924,7 +921,7 @@ def predict_batch(
         else:
             rows_to_score.append((idx, item))
 
-    # 4. Single vectorised model call for the un-cached items.
+    # One vectorised call for everything the cache missed.
     if rows_to_score:
         batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
         preds_dollar = predict_quantiles_batch(state.model, batch_df, conformal_delta=state.conformal_delta)
@@ -962,7 +959,6 @@ def predict_batch(
 @limiter.limit(RATE_LIMIT)
 # Sync, so Starlette runs it in the threadpool: check_drift reads the window over
 # the blocking Redis client and would otherwise stall the event loop.
-# slowapi resolves the limiter key from a parameter named `request`.
 def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Return feature drift report comparing recent predictions to training baseline.
 

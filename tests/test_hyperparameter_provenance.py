@@ -1,10 +1,8 @@
 """Every tuned hyper-parameter in ``config.yaml`` must trace to the study that chose it.
 
-The XGBoost values the model ships had no producer: nothing in the repo
-emitted them, so they could not be re-derived or defended. ``scripts/tune.py``
-is now that producer and ``models/tuning_study.json`` is its record. These tests
-bind the three together, so editing a shipped value without re-running the study
-fails rather than passing quietly.
+Binds ``config.yaml``, ``scripts/tune.py`` and ``models/tuning_study.json``
+together, so editing a shipped value without re-running the study fails rather
+than passing quietly.
 """
 
 from __future__ import annotations

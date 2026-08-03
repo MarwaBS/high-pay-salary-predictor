@@ -1,74 +1,14 @@
-"""
-scripts/train_quantile.py
--------------------------
-Train two XGBoost heads in a single pass:
+"""Train the multi-quantile regressor and the premium-tier classifier in one pass.
 
-1. **Quantile regressor** — predicts P10 / P50 / P90 of ``log1p(Annual
-   Income)`` via ``reg:quantileerror`` with
-   ``quantile_alpha=[0.10, 0.50, 0.90]``. Answers the "what income
-   range should I expect?" question.
-2. **Premium-tier classifier** — predicts ``P(Annual Income >=
-   premium_threshold)`` via ``binary:logistic``. Answers the "how
-   likely is this profile to cross the premium threshold?" question.
-   Threshold lives in ``config.yaml::model.premium_threshold``; the
-   trainer reads it with no fallback, so a missing key stops the run
-   rather than training against a boundary nobody configured. Trained on
-   the same engineered feature matrix as the regressor to keep the two
-   heads comparable.
+The regressor predicts P10/P50/P90 of ``log1p(Annual Income)`` via
+``reg:quantileerror``; the classifier predicts
+``P(Annual Income >= config.yaml::model.premium_threshold)`` on the same feature
+matrix. Both read their hyper-parameters from ``config.yaml::model`` with no
+fallback, and write to the paths declared there. See DESIGN_DECISIONS.md D-004
+for why there are two heads and why the classifier's label is scoped to the
+high-pay cohort.
 
-Why two heads, not one?
------------------------
-Within the $100K+ cohort, individual income has extreme within-group
-variance driven by unobserved factors (equity, bonuses, tenure, specific
-employer). No point estimator can resolve that — the regressor returns
-a calibrated quantile interval instead. The classifier head answers a
-*different* product question: given this profile, is the premium tier
-(>= $150K) even plausible? A caller needs *both* — "will I likely clear
-the bar?" plus "if so, what's the range?".
-
-Classifier scope
-----------------
-This file trains the premium-tier classifier *inside the existing
-high-pay cohort*. The label is ``Annual Income >= $150K`` — a
-well-defined, supportable binary task on the data that exists in the
-repo (roughly 40/60 class balance, see ``models/model_metrics.json``).
-
-A broader "is this profile above the $100K line at all?" membership
-classifier is deferred: it would require the *unfiltered* IPUMS Census
-microdata — a separate fetch with an IPUMS API key, not just a file in
-``Data/`` — and becomes a follow-up to this trainer once that raw file
-is added.
-
-No MLflow / Optuna dependencies — this trainer is deliberately lean so
-it can run on a CI worker or a dev machine without pulling an
-experiment-tracking stack. The regressor hyper-parameters are pinned in
-``config.yaml`` and chosen by ``scripts/tune.py``, which scores candidates on
-pinball loss under the quantile objective this trainer uses. The committed
-``models/tuning_study.json`` records that run.
-
-Artefacts saved
----------------
-  models/xgb_salary_model.ubj        multi-quantile XGBoost regressor
-                                     (primary path, loaded by the API
-                                     and dashboard via
-                                     config.yaml::model.model_path)
-  models/xgb_premium_classifier.ubj  binary XGBoost classifier head
-                                     (config.yaml::model.classifier_path)
-  models/model_metrics.json          quantile metrics (coverage, pinball
-                                     losses, crossings), point-estimate
-                                     metrics (P50 R²/MAE/RMSE), classifier
-                                     metrics (ROC-AUC, PR-AUC, Brier +
-                                     majority/logistic reference
-                                     baselines), AND stability mean±std of the
-                                     headline metrics across several seeds
-  models/baseline_stats.json         drift-monitor baseline
-  models/group_means.json            target-encoding lookup
-  models/feature_names.json          feature list
-
-Usage
------
-    python scripts/train_quantile.py
-    python scripts/train_quantile.py --config config.yaml
+Usage: ``python -m scripts.train_quantile [--config config.yaml]``
 """
 
 from __future__ import annotations

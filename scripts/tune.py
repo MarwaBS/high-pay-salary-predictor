@@ -1,11 +1,6 @@
 """Choose the XGBoost quantile hyper-parameters that ``config.yaml`` ships.
 
-The values in ``config.yaml::model`` had no producer: nothing in the repo
-emitted ``n_estimators: 169``, ``learning_rate: 0.045``, ``subsample: 0.741`` or
-``colsample_bytree: 0.829``, so they could not be re-derived, defended, or
-re-run against new data. This script is that producer.
-
-It scores candidates by mean pinball loss — the proper scoring rule for a
+Scores candidates by mean pinball loss — the proper scoring rule for a
 quantile model, and the loss the shipped objective already minimises — under
 leakage-free K-fold CV on the **train split only**. The test split is never
 touched: selecting on it would make every downstream test metric optimistic.

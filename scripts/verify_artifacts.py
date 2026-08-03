@@ -1,13 +1,8 @@
 """Verify committed model artefacts against the SHA-256 digests training recorded.
 
-The live demo serves the artefacts committed to ``models/``, but nothing tied
-those committed bytes to the digests training recorded, so a corrupt or
-desynced committed artefact could ship under a fully green pipeline. This
-script closes that gap: it recomputes the SHA-256 of each committed artefact
-and compares it to ``models/model_metrics.json::artifact_sha256``.
-
-Run it in CI and locally. Exit 0 when every artefact matches; exit 1 (naming
-the mismatches) otherwise.
+Recomputes the SHA-256 of each artefact ``config.yaml`` declares and compares it
+to ``models/model_metrics.json::artifact_sha256``. Exit 0 when every artefact
+matches; exit 1, naming the mismatches, otherwise.
 """
 
 from __future__ import annotations
