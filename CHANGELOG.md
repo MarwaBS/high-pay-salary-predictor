@@ -27,6 +27,22 @@ project uses SemVer.
   and the trade-off a larger window buys is written beside the key.
 
 ### Fixed
+- **`GET /drift` withholds a per-feature verdict below 30 observations of that
+  feature** (breaking for a caller reading `features[f].drifted` as a boolean:
+  it is now `null` when the feature was too sparse to rule on, and `z_score`,
+  `effect_size` and `p_value` are `null` with it). The floor gated the window
+  length, while each p-value is a normal tail over that feature's own sample —
+  so a feature seen three times in a full window was placed on that tail and
+  could raise `any_drifted`. A feature left unruled can no longer make
+  `any_drifted` false, only `message` names which features were skipped.
+- **The degraded `/drift` payload no longer carries `status: "unavailable"`.**
+  It described one of the four verdict-withheld paths and was absent from the
+  other three, so a caller reading it learned nothing about the rest; `degraded`
+  already carries the same fact. All withholding paths now return one shape.
+- **The drift monitor is built from the artefact whose digest startup verified.**
+  It re-read `model.baseline_stats_path` from config after the integrity check,
+  so the file that aborts on a mismatch and the file the detector opens could be
+  different ones.
 - **The k8s dashboard pod now stages `baseline_stats.json`.** Its initContainer
   fetched four artefacts into an `emptyDir`; the dashboard reads a fifth to
   bound its Age input, so the predictor tab would have raised on first render.

@@ -336,10 +336,27 @@ class TestPredictBatch:
         assert "predicted_p90" in item
         assert item["predicted_p10"] <= item["predicted_p50"] <= item["predicted_p90"]
 
-    def test_incomplete_batch_raises_rather_than_shortening(self):
-        """The schema promises one result per input item."""
+    def test_the_batch_budget_does_not_carry_across_modules(self, client, base_payload):
+        """One fixed 10/minute bucket, keyed by an IP every module shares.
+
+        Exhausting it here must not be what the next module inherits, so the
+        conftest fixture clears it — this drives the bucket empty to prove both
+        that it is reachable and that clearing it restores service.
+        """
+        codes = [client.post("/predict/batch", json={"items": [base_payload]}).status_code for _ in range(11)]
+        assert 429 in codes, "the batch budget is unreachable — this test would prove nothing"
+        api_main.limiter.reset()
+        assert client.post("/predict/batch", json={"items": [base_payload]}).status_code == 200
+
+    @pytest.mark.parametrize("responses", [[None], ["first", None], [None, "second"], ["a", None, "c"]])
+    def test_incomplete_batch_raises_rather_than_shortening(self, responses):
+        """The schema promises one result per input item.
+
+        The all-empty case alone is passed by a guard that only asks whether
+        anything survived, which is exactly the batch that is shortened by one.
+        """
         with pytest.raises(RuntimeError, match="incomplete"):
-            api_main._complete_batch([None])
+            api_main._complete_batch(responses)
 
     def test_complete_batch_preserves_order(self):
         filled = ["first", "second", "third"]
@@ -349,7 +366,7 @@ class TestPredictBatch:
         """Testing the helper alone leaves the wiring unproven: a check whose
         result is never consulted looks identical to one that is enforced."""
 
-        def _refuse(responses):
+        def _refuse(_responses):
             raise RuntimeError("completeness check reached")
 
         monkeypatch.setattr(api_main, "_complete_batch", _refuse)
@@ -378,6 +395,11 @@ class TestDriftEndpoint:
         data = r.json()
         assert data.get("observations", 0) >= 35
         assert "features" in data
+
+    def test_drift_is_sync_so_blocking_redis_leaves_the_loop_free(self):
+        """check_drift reads the window over the blocking Redis client."""
+        endpoints = {r.path: r.endpoint for r in app.routes if hasattr(r, "endpoint")}
+        assert not inspect.iscoroutinefunction(endpoints["/drift"])
 
 
 # ── Fallback-means counter ───────────────────────────────────────────────────
@@ -408,10 +430,3 @@ class TestFallbackMeansCounter:
         resp = client.post("/predict/batch", json={"items": [base_payload, base_payload]})
         assert resp.status_code == 200
         assert api_main.FALLBACK_MEANS_USED._value.get() == before + 2
-
-
-class TestDriftRouteIsSync:
-    def test_drift_is_sync_so_blocking_redis_leaves_the_loop_free(self):
-        """check_drift reads the window over the blocking Redis client."""
-        endpoints = {r.path: r.endpoint for r in app.routes if hasattr(r, "endpoint")}
-        assert not inspect.iscoroutinefunction(endpoints["/drift"])

@@ -88,9 +88,9 @@ class TestDriftDetection:
             monitor.observe({"Age": 40.0})  # Education_Ord never observed
         report = monitor.check_drift()
         assert report["features"]["Education_Ord"]["n_observed"] == 0
-        assert report["features"]["Education_Ord"]["drifted"] is False
         assert report["features"]["Education_Ord"]["current_mean"] is None
-        assert report["any_drifted"] is False
+        assert report["features"]["Education_Ord"]["drifted"] is None
+        assert report["any_drifted"] is None
 
     def test_drift_clears_after_normal_observations(self, baseline_stats):
         """Drift flag should clear when window fills with normal data."""
@@ -133,6 +133,45 @@ class TestDriftEdgeCases:
             monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
         assert len(report["features"]) == 2
+
+    def _sparse_window(self, baseline_stats, seen: int, window: int = 500):
+        """Fill a window in which ``Education_Ord`` is observed ``seen`` times."""
+        mon = DriftMonitor(baseline_stats, window=window)
+        for i in range(window):
+            obs = {"Age": 40.0}
+            if i < seen:
+                obs["Education_Ord"] = 99.0  # far from baseline, if it were testable
+            mon.observe(obs)
+        return mon.check_drift()
+
+    def test_a_feature_too_sparse_to_test_cannot_be_ruled_on(self, baseline_stats):
+        """A long window does not make every feature in it a large sample.
+
+        Each p-value is a normal tail over that feature's own observations, so a
+        feature seen a handful of times in a full window would otherwise be
+        placed on that tail and alarm from a sample no one would rule on.
+        """
+        report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT - 1)
+        edu = report["features"]["Education_Ord"]
+        assert edu["n_observed"] == MIN_WINDOW_FOR_VERDICT - 1
+        assert edu["drifted"] is None
+        assert edu["p_value"] is None, "an unruled feature must not publish a score"
+        assert report["any_drifted"] is None, "never a clean False while a feature went untested"
+
+    def test_the_same_feature_is_ruled_on_once_it_reaches_the_floor(self, baseline_stats):
+        """The boundary is ``<``, and the sparse branch is not a permanent mute."""
+        report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT)
+        edu = report["features"]["Education_Ord"]
+        assert edu["n_observed"] == MIN_WINDOW_FOR_VERDICT
+        assert edu["drifted"] is True, "at the floor the shift is real and must be reported"
+        assert report["any_drifted"] is True
+
+    def test_the_per_feature_floor_reads_the_constant_rather_than_a_literal(self, monkeypatch, baseline_stats):
+        """Moving the constant must move the per-feature gate with it."""
+        monkeypatch.setattr("api.drift.MIN_WINDOW_FOR_VERDICT", MIN_WINDOW_FOR_VERDICT + 10)
+        report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT)
+        assert report["features"]["Education_Ord"]["drifted"] is None
+        assert report["any_drifted"] is None
 
     def test_zero_std_feature(self):
         """Feature with zero std in baseline should not crash."""
@@ -498,7 +537,7 @@ class _ReadFailingRedis(_FakeRedis):
     """Writes succeed (shared list populates) but reads raise — models a Redis
     partition where the authoritative window cannot be loaded."""
 
-    def lrange(self, key, start, end):
+    def lrange(self, _key, _start, _end):
         raise ConnectionError("simulated redis read failure")
 
 
@@ -541,7 +580,6 @@ class TestDriftBackendFailureIsLoud:
         # The read fell back to the empty local deque: the verdict must be
         # withheld, not a confident "no drift".
         assert report["degraded"] is True
-        assert report["status"] == "unavailable"
         assert report["backend"] == "memory", "must name the path that actually served the read"
         assert report["any_drifted"] is None, "never a clean False from an unloadable window"
         assert report["features"] == {}
@@ -584,7 +622,6 @@ class TestDriftBackendFailureIsLoud:
 
         report = mon.check_drift()
         assert report["degraded"] is True
-        assert report["status"] == "unavailable"
         assert report["any_drifted"] is None, "never a clean False while observations are being dropped"
         assert report["dropped_observations"] == 200
 
@@ -679,28 +716,67 @@ class TestBaselinePersistence:
             DriftMonitor.from_baseline(str(tmp_path / "nonexistent.json"), window=100)
 
 
+def _withholding_reports(baseline_stats) -> dict[str, dict]:
+    """One report per way ``check_drift`` can decline to rule.
+
+    Collected in one place so a new withholding branch has to be added here to
+    be exercised, rather than inheriting the shape of whichever branch its
+    author copied.
+    """
+    degraded = DriftMonitor(baseline_stats, window=200, redis_client=_ReadFailingRedis())
+    for _ in range(200):
+        degraded.observe({"Age": 999.0, "Education_Ord": 2.0})
+
+    short = DriftMonitor(baseline_stats, window=100)
+    for _ in range(MIN_WINDOW_FOR_VERDICT - 1):
+        short.observe({"Age": 40.0, "Education_Ord": 2.0})
+
+    # A renamed feature is the realistic trigger: the window fills, but no key
+    # matches, so every feature would otherwise score n_observed=0.
+    renamed = DriftMonitor(baseline_stats, window=100)
+    for _ in range(40):
+        renamed.observe({"Age_renamed": 40.0, "Education_Ord_renamed": 2.0})
+
+    sparse = DriftMonitor(baseline_stats, window=100)
+    for i in range(100):
+        obs = {"Age": 40.0}
+        if i < MIN_WINDOW_FOR_VERDICT - 1:
+            obs["Education_Ord"] = 99.0
+        sparse.observe(obs)
+
+    return {
+        "backend unreadable": degraded.check_drift(),
+        "window below the floor": short.check_drift(),
+        "no baseline feature observed": renamed.check_drift(),
+        "one feature too sparse": sparse.check_drift(),
+    }
+
+
 class TestVerdictWithheldWhenNothingTestable:
     """A window that could not be tested must not read as a clean pass.
 
-    Both branches return ``any_drifted: None``; asserting ``not any_drifted``
+    Every branch returns ``any_drifted: None``; asserting ``not any_drifted``
     would pass on ``False`` too, so these assert identity.
     """
 
-    def test_one_short_of_the_floor_withholds_the_verdict(self, monitor):
-        for _ in range(MIN_WINDOW_FOR_VERDICT - 1):
-            monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
-        report = monitor.check_drift()
-        assert report["any_drifted"] is None
-        assert report["degraded"] is False
+    def test_every_withholding_branch_withholds(self, baseline_stats):
+        for reason, report in _withholding_reports(baseline_stats).items():
+            assert report["any_drifted"] is None, reason
 
-    def test_no_observed_feature_matching_the_baseline_withholds_the_verdict(self, monitor):
-        # A renamed feature is the realistic trigger: the window fills, but no
-        # key matches, so every feature would otherwise score n_observed=0.
-        for _ in range(40):
-            monitor.observe({"Age_renamed": 40.0, "Education_Ord_renamed": 2.0})
-        report = monitor.check_drift()
-        assert report["any_drifted"] is None
-        assert report["degraded"] is False
+    def test_every_withholding_branch_says_why(self, baseline_stats):
+        for reason, report in _withholding_reports(baseline_stats).items():
+            assert report.get("message"), f"{reason}: a withheld verdict must name its cause"
+
+    def test_the_withholding_branches_agree_on_what_they_return(self, baseline_stats):
+        """One shape, or a caller must special-case which reason it got.
+
+        A key present on one branch and absent from the others describes that
+        branch, not the condition — and a caller reading it learns nothing about
+        the other three.
+        """
+        reports = _withholding_reports(baseline_stats)
+        shapes = {reason: frozenset(report) for reason, report in reports.items()}
+        assert len(set(shapes.values())) == 1, f"withholding branches return different keys: {shapes}"
 
 
 # ── Configured window vs the ramp-scaled effect floor ────────────────────────

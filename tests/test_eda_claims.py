@@ -135,7 +135,7 @@ class TestRegionalDisparity:
         assert round(means.iloc[0] / 1000, 1) == _number(line, r"mean \$([0-9.]+)K")
         assert round(means.iloc[1] / 1000, 1) == _number(line, r"ahead of \$([0-9.]+)K")
 
-    def test_narrowest_served_interval_region(self, df, cfg, engineered):
+    def test_narrowest_served_interval_region(self, df, engineered):
         """The interval half of the same claim, from the model actually shipped."""
         model = XGBRegressor()
         model.load_model(str(REPO_ROOT / "models" / "xgb_salary_model.ubj"))
@@ -198,7 +198,7 @@ class TestAgeSignal:
         assert round(rho[ranked[0]], 2) == _number(line, r"ρ = \+([0-9.]+)")
         assert round(rho[ranked[1]], 2) == _number(line, r"at \+([0-9.]+)")
 
-    def test_headline_gain_share_matches_the_shipped_model(self, engineered):
+    def test_headline_gain_share_matches_the_shipped_model(self):
         """The row is a claim about the model, so it cites a model statistic too."""
         model = XGBRegressor()
         model.load_model(str(REPO_ROOT / "models" / "xgb_salary_model.ubj"))

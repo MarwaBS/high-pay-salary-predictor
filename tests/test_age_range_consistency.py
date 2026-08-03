@@ -49,12 +49,7 @@ def _schema_bounds() -> tuple[int, int]:
 
 @pytest.fixture(scope="module")
 def client():
-    """Own client IP, so these requests draw on their own rate-limit bucket.
-
-    ``/predict/batch`` carries a fixed 10/minute budget keyed by IP; sharing the
-    default one would spend another module's allowance and 429 it.
-    """
-    with TestClient(m.app, client=("10.0.0.99", 5000)) as c:
+    with TestClient(m.app) as c:
         yield c
 
 
@@ -125,10 +120,10 @@ class TestTheDashboardOffersTheWholeSupport:
 
         monkeypatch.setattr(streamlit_app.st, "slider", record)
         monkeypatch.setattr(streamlit_app.st, "number_input", record)
-        monkeypatch.setattr(streamlit_app.st, "checkbox", lambda *a, **k: advanced)
-        monkeypatch.setattr(streamlit_app.st, "button", lambda *a, **k: picks is not None)
+        monkeypatch.setattr(streamlit_app.st, "checkbox", lambda *_a, **_k: advanced)
+        monkeypatch.setattr(streamlit_app.st, "button", lambda *_a, **_k: picks is not None)
 
-        def intercept(url, json=None, **kwargs):
+        def intercept(_url, json=None, **_kwargs):
             sent.update(json or {})
             raise httpx.ConnectError("intercepted before the wire")
 

@@ -48,11 +48,10 @@ logger = logging.getLogger(__name__)
 #: writes to and reads from the same key.
 REDIS_DRIFT_KEY = "drift:observations"
 
-#: Smallest window ``check_drift`` will rule on. Its p-values come off the
-#: normal tail, and every observation carries every baseline feature (``api``
-#: imputes the BLS defaults before observing), so the window length is also the
-#: per-feature sample size behind that tail. 30 is the conventional floor for
-#: the approximation; a shorter window would report clean verdicts from one.
+#: Smallest sample ``check_drift`` will rule on, applied to the window and to
+#: each feature's own observations — 30 is the conventional floor for placing a
+#: mean on a normal tail, and a feature can be sparse in a full window. Below
+#: it the verdict is withheld rather than reported clean.
 MIN_WINDOW_FOR_VERDICT = 30
 
 
@@ -235,15 +234,19 @@ class DriftMonitor:
                            capped at ``window`` — how many more must land before
                            the verdict resumes, not how many were lost
             features     : {feature: {z_score, effect_size, p_value, current_mean,
-                            baseline_mean, n_observed, drifted}}
+                            baseline_mean, n_observed, drifted}}. A feature
+                            observed fewer than ``MIN_WINDOW_FOR_VERDICT`` times
+                            carries ``drifted: None`` and no scores — the window
+                            may be long enough while that feature is not.
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
                            the (ramp-scaled) practical effect-size floor. ``None``
                            whenever no verdict can be reached — a degraded
                            window, fewer than ``MIN_WINDOW_FOR_VERDICT``
-                           observations, or no observed feature matching the
-                           baseline. Never a clean False from a window that
-                           could not be tested; ``message`` says which.
+                           observations, no observed feature matching the
+                           baseline, or no drift found while some feature was
+                           too sparse to rule on. Never a clean False from a
+                           window that could not be tested; ``message`` says which.
         """
         observations, total_count, backend, degraded = self._read_window()
         dropped = self._dropped_writes
@@ -262,7 +265,6 @@ class DriftMonitor:
                 "window_size": len(observations),
                 "backend": backend,
                 "degraded": True,
-                "status": "unavailable",
                 "features": {},
                 "any_drifted": None,
                 "dropped_observations": dropped,
@@ -291,7 +293,10 @@ class DriftMonitor:
             feat: [obs[feat] for obs in observations if feat in obs]
             for feat in self.baseline
         }
-        n_tested = sum(1 for vals in feature_values.values() if vals)
+        # A long window does not make a sparse feature testable: each p-value is
+        # a normal tail over that feature's own observations, so the floor that
+        # gates the window has to gate the feature too.
+        n_tested = sum(1 for vals in feature_values.values() if len(vals) >= MIN_WINDOW_FOR_VERDICT)
 
         # Nothing testable: a renamed or absent feature set would otherwise score
         # every feature n_observed=0, drifted=False and report a clean pass.
@@ -304,7 +309,9 @@ class DriftMonitor:
                 "features": {},
                 "any_drifted": None,
                 "dropped_observations": 0,
-                "message": "No observed feature matches a baseline feature — verdict withheld",
+                "message": (
+                    f"No baseline feature was observed {MIN_WINDOW_FOR_VERDICT} times in this window — verdict withheld"
+                ),
             }
 
         # ── Familywise error control (Sidak) ──────────────────────────────
@@ -333,16 +340,18 @@ class DriftMonitor:
             values = feature_values[feat]
             n = len(values)
 
-            if n == 0:
-                # Feature never observed in this window — can't assess drift.
+            if n < MIN_WINDOW_FOR_VERDICT:
+                # Too few observations of this feature to place its mean on a
+                # normal tail. Scoring it False here would be the clean bill of
+                # health the window-level floor exists to refuse.
                 result[feat] = {
-                    "z_score": 0.0,
-                    "effect_size": 0.0,
-                    "p_value": 1.0,
-                    "current_mean": None,
+                    "z_score": None,
+                    "effect_size": None,
+                    "p_value": None,
+                    "current_mean": round(float(np.mean(values)), 2) if n else None,
                     "baseline_mean": round(baseline_mean, 2),
-                    "n_observed": 0,
-                    "drifted": False,
+                    "n_observed": n,
+                    "drifted": None,
                 }
                 continue
 
@@ -398,15 +407,24 @@ class DriftMonitor:
                 "drifted": drifted,
             }
 
-        return {
+        # A feature left unruled cannot make the verdict False: the union has an
+        # untested term. It can still make it True — one feature that cleared
+        # both gates is drift whatever the sparse ones would have said.
+        unruled = sorted(feat for feat, v in result.items() if v["drifted"] is None)
+        report: dict[str, Any] = {
             "observations": total_count,
             "window_size": len(observations),
             "backend": backend,
             "degraded": False,
             "features": result,
-            "any_drifted": any(v["drifted"] for v in result.values()),
+            "any_drifted": True if any(v["drifted"] for v in result.values()) else (None if unruled else False),
             "dropped_observations": 0,
         }
+        if unruled:
+            report["message"] = (
+                f"Observed fewer than {MIN_WINDOW_FOR_VERDICT} times, so left unruled: {', '.join(unruled)}"
+            )
+        return report
 
 
 def save_baseline_stats(

@@ -208,18 +208,18 @@ class TestApiKeyAuth:
             assert codes[3:] == [429, 429, 429], codes
 
     @pytest.mark.parametrize(
-        ("label", "bad_key"),
+        "bad_key",
         [
-            ("non-ascii", "café-secret"),
-            ("trailing newline", "s3cret\n"),  # `kubectl create secret --from-file`
-            ("leading space", " s3cret"),
-            ("trailing space", "s3cret "),
-            ("embedded tab", "s3\tcret"),
-            ("embedded space", "s3 cret"),
-            ("control character", "s3cret\x01"),
+            pytest.param("café-secret", id="non-ascii"),
+            pytest.param("s3cret\n", id="trailing newline"),  # `kubectl create secret --from-file`
+            pytest.param(" s3cret", id="leading space"),
+            pytest.param("s3cret ", id="trailing space"),
+            pytest.param("s3\tcret", id="embedded tab"),
+            pytest.param("s3 cret", id="embedded space"),
+            pytest.param("s3cret\x01", id="control character"),
         ],
     )
-    def test_unusable_key_shape_is_refused_at_startup(self, label, bad_key):
+    def test_unusable_key_shape_is_refused_at_startup(self, bad_key):
         """Keys outside printable non-space ASCII must fail loudly at startup."""
         with pytest.raises(RuntimeError, match="API_KEY must be printable ASCII"):
             with reloaded_module(API_KEY=bad_key):

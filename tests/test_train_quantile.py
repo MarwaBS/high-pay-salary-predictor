@@ -307,7 +307,7 @@ def test_a_config_that_declares_no_window_is_refused(drop):
         ProjectConfig(**cfg)
 
 
-def test_a_mistyped_drift_knob_is_refused(tmp_path):
+def test_a_mistyped_drift_knob_is_refused():
     """Silently ignored, the monitor would run on the default the typo replaced."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     cfg["drift"]["windwo"] = 200
@@ -315,7 +315,7 @@ def test_a_mistyped_drift_knob_is_refused(tmp_path):
         ProjectConfig(**cfg)
 
 
-def test_a_non_positive_drift_window_is_refused(tmp_path):
+def test_a_non_positive_drift_window_is_refused():
     """A zero window caps the dropped-write backlog at zero: a permanent all-clear."""
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     cfg["drift"]["window"] = 0

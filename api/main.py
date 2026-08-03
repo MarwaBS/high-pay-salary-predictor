@@ -353,7 +353,7 @@ def _served_interval_coverage(metrics: dict[str, Any]) -> float:
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     # ── startup ──
     logger.info("Starting up: loading dataset, model, group means, and metrics…")
 
@@ -498,8 +498,10 @@ async def lifespan(app: FastAPI):
                 "advertised threshold matches the model's decision boundary."
             )
 
-    # Load drift baseline (optional — produced by the training script)
-    baseline_path = ROOT / VALIDATED_CFG.model.baseline_stats_path
+    # Load drift baseline (optional — produced by the training script). Taken
+    # from the set above so the monitor reads the file whose digest was just
+    # verified; a second config read could name another artefact and still start.
+    baseline_path = artefact_files["baseline_stats"]
     if baseline_path.exists():
         state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
         # Two floors, and either can be the binding one: the handover moves with
@@ -605,14 +607,14 @@ class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(_BodySizeLimitMiddleware)
 
 
-def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+def _rate_limit_handler(_request: Request, exc: RateLimitExceeded) -> JSONResponse:
     return JSONResponse(
         status_code=429,
         content={"detail": f"Rate limit exceeded: {exc.detail}"},
     )
 
 
-async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+async def _global_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
     """Scrub unhandled exceptions: log the stack trace server-side, return a
     generic 500 body with the request ID so operators can correlate without
     leaking internal details to the caller.
@@ -767,7 +769,7 @@ async def meta():
 
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
 @limiter.limit(RATE_LIMIT)
-def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):
+def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Predict annual income for a given demographic + occupational profile.
 
     Required: ``state``, ``occupation``, ``education_level``, ``gender``, ``age``.
@@ -858,7 +860,7 @@ def _complete_batch(responses: list[PredictResponse | None]) -> list[PredictResp
 @app.post("/predict/batch", response_model=PredictBatchResponse, tags=["Prediction"])
 @limiter.limit("10/minute")
 def predict_batch(
-    request: Request,
+    request: Request,  # noqa: ARG001
     req: PredictBatchRequest,
     _key: str | None = Depends(verify_api_key),
 ):
@@ -955,7 +957,7 @@ def predict_batch(
 @limiter.limit(RATE_LIMIT)
 # Sync, so Starlette runs it in the threadpool: check_drift reads the window over
 # the blocking Redis client and would otherwise stall the event loop.
-def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):
+def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Return feature drift report comparing recent predictions to training baseline.
 
     Carries the same key and budget as ``/predict``: the report aggregates the

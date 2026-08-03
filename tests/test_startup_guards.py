@@ -7,6 +7,7 @@ one that is enforced. These drive the real lifespan so deleting any guard turns
 a test red.
 """
 
+import json
 import math
 
 import pytest
@@ -231,6 +232,15 @@ class TestConfiguredArtefactPaths:
         with pytest.raises(RuntimeError, match="renamed_baseline.json"):
             with TestClient(m.app):
                 pass
+
+    def test_the_monitor_reads_the_artefact_whose_digest_startup_verified(self):
+        """Startup verifies ``baseline_stats``, then builds the monitor. Reading
+        the config a second time lets those be different files, and the one that
+        aborts on a mismatch is not the one the detector opened."""
+        declared = json.loads((m.ROOT / m.VALIDATED_CFG.model.baseline_stats_path).read_text(encoding="utf-8"))
+        with TestClient(m.app) as client:
+            assert client.get("/health").status_code == 200
+            assert m.state.drift_monitor.baseline == declared
 
 
 class TestTheConfiguredDriftWindowReachesTheMonitor:

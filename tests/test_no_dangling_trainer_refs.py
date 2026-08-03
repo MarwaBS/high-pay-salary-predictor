@@ -16,14 +16,11 @@ silently miss.
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 
-# Directories that never hold source: git internals, virtualenvs, caches.
-_EXCLUDED_DIR_PARTS = {"private", ".git", ".venv", "venv", "__pycache__", "node_modules"}
-# Generated build-tool output, usually gitignored and often stale by design.
-_EXCLUDED_DIR_SUFFIXES = (".egg-info", ".dist-info", ".mypy_cache", ".pytest_cache", ".ruff_cache")
 # Both guard files name the legacy trainer on purpose, inside their own assertions.
 _EXCLUDED_FILES = {
     Path("tests") / "test_single_trainer.py",
@@ -47,38 +44,43 @@ _SCAN_SUFFIXES = {
 
 
 def _iter_tracked_files():
-    """Yield every repo file eligible for the dangling-ref scan."""
-    for path in REPO_ROOT.rglob("*"):
-        if not path.is_file():
-            continue
-        parts = path.relative_to(REPO_ROOT).parts
-        if any(part in _EXCLUDED_DIR_PARTS for part in parts):
-            continue
-        if any(part.endswith(_EXCLUDED_DIR_SUFFIXES) for part in parts):
-            continue
-        rel = path.relative_to(REPO_ROOT)
+    """Yield every tracked file eligible for the dangling-ref scan.
+
+    Only what git tracks is published, and a filesystem walk both scans local
+    scratch files nobody ships and needs its own list of directories to skip.
+    """
+    listed = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    ).stdout.split("\0")
+    for name in filter(None, listed):
+        rel = Path(name)
         if rel in _EXCLUDED_FILES:
             continue
         # Match by full filename (Dockerfile, Makefile) or suffix.
-        if path.suffix not in _SCAN_SUFFIXES and path.name not in {"Dockerfile", "Makefile"}:
+        if rel.suffix not in _SCAN_SUFFIXES and rel.name not in {"Dockerfile", "Makefile"}:
             continue
-        yield path, rel
+        path = REPO_ROOT / rel
+        if path.is_file():
+            yield path, rel
 
 
 def test_no_dangling_train_model_references():
     """Every mention of ``train_model.py`` is dead code — fail if one reappears."""
     offenders: list[str] = []
+    scanned = 0
     for path, rel in _iter_tracked_files():
         try:
             text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, PermissionError):
             continue
+        scanned += 1
         if "train_model.py" in text:
             # Find the line numbers so the failure message is actionable.
             for lineno, line in enumerate(text.splitlines(), start=1):
                 if "train_model.py" in line:
                     offenders.append(f"{rel}:{lineno}: {line.strip()}")
 
+    assert scanned > 1, f"only {scanned} file(s) scanned — an empty sweep passes on any repo"
     assert not offenders, (
         "The legacy trainer ``scripts/train_model.py`` no longer exists, "
         "but the following files still reference it. Update each to point "

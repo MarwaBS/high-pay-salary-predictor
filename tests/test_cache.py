@@ -23,7 +23,7 @@ class _FakeRedis:
     def get(self, key: str):
         return self.store.get(key)
 
-    def setex(self, key: str, ttl: int, value: str) -> None:
+    def setex(self, key: str, _ttl: int, value: str) -> None:
         self.store[key] = value
 
     def ping(self) -> bool:
@@ -74,10 +74,10 @@ def test_disabled_cache_is_noop():
 class _DeadRedis(_FakeRedis):
     """Every operation raises — Redis died after the cache was constructed."""
 
-    def get(self, key: str):
+    def get(self, _key: str):
         raise ConnectionError("simulated redis outage")
 
-    def setex(self, key: str, ttl: int, value: str) -> None:
+    def setex(self, _key: str, _ttl: int, _value: str) -> None:
         raise ConnectionError("simulated redis outage")
 
 

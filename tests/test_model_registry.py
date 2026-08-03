@@ -19,6 +19,7 @@ from __future__ import annotations
 import ast
 import re
 import shlex
+import subprocess
 from pathlib import Path, PurePosixPath
 
 import pytest
@@ -209,11 +210,17 @@ def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
 
 
 def _shipped_modules() -> list[str]:
-    """Every shipped module. Listing consumers by hand makes the gate a
-    whitelist, and the file it forgets is the one that hardcodes a path."""
-    roots = (REPO_ROOT, REPO_ROOT / "api", REPO_ROOT / "scripts")
-    found = sorted(p.relative_to(REPO_ROOT).as_posix() for root in roots for p in root.glob("*.py"))
-    assert found, "no shipped modules discovered — the glob rotted"
+    """Every shipped module, from what git tracks.
+
+    A hand-kept list of directories is a whitelist wearing a glob: it misses the
+    nested package (``api/routers/``) that packaging would still ship, and the
+    file it misses is the one that hardcodes a path.
+    """
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "*.py"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    ).stdout.split("\0")
+    found = sorted(name for name in filter(None, listed) if not name.startswith("tests/"))
+    assert found, "no shipped modules discovered — the enumeration rotted"
     return found
 
 
