@@ -24,6 +24,17 @@ from scripts.tune import SEARCH_SPACE, TUNED_KEYS, _sample, cv_pinball, training
 
 REPO_ROOT = Path(__file__).parent.parent
 STUDY_PATH = REPO_ROOT / "models" / "tuning_study.json"
+
+#: How far a re-run may land from a recorded score, XGBoost's float reductions
+#: differing by build. The docs publish this figure.
+REPRODUCTION_TOLERANCE = 0.01
+
+#: Every place the docs publish it, anchored on a phrase unique to its file.
+TOLERANCE_SITES = (
+    ("README.md", "reproduces the metrics to within"),
+    (".github/workflows/train.yml", "not the loose floors"),
+    (".github/workflows/train.yml", "re-running the trainer reproduces"),
+)
 CFG = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))["model"]
 
 
@@ -47,6 +58,16 @@ def tiny_train() -> pd.DataFrame:
 def study() -> dict:
     assert STUDY_PATH.exists(), "no tuning study committed — the shipped values have no producer"
     return json.loads(STUDY_PATH.read_text(encoding="utf-8"))
+
+
+@pytest.mark.parametrize(("doc", "anchor"), TOLERANCE_SITES, ids=[f"{d}:{a[:22]}" for d, a in TOLERANCE_SITES])
+def test_the_published_reproduction_tolerance_is_the_enforced_one(doc: str, anchor: str):
+    """A doc claiming the trainer reproduces its metrics must print the tolerance asserted below."""
+    lines = (REPO_ROOT / doc).read_text(encoding="utf-8").splitlines()
+    hits = [line for line in lines if anchor in line]
+    assert len(hits) == 1, f"anchor {anchor!r} matched {len(hits)} lines in {doc}, expected 1"
+    printed = f"{REPRODUCTION_TOLERANCE:.0%}"
+    assert printed in hits[0], f"{doc} does not state the enforced {printed}: {hits[0].strip()[:120]!r}"
 
 
 @pytest.mark.parametrize("key", TUNED_KEYS)
@@ -273,7 +294,7 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
         n_jobs=study["n_jobs"],
         **tune_inputs,
     )
-    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=0.01), (
+    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=REPRODUCTION_TOLERANCE), (
         f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} — "
         "further apart than build-to-build float variation explains"
     )
@@ -297,7 +318,7 @@ def test_the_recorded_best_score_re_derives(study, tune_inputs):
         n_jobs=study["n_jobs"],
         **tune_inputs,
     )
-    assert recomputed == pytest.approx(study["best"]["cv_pinball"], rel=0.01), (
+    assert recomputed == pytest.approx(study["best"]["cv_pinball"], rel=REPRODUCTION_TOLERANCE), (
         f"study records {study['best']['cv_pinball']} for trial {study['best']['trial']}, "
         f"re-running its parameters gives {recomputed}"
     )

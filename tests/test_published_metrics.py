@@ -53,6 +53,7 @@ CLAIMS = [
     Claim("MODEL_CARD.md", "| P50 pinball loss", rf"~\${N}K", "p50_pinball", 1000),
     Claim("MODEL_CARD.md", "| P90 pinball loss", rf"~\${N}K", "p90_pinball", 1000),
     # ── Point-estimate fit ──────────────────────────────────────────────────
+    Claim("MODEL_CARD.md", "the shipped point estimator reaches only", rf"R² ≈ {N}", "r2"),
     Claim("MODEL_CARD.md", "| Test R² (P50)", rf"\| ~{N} \|", "r2"),
     Claim("MODEL_CARD.md", "| CV R² (5-fold, train only", rf"~{N} ±", "cv_r2_mean"),
     Claim("MODEL_CARD.md", "| CV R² (5-fold, train only", rf"± {N}", "cv_r2_std"),

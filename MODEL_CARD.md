@@ -46,9 +46,10 @@ compensation benchmarking, or any consequential use.
 - The two are then inner-joined on `(OCC_CODE, STATE)` (cell 9)
 
 This truncation pre-removes most of the occupation-wage signal, which is
-why any point estimator on this cohort tops out near R² ≈ 0.10. The
-quantile model still produces useful output because the P10/P50/P90
-spread itself is informative.
+why the shipped point estimator reaches only R² ≈ 0.03 on held-out test.
+Whether a better estimator could do more on this cohort has not been
+measured, so no ceiling is claimed. The quantile model still produces
+useful output because the P10/P50/P90 spread itself is informative.
 
 **Gap 1 remediation — phases.**
 

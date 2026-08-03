@@ -162,6 +162,13 @@ and an omission.
   chain, which compares `config.yaml` against whichever parameters the study
   says won — verified by mutation.
 
+- **The weekly retrainer runs an interpreter no measurement covers.**
+  `train.yml` pins CPython 3.13, while the cross-build spread the 1% tolerance
+  is set from was observed on 3.11 and 3.12. `requirements-lock.txt` pins the
+  library set, not the interpreter, so a release trained by the schedule sits
+  outside the range anything here has measured. Closing it means pinning the
+  trainer to a measured interpreter, which is a release-process decision.
+
 - **The classifier head's six hyper-parameters have no producer.**
   `config.yaml` sets `classifier_n_estimators 200`, `classifier_max_depth 4`,
   `classifier_learning_rate 0.05`, `classifier_subsample 0.85`,
