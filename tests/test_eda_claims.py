@@ -113,6 +113,32 @@ class TestEducationPremium:
         assert round((med[biggest] - med[order[0]]) / 1000, 1) == _number(line, r"is ~\$([0-9.]+)K")
         assert med[biggest] > med[order[-1]], "the named largest step is not actually the largest"
 
+    @staticmethod
+    def _state_premiums(df):
+        """Advanced-tier minus lower-tier mean income per state, ranked."""
+        advanced = {"Doctoral degree", "Professional degree", "Master's degree"}
+        rows = []
+        for state, cell in df.groupby("State"):
+            top = cell[cell["Education Level"].isin(advanced)]["Annual Income"]
+            rest = cell[~cell["Education Level"].isin(advanced)]["Annual Income"]
+            if len(top) > 1 and len(rest) > 1:
+                rows.append((state, top.mean() - rest.mean()))
+        return pd.DataFrame(rows, columns=["state", "premium"]).sort_values("premium", ascending=False)
+
+    def test_the_state_premium_spread_and_both_named_states(self, df):
+        """The gallery paragraph names the real extremes, median and the rank of each tech state."""
+        prem = self._state_premiums(df).reset_index(drop=True)
+        rank = {row.state: i + 1 for i, row in enumerate(prem.itertuples())}
+        line = _claiming_line("The education premium spans")
+        _requires(
+            line,
+            f"spans −${abs(round(prem.premium.min() / 1000))}K to +${round(prem.premium.max() / 1000)}K",
+            f"across the {len(prem)} states",
+            f"median of ${round(prem.premium.median() / 1000)}K",
+            f"Washington sits {rank['Washington']}th",
+            f"California {rank['California']}th",
+        )
+
     def test_narrative_states_the_same_gap_and_its_non_monotonicity(self, df, cfg):
         order, med = self._medians(df, cfg)
         line = _claiming_line("The steps are modest")
