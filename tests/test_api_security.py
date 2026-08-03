@@ -181,6 +181,14 @@ class TestApiKeyAuth:
             r = client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": "nope"})
             assert r.status_code == 401
 
+    @pytest.mark.parametrize("headers", [None, {"X-API-Key": "nope"}], ids=["missing", "wrong"])
+    def test_batch_rejects_an_unkeyed_caller_401(self, headers):
+        """The batch route scores up to MAX_BATCH_ITEMS profiles per call, so it needs its own proof."""
+        with reloaded_module(API_KEY="s3cret") as m:
+            client = TestClient(m.app)
+            r = client.post("/predict/batch", json={"items": [{"state": "CA"}]}, headers=headers)
+            assert r.status_code == 401, r.text
+
     def test_non_ascii_key_rejected_401(self):
         """A key carrying bytes outside ASCII is a wrong key, not a server fault.
 

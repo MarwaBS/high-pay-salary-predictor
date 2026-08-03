@@ -123,8 +123,13 @@ record. See D-001.
 degenerate one: positive rate 0.3974 train / 0.3852 test, Brier 0.2177 against a
 base rate of 0.2368, accuracy 0.6543 against a majority-class 0.6148. **It does
 not beat every reference:** ROC-AUC is 0.6735 against a logistic baseline of
-0.68 — the head is calibrated better than the base rate but does not out-rank a
-linear model on the same features. The regressor is scored separately on
+0.68 — on the shipped split the head is calibrated better than the base rate but
+does not out-rank a linear model on the same features. That comparison is one
+split: the baseline is fitted once, while the head's own five-seed mean is
+0.6958 ± 0.0075, so the shipped draw sits below its own mean and the gap is
+inside seed noise. XGBoost is kept for the serving constraint stated in
+MODEL_CARD — the repo ships zero pickle, and an sklearn head would introduce a
+joblib artefact — not for a ranking win. The regressor is scored separately on
 quantile coverage and crossings, which a single head could not report.
 
 **What would reverse it:** the unfiltered IPUMS microdata landing in `Data/`,
@@ -146,13 +151,25 @@ Carried deliberately, not overlooked. Each states why it is open and what would
 close it, so a reader does not have to infer the difference between a decision
 and an omission.
 
-- **The premium-tier classifier does not out-rank a linear baseline.** ROC-AUC
-  0.6735 against `classifier_baseline_logreg_roc_auc` 0.68, both in
-  `models/model_metrics.json`. It is kept because it is calibrated (Brier 0.2177
-  vs base rate 0.2368) and answers a question the regressor cannot, not because
-  it ranks best. `tests/test_classifier.py` enforces the no-skill floor and the
-  base-rate Brier, so nothing fails on this gap; closing it means either beating
-  the logistic reference or replacing the head with it.
+- **The classifier's baseline comparison rests on one split.** ROC-AUC 0.6735
+  against `classifier_baseline_logreg_roc_auc` 0.68, both in
+  `models/model_metrics.json`. `scripts/train_quantile.py:551` fits the logistic
+  reference once, outside `_headline_metrics_for_seed`, so the head carries a
+  five-seed mean (0.6958 ± 0.0075) and the baseline carries none — the two are
+  not measured on comparable footing, and the shipped gap is smaller than the
+  head's own seed spread. `tests/test_classifier.py` enforces the no-skill floor
+  and the base-rate Brier, so nothing fails on this. Closing it means recording
+  the baseline per seed alongside the head.
+- **`premium_threshold: 150000` has no producer.** `config.yaml` sets it and
+  `config_schema.py` bounds it at `ge=100_000`; no script emits it and no
+  measurement selects it. It is a product definition — where "premium" is drawn
+  — and the 40/60 class balance quoted in D-004 is its consequence, not its
+  derivation. Closing it means naming the balance as the target and choosing the
+  threshold that hits it.
+- **Four notebook dependencies were split out; `requirements-dashboard.txt`
+  still pins `matplotlib`.** That file is a `pip freeze` of the dashboard image,
+  so trimming it without rebuilding the image would make the freeze describe
+  something that was never built.
 - **The tuning study's absolute scores are not portable across builds.** See
   D-001: the observed cross-build spread is 24x the margin the study turns on.
   `tests/test_hyperparameter_provenance.py` therefore re-derives the incumbent

@@ -31,8 +31,8 @@
 >
 > **The honest numbers** (full detail + baselines in
 > [MODEL_CARD.md](MODEL_CARD.md)): the raw quantile interval covers ≈ 0.77;
-> the API serves a **cross-conformal–calibrated** interval that hits the
-> target 0.80 (0.7942 on held-out test) at a ≈ 3% wider median P10–P90 band
+> the API serves a **cross-conformal–calibrated** interval that closes most of
+> the shortfall against the 0.80 target (0.7942 on held-out test) at a ≈ 3% wider median P10–P90 band
 > (≈ $115K); point-estimate R² ≈ 0.03. The
 > premium-tier classifier *slightly trails* a logistic-regression baseline
 > (AUC 0.674 vs ≈ 0.68, Brier ≈ 0.22) — the signal ceiling is the **features**, not the
@@ -285,7 +285,7 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **633 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **645 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -441,7 +441,7 @@ The education premium varies 2–3× across states. High-LQ tech states (WA, CA)
 
 **Market size vs education premium**
 ![Market Size vs Premium](./Images/Market_Size_Income_Premium_Analysis_Viz.png)
-Larger labor markets show a mild *negative* correlation with education premium — supporting the hypothesis that large, competitive markets (NYC, SF) compress the education signal and reward occupation/skill specificity instead.
+Market size and education premium are **uncorrelated** across the 47 states with both tiers present (Pearson −0.00, rank correlation +0.02). The premium itself ranges from −$36K to +$91K, so whatever drives it is not the size of the labour market.
 
 **Average income by US Census region**
 ![Regional Patterns](./Images/Regional_Patterns_Analysis_Viz.png)
@@ -472,7 +472,7 @@ Gender share overlays (map)
 - **Geographic:** Large economies (CA, NY, TX) lead in absolute headcount. Concentration (LQ) peaks in MD, VA, WA — specialized clusters drive premium roles.
 - **Education ROI:** Bachelor's degrees dominate most states for $100K+ roles. Master's is dominant in SD, MT, NE, MO, WV; Professional in ND.
 - **Demographic:** Gender participation is uneven across occupations and states. Age–income patterns plateau later in career.
-- **Market dynamics:** Bigger markets often pair with higher education premiums, but industry composition (tech / finance / healthcare) matters more than market size alone.
+- **Market dynamics:** Market size does not predict the education premium (see above); industry composition is the likelier driver, but this dataset does not measure it.
 - **Correlations:** Employment and jobs-per-1000 move together. Annual income shows weak correlation with headcount — reinforcing the primacy of occupation and geography.
 
 ### Recommendations
@@ -527,7 +527,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 633 tests — every fix is a locked regression guard
+├── tests/                                     # ★ 645 tests — every fix is a locked regression guard
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
@@ -586,7 +586,7 @@ high-pay-salary-predictor/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **633 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **645 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold — the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)

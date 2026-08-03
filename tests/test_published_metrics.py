@@ -99,6 +99,19 @@ CLAIMS = [
     Claim("MODEL_CARD.md", "| Quantile crossings |", rf"\*\*{N}\*\*", "quantile_crossings"),
     # ── CHANGELOG ───────────────────────────────────────────────────────────
     Claim("CHANGELOG.md", "to the honest", rf"honest {N}", "cv_r2_mean"),
+    # ── DESIGN_DECISIONS ────────────────────────────────────────────────────
+    Claim("DESIGN_DECISIONS.md", "degenerate one: positive rate", rf"rate {N} train", "classifier_positive_rate_train"),
+    Claim("DESIGN_DECISIONS.md", "degenerate one: positive rate", rf"/ {N} test", "classifier_positive_rate_test"),
+    Claim("DESIGN_DECISIONS.md", "degenerate one: positive rate", rf"Brier {N} against", "classifier_brier"),
+    Claim("DESIGN_DECISIONS.md", "base rate of", rf"base rate of {N}", "classifier_brier_base_rate"),
+    Claim("DESIGN_DECISIONS.md", "against a majority-class", rf"accuracy {N} against", "classifier_accuracy"),
+    Claim(
+        "DESIGN_DECISIONS.md", "against a majority-class", rf"majority-class {N}", "classifier_baseline_majority_acc"
+    ),
+    Claim("DESIGN_DECISIONS.md", "not beat every reference", rf"ROC-AUC is {N}", "classifier_roc_auc"),
+    Claim("DESIGN_DECISIONS.md", "five-seed mean (", rf"\({N} ±", "stability_clf_roc_auc_mean"),
+    Claim("DESIGN_DECISIONS.md", "five-seed mean (", rf"± {N}\)", "stability_clf_roc_auc_std"),
+    Claim("DESIGN_DECISIONS.md", "classifier's baseline comparison", rf"ROC-AUC {N}", "classifier_roc_auc"),
 ]
 
 
