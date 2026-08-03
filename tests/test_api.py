@@ -384,6 +384,22 @@ class TestDriftEndpoint:
         assert data.get("observations", 0) >= 35
         assert "features" in data
 
+    @pytest.mark.parametrize(("route", "age"), [("/predict", 41), ("/predict/batch", 43)])
+    def test_every_scored_row_observes_every_baseline_feature(self, client, base_payload, route, age):
+        """A feature the encoder stops emitting is one the monitor can never rule
+        on, so no window reaches a clean verdict again."""
+        monitor = api_main.state.drift_monitor
+        before = len(monitor.buffer)
+        payload = {**base_payload, "age": age}
+        body = {"items": [payload]} if route.endswith("batch") else payload
+        assert client.post(route, json=body).status_code == 200
+
+        recorded = list(monitor.buffer)[before:]
+        assert recorded, f"{route} scored a row without observing it"
+        for observation in recorded:
+            missing = set(monitor.baseline) - set(observation)
+            assert not missing, f"{route} observed without {sorted(missing)} — /drift can never rule on them"
+
     def test_drift_is_sync_so_blocking_redis_leaves_the_loop_free(self):
         """check_drift reads the window over the blocking Redis client."""
         endpoints = {r.path: r.endpoint for r in app.routes if hasattr(r, "endpoint")}
