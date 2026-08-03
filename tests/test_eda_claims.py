@@ -135,6 +135,12 @@ class TestRegionalDisparity:
         assert round(means.iloc[0] / 1000, 1) == _number(line, r"mean \$([0-9.]+)K")
         assert round(means.iloc[1] / 1000, 1) == _number(line, r"ahead of \$([0-9.]+)K")
 
+    def test_narrative_names_the_spread_extremes(self, df):
+        """The gallery sentence names the same widest and narrowest regions as the data."""
+        spread = df.groupby("Region")["Annual Income"].std()
+        line = _claiming_line("carries the widest spread")
+        _requires(line, f"The {spread.idxmax()} carries the widest spread", f"the {spread.idxmin()} the narrowest")
+
     def test_narrowest_served_interval_region(self, df, engineered):
         """The interval half of the same claim, from the model actually shipped."""
         model = XGBRegressor()

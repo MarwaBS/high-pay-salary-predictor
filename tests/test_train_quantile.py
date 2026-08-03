@@ -283,13 +283,12 @@ def test_a_config_the_api_would_refuse_never_reaches_a_model_file(tmp_path, monk
     assert not list(tmp_path.glob("**/*.ubj")), "training ran before the config was rejected"
 
 
-def test_a_schema_valid_config_missing_a_key_the_trainer_reads_still_stops(tmp_path, monkeypatch):
-    """Dropping the classifier makes ``premium_threshold`` optional to the schema,
-    so nothing but the trainer's own unguarded read can stop it here."""
+def test_a_config_that_drops_the_classifier_entirely_is_refused(tmp_path, monkeypatch):
+    """Omitting the classifier is not an opt-out: the trainer trains both heads regardless."""
     cfg_path = _config_with(tmp_path, drop=["premium_threshold", "classifier_path"])
     monkeypatch.setattr(tq, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
-    with pytest.raises(KeyError):
+    with pytest.raises(ValidationError):
         tq.main()
     assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
 

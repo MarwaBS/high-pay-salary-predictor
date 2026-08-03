@@ -66,6 +66,11 @@ project uses SemVer.
   a key.
 
 ### Removed
+- **`pipeline.load_features`.** No caller anywhere in the repo or the notebooks.
+- **Two unreachable branches in `api/main.py`.** The startup integrity check
+  refuses a missing `baseline_stats.json` before either could run, so the
+  "drift monitoring disabled" warning and `/drift`'s `status: "disabled"` reply
+  were dead — the latter the last withholding path with its own shape.
 - **`pipeline.FEATURES_DEMO`.** The demographic-only feature list had no
   consumer: the one notebook importing it defined its own, different list in a
   later cell, and its comment described a vector "with no BLS context" that

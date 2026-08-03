@@ -199,7 +199,7 @@ and an omission.
   act that has to be followed by a retrain and a comparison of the published
   metrics, not a side effect of a dependency tidy-up.
 
-- **Both private repository names remain on `main`** in `.gitignore`,
-  `.trivyignore` and one published commit message. This branch removes them from
-  the working tree and `tests/test_private_names_absent.py` blocks re-entry, but
-  a published message can only be changed by rewriting history and force-pushing.
+- **Private repository names: closed, and guarded.** A sweep of `.gitignore`,
+  `.trivyignore` and every published commit message on `main` returns no hit, by
+  the digest matcher or the external ban-list. `tests/test_private_names_absent.py`
+  blocks re-entry. Recorded because the guard, not the absence, is the deliverable.

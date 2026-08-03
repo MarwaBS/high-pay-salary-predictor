@@ -86,13 +86,14 @@ class ModelConfig(BaseModel):
 
     @model_validator(mode="after")
     def _classifier_config_is_all_or_nothing(self) -> ModelConfig:
-        """A configured classifier needs every hyperparameter the trainer reads.
+        """The trainer reads every classifier setting unguarded, so a missing one must fail at load.
 
-        The trainer reads all seven unguarded, so a half-declared classifier
-        dies partway through training instead of at load. Enforced at API
-        startup and in CI, where ``ProjectConfig`` is loaded.
+        Absent settings are not an opt-out: ``scripts/train_quantile.py`` trains
+        both heads unconditionally, so an undeclared classifier dies partway
+        through training rather than never being asked for.
         """
         required = {
+            "classifier_path": self.classifier_path,
             "premium_threshold": self.premium_threshold,
             "classifier_n_estimators": self.classifier_n_estimators,
             "classifier_max_depth": self.classifier_max_depth,
@@ -101,10 +102,9 @@ class ModelConfig(BaseModel):
             "classifier_colsample_bytree": self.classifier_colsample_bytree,
             "classifier_reg_lambda": self.classifier_reg_lambda,
         }
-        if self.classifier_path:
-            missing = sorted(name for name, value in required.items() if value is None)
-            if missing:
-                raise ValueError(f"classifier_path is set but these classifier settings are missing: {missing}")
+        missing = sorted(name for name, value in required.items() if value is None)
+        if missing:
+            raise ValueError(f"the trainer reads these classifier settings unconditionally; missing: {missing}")
         return self
 
 

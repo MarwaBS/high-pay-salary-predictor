@@ -348,13 +348,6 @@ def save_features(features: list[str], path: str) -> None:
         json.dump(features, f, indent=2)
 
 
-def load_features(path: str) -> list[str]:
-    """Load the feature name list from JSON."""
-    with open(path) as f:
-        features: list[str] = json.load(f)
-    return features
-
-
 def save_metrics(metrics: dict, path: str) -> None:
     """Persist model evaluation metrics as plain JSON."""
     Path(path).parent.mkdir(parents=True, exist_ok=True)

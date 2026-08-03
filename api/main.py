@@ -506,27 +506,25 @@ async def lifespan(_app: FastAPI):
                 "advertised threshold matches the model's decision boundary."
             )
 
-    # From the verified set, so the monitor opens the file whose digest matched.
+    # From the verified set, so the monitor opens the file whose digest matched
+    # and the integrity check above has already refused a missing one.
     baseline_path = artefact_files["baseline_stats"]
-    if baseline_path.exists():
-        state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
-        # Two floors, and either can be the binding one: the handover moves with
-        # the detector's tuning and drops below the verdict floor once
-        # min_effect_size is loose. Checked here because only startup holds the
-        # configured window and the tuning it must clear at the same time.
-        required = max(state.drift_monitor.effect_floor_handover(), MIN_WINDOW_FOR_VERDICT)
-        if state.drift_monitor.window < required:
-            raise RuntimeError(
-                f"drift.window={state.drift_monitor.window} is below {required}, the larger of the "
-                f"effect-floor handover ({state.drift_monitor.effect_floor_handover()}) for "
-                f"alert_threshold={state.drift_monitor.alert_threshold} / "
-                f"min_effect_size={state.drift_monitor.min_effect_size} and the verdict floor "
-                f"({MIN_WINDOW_FOR_VERDICT}): /drift could not report a shift at the advertised "
-                f"sensitivity."
-            )
-        logger.info("Drift monitor loaded from %s", baseline_path)
-    else:
-        logger.warning("No baseline_stats.json found — drift monitoring disabled")
+    state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
+    # Two floors, and either can be the binding one: the handover moves with
+    # the detector's tuning and drops below the verdict floor once
+    # min_effect_size is loose. Checked here because only startup holds the
+    # configured window and the tuning it must clear at the same time.
+    required = max(state.drift_monitor.effect_floor_handover(), MIN_WINDOW_FOR_VERDICT)
+    if state.drift_monitor.window < required:
+        raise RuntimeError(
+            f"drift.window={state.drift_monitor.window} is below {required}, the larger of the "
+            f"effect-floor handover ({state.drift_monitor.effect_floor_handover()}) for "
+            f"alert_threshold={state.drift_monitor.alert_threshold} / "
+            f"min_effect_size={state.drift_monitor.min_effect_size} and the verdict floor "
+            f"({MIN_WINDOW_FOR_VERDICT}): /drift could not report a shift at the advertised "
+            f"sensitivity."
+        )
+    logger.info("Drift monitor loaded from %s", baseline_path)
 
     logger.info(
         "Ready — dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f, model_version: %s",
@@ -970,9 +968,6 @@ def drift_report(request: Request, _key: str | None = Depends(verify_api_key)): 
     observation window is shared across all replicas — the report is
     cluster-wide. Without Redis, the report is per-pod.
     """
-    if state.drift_monitor is None:
-        return {
-            "status": "disabled",
-            "message": "No baseline_stats.json — run 'python -m scripts.train_quantile' to generate it",
-        }
+    if state.drift_monitor is None:  # pragma: no cover - startup refuses to serve without a verified baseline
+        raise RuntimeError("drift monitor not initialised")
     return state.drift_monitor.check_drift()
