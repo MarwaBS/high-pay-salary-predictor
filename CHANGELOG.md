@@ -15,6 +15,12 @@ project uses SemVer.
   `pipeline.training_age_support`; the API's bounds stay declared on the schema,
   where `PredictRequest` needs them at class-definition time, and a test holds
   them to the artefact so a retrain that shifts the support fails CI.
+- **The eight `model.classifier_*` settings are now required** (breaking for any
+  config file carried over that omits them): `classifier_path`,
+  `premium_threshold`, and the six hyperparameters. They were optional, so a
+  config without them validated and then died inside training on an unguarded
+  read, after a model file had already been written. `scripts/train_quantile.py`
+  trains both heads unconditionally, so omitting them was never an opt-out.
 - **`config.yaml` gains a required `drift.window`** (breaking for any config
   file carried over: `ProjectConfig` rejects one without it). The drift
   monitor's rolling-window size was a default buried in `DriftMonitor`, where

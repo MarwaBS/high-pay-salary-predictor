@@ -283,14 +283,31 @@ def test_a_config_the_api_would_refuse_never_reaches_a_model_file(tmp_path, monk
     assert not list(tmp_path.glob("**/*.ubj")), "training ran before the config was rejected"
 
 
-def test_a_config_that_drops_the_classifier_entirely_is_refused(tmp_path, monkeypatch):
-    """Omitting the classifier is not an opt-out: the trainer trains both heads regardless."""
-    cfg_path = _config_with(tmp_path, drop=["premium_threshold", "classifier_path"])
+CLASSIFIER_KEYS = [
+    "classifier_path",
+    "premium_threshold",
+    "classifier_n_estimators",
+    "classifier_max_depth",
+    "classifier_learning_rate",
+    "classifier_subsample",
+    "classifier_colsample_bytree",
+    "classifier_reg_lambda",
+]
+
+
+@pytest.mark.parametrize(
+    ("drop", "overrides"),
+    [(CLASSIFIER_KEYS, None), ([], {"classifier_path": ""})],
+    ids=["all-eight-dropped", "empty-path"],
+)
+def test_a_config_that_does_not_declare_a_usable_classifier_is_refused(tmp_path, monkeypatch, drop, overrides):
+    """Omitting the classifier is not an opt-out, and an empty path is not a declaration."""
+    cfg_path = _config_with(tmp_path, drop=drop, overrides=overrides)
     monkeypatch.setattr(tq, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
     with pytest.raises(ValidationError):
         tq.main()
-    assert not list(tmp_path.glob("**/*.ubj")), "an unconfigured threshold reached a shipped model"
+    assert not list(tmp_path.glob("**/*.ubj")), "training wrote a model before the config was rejected"
 
 
 @pytest.mark.parametrize("drop", ["block", "window"], ids=["no-drift-block", "block-without-window"])

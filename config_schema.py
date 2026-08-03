@@ -72,40 +72,17 @@ class ModelConfig(BaseModel):
     # Cross-conformal interval margin. Optional: when absent, the API serves
     # the raw (uncalibrated) interval.
     conformal_path: str | None = None
-    # Premium-tier classifier head. Optional: when these fields are absent the
-    # API runs without the classifier head (``p_above_premium_threshold`` is
-    # ``None``).
-    classifier_path: str | None = None
-    premium_threshold: int | None = Field(default=None, ge=100_000)
-    classifier_n_estimators: int | None = Field(default=None, ge=1)
-    classifier_max_depth: int | None = Field(default=None, ge=1, le=20)
-    classifier_learning_rate: float | None = Field(default=None, gt=0, le=1.0)
-    classifier_subsample: float | None = Field(default=None, gt=0, le=1.0)
-    classifier_colsample_bytree: float | None = Field(default=None, gt=0, le=1.0)
-    classifier_reg_lambda: float | None = Field(default=None, ge=0)
-
-    @model_validator(mode="after")
-    def _classifier_config_is_all_or_nothing(self) -> ModelConfig:
-        """The trainer reads every classifier setting unguarded, so a missing one must fail at load.
-
-        Absent settings are not an opt-out: ``scripts/train_quantile.py`` trains
-        both heads unconditionally, so an undeclared classifier dies partway
-        through training rather than never being asked for.
-        """
-        required = {
-            "classifier_path": self.classifier_path,
-            "premium_threshold": self.premium_threshold,
-            "classifier_n_estimators": self.classifier_n_estimators,
-            "classifier_max_depth": self.classifier_max_depth,
-            "classifier_learning_rate": self.classifier_learning_rate,
-            "classifier_subsample": self.classifier_subsample,
-            "classifier_colsample_bytree": self.classifier_colsample_bytree,
-            "classifier_reg_lambda": self.classifier_reg_lambda,
-        }
-        missing = sorted(name for name, value in required.items() if value is None)
-        if missing:
-            raise ValueError(f"the trainer reads these classifier settings unconditionally; missing: {missing}")
-        return self
+    # Premium-tier classifier head. Required together — the trainer trains both
+    # heads. A configured artefact that is missing on disk still degrades to
+    # ``p_above_premium_threshold: None``.
+    classifier_path: str = Field(min_length=1)
+    premium_threshold: int = Field(ge=100_000)
+    classifier_n_estimators: int = Field(ge=1)
+    classifier_max_depth: int = Field(ge=1, le=20)
+    classifier_learning_rate: float = Field(gt=0, le=1.0)
+    classifier_subsample: float = Field(gt=0, le=1.0)
+    classifier_colsample_bytree: float = Field(gt=0, le=1.0)
+    classifier_reg_lambda: float = Field(ge=0)
 
 
 class VisualizationColors(BaseModel):

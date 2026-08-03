@@ -408,28 +408,23 @@ async def lifespan(_app: FastAPI):
         logger.info("Conformal interval margin loaded (delta=%.4f, log space)", state.conformal_delta)
 
     # ── Premium-tier classifier head ────────────────────────────────────────
-    # Optional: when no classifier is configured/present the API runs without it
-    # and a missing artefact → ``p_above_premium_threshold``
-    # becomes ``None`` on every response, the rest of the pipeline is
-    # unaffected. Any *other* exception is a real fault and should crash
-    # the probe — do not silently swallow it.
+    # The config always declares one, so only a missing artefact degrades:
+    # ``p_above_premium_threshold`` becomes ``None`` on every response and the
+    # rest of the pipeline is unaffected. Any *other* exception is a real fault
+    # and should crash the probe — do not silently swallow it.
     classifier_cfg_path = VALIDATED_CFG.model.classifier_path
-    premium_threshold_cfg = VALIDATED_CFG.model.premium_threshold
-    if classifier_cfg_path and premium_threshold_cfg is not None:
-        try:
-            state.classifier = load_classifier(str(ROOT / classifier_cfg_path))
-            state.premium_threshold = int(premium_threshold_cfg)
-            logger.info(
-                "Premium-tier classifier loaded (threshold=$%d)",
-                state.premium_threshold,
-            )
-        except FileNotFoundError:
-            logger.warning(
-                "No classifier artefact at %s — premium-tier probability will be None",
-                classifier_cfg_path,
-            )
-    else:
-        logger.info("Classifier not configured — premium-tier probability disabled")
+    try:
+        state.classifier = load_classifier(str(ROOT / classifier_cfg_path))
+        state.premium_threshold = int(VALIDATED_CFG.model.premium_threshold)
+        logger.info(
+            "Premium-tier classifier loaded (threshold=$%d)",
+            state.premium_threshold,
+        )
+    except FileNotFoundError:
+        logger.warning(
+            "No classifier artefact at %s — premium-tier probability will be None",
+            classifier_cfg_path,
+        )
 
     # Precompute (state, education) benchmark lookup so /predict becomes
     # an O(log n) dict get + binary search instead of a per-request

@@ -151,6 +151,9 @@ class TestRegionalDisparity:
 
         line = _claiming_line("served interval band", in_table=True)
         _requires(line, f"band is narrowest in the {spread.idxmin()}")
+        # The gallery paragraph restates it, so it has to move with the model too.
+        gallery = _claiming_line("served interval being narrowest")
+        _requires(gallery, f"narrowest in the {spread.idxmin()}")
 
 
 class TestGenderGap:
