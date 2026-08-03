@@ -118,25 +118,29 @@ class TestThroughput:
         )
 
 
-def _slo_paragraph() -> str:
-    """The README's SLO bullet, continuation lines included."""
-    lines = (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
-    starts = [i for i, line in enumerate(lines) if "**Enforced SLO:**" in line]
-    assert len(starts) == 1, f"the SLO claim is anchored {len(starts)} times, expected 1"
-    end = next((i for i in range(starts[0] + 1, len(lines)) if not lines[i].strip()), len(lines))
-    return " ".join(lines[starts[0] : end])
+def _paragraphs_citing_this_module() -> list[str]:
+    """Every README paragraph that names this file as the thing enforcing a budget."""
+    text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    citing = [" ".join(p.split()) for p in re.split(r"\r?\n\s*\r?\n", text) if "tests/test_performance.py" in p]
+    assert len(citing) >= 2, f"only {len(citing)} README paragraphs cite this module — the scan has gone stale"
+    return citing
 
 
-def test_the_published_slo_prints_the_budgets_enforced_here():
-    """The README's SLO claim prints these budgets and no figure this module does not decide."""
-    published = _slo_paragraph()
+def test_every_published_slo_states_the_budgets_enforced_here():
+    """Each paragraph states both budgets in full, and prints no figure this module does not decide."""
     percentile = f"{PERCENTILE * 100:.0f}"
     milliseconds = f"{PREDICT_BUDGET_S * 1000:.0f}"
-    sourced = {percentile, milliseconds, str(LATENCY_SAMPLES), str(THROUGHPUT_CALLS), f"{THROUGHPUT_BUDGET_S:.0f}"}
-    printed = set(re.findall(r"\d+(?:\.\d+)?", published))
-    assert printed == sourced, (
-        f"README's SLO claim prints {sorted(printed - sourced)} that nothing here decides "
-        f"and omits {sorted(sourced - printed)}"
+    seconds = f"{THROUGHPUT_BUDGET_S:.0f}"
+    clauses = (
+        f"p{percentile} < {milliseconds}ms over {LATENCY_SAMPLES} sequential",
+        f"{THROUGHPUT_CALLS} predictions inside {seconds}s",
     )
-    bound = f"p{percentile} < {milliseconds}ms"
-    assert bound in published, f"the claim is not stated as {bound!r}: {published.strip()!r}"
+    sourced = {percentile, milliseconds, str(LATENCY_SAMPLES), str(THROUGHPUT_CALLS), seconds}
+    for published in _paragraphs_citing_this_module():
+        missing = [clause for clause in clauses if clause not in published]
+        assert not missing, f"a README paragraph does not state {missing}: {published!r}"
+        printed = set(re.findall(r"\d+(?:\.\d+)?", published))
+        assert printed == sourced, (
+            f"a README paragraph prints {sorted(printed - sourced)} that nothing here decides "
+            f"and omits {sorted(sourced - printed)}: {published!r}"
+        )

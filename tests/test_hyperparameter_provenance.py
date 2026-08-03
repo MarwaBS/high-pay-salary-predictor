@@ -30,13 +30,9 @@ STUDY_PATH = REPO_ROOT / "models" / "tuning_study.json"
 #: differing by build.
 REPRODUCTION_TOLERANCE = 0.01
 
-#: Where the docs publish it. Each pattern must match one line and capture the
-#: figure that line prints; exhaustiveness is held by the scan below, not here.
-TOLERANCE_SITES = (
-    ("README.md", r"reproduces the metrics to within ([0-9.]+)%"),
-    (".github/workflows/train.yml", r"loose floors.*to within ([0-9.]+)%"),
-    (".github/workflows/train.yml", r"re-running the trainer reproduces the metrics to within ([0-9.]+)%"),
-)
+#: Any percentage a doc publishes as this tolerance, wherever it sits.
+PUBLISHED_TOLERANCE = re.compile(r"to within ([0-9.]+)%|([0-9.]+)% relative tolerance")
+MINIMUM_PUBLISHED = 2
 
 #: A doc may not claim exact reproduction without scoping it to one machine or
 #: to the tolerance.
@@ -68,22 +64,45 @@ def study() -> dict:
     return json.loads(STUDY_PATH.read_text(encoding="utf-8"))
 
 
-@pytest.mark.parametrize(("doc", "pattern"), TOLERANCE_SITES, ids=[f"{d}:{p[:24]}" for d, p in TOLERANCE_SITES])
-def test_the_published_reproduction_tolerance_is_the_enforced_one(doc: str, pattern: str):
-    """Each site publishing the tolerance prints the value the re-derivations assert."""
-    lines = (REPO_ROOT / doc).read_text(encoding="utf-8").splitlines()
-    hits = [m for m in (re.search(pattern, line) for line in lines) if m]
-    assert len(hits) == 1, f"{pattern!r} matched {len(hits)} lines in {doc}, expected 1"
-    published = float(hits[0].group(1)) / 100
-    assert published == pytest.approx(REPRODUCTION_TOLERANCE), (
-        f"{doc} publishes {hits[0].group(1)}% where {REPRODUCTION_TOLERANCE:.0%} is enforced"
+def _doc_surface() -> list[Path]:
+    """The published text files, from git rather than a hand-kept directory list."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "*.md", "*.yml", "*.yaml"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    paths = [REPO_ROOT / name for name in listed.split("\0") if name]
+    assert len(paths) >= 10, f"only {len(paths)} tracked docs found — this scan is looking at nothing"
+    return paths
+
+
+def test_every_published_reproduction_tolerance_is_the_enforced_one():
+    """No doc may print a tolerance other than the one the re-derivations assert."""
+    published = [
+        (path.name, number, figure)
+        for path in _doc_surface()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        for match in PUBLISHED_TOLERANCE.finditer(line)
+        for figure in [next(g for g in match.groups() if g)]
+    ]
+    assert len(published) >= MINIMUM_PUBLISHED, (
+        f"only {len(published)} published tolerances found; a rewording leaves this scanning nothing"
     )
+    wrong = [
+        f"{name}:{number} prints {figure}%"
+        for name, number, figure in published
+        if float(figure) / 100 != pytest.approx(REPRODUCTION_TOLERANCE)
+    ]
+    assert not wrong, f"{REPRODUCTION_TOLERANCE:.0%} is enforced but " + "; ".join(wrong)
 
 
 def test_no_doc_claims_exact_reproduction_unscoped():
     """An exactness claim about a re-run has to name one machine or the tolerance."""
     offenders = []
-    for path in sorted(REPO_ROOT.glob("*.md")) + sorted((REPO_ROOT / ".github" / "workflows").glob("*.yml")):
+    for path in _doc_surface():
         for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
             if EXACTNESS.search(line) and RERUN.search(line) and not SCOPED.search(line):
                 offenders.append(f"{path.name}:{number}: {line.strip()[:100]}")

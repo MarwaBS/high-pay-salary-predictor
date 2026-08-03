@@ -163,10 +163,11 @@ and an omission.
   says won — verified by mutation.
 
 - **The weekly retrainer runs an interpreter no measurement covers.**
-  `train.yml` pins CPython 3.13. The cross-build spread is 0.11% across three
-  builds, two of them 3.11 and 3.12 and the third a machine whose interpreter is
-  unstated — so nothing measured covers 3.13. The enforced 1% is a round bound
-  comfortably above that 0.11%, not a figure derived from it.
+  `train.yml` pins CPython 3.13. The only cross-build measurement here is of the
+  tuning study's CV score — 0.11% across three builds, two of them 3.11 and 3.12
+  and the third a machine whose interpreter is unstated — so nothing covers 3.13,
+  and nothing measures the published metrics across builds at all. The enforced 1%
+  is a round bound comfortably above that 0.11%, not a figure derived from it.
   `requirements-lock.txt` pins the library set, not the interpreter. Closing it
   means pinning the trainer to a measured interpreter, a release-process decision.
 
@@ -195,8 +196,8 @@ and an omission.
 - **`requirements-lock.txt` still pins the notebook-only packages.** The split in
   `requirements.txt` does not extend to the lock, because the lock is the
   reproducibility contract the trainer installs. Regenerating it is a deliberate
-  act that has to be followed by a retrain and a metrics comparison against the
-  1% the suite enforces, not a side effect of a dependency tidy-up.
+  act that has to be followed by a retrain and a comparison of the published
+  metrics, not a side effect of a dependency tidy-up.
 
 - **Both private repository names remain on `main`** in `.gitignore`,
   `.trivyignore` and one published commit message. This branch removes them from
