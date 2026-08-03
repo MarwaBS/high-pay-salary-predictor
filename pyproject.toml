@@ -33,7 +33,7 @@ exclude        = [".venv", "__pycache__", "*.ipynb", "build", "dist"]
 # E/W = pycodestyle  F = pyflakes  I = isort  UP = pyupgrade  B = flake8-bugbear
 # S101 = flake8-bandit assert  T201 = flake8-print  (so the per-file-ignores
 # below are meaningful: assert is allowed only in tests, print only in scripts).
-# ARG = flake8-unused-arguments (a requested fixture nobody reads).
+# ARG = flake8-unused-arguments (an argument or fixture nobody reads).
 select   = ["E", "W", "F", "I", "UP", "B", "S101", "T201", "ARG"]
 ignore   = [
     "E501",   # line too long — handled by formatter

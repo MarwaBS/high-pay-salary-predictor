@@ -7,6 +7,7 @@ one that is enforced. These drive the real lifespan so deleting any guard turns
 a test red.
 """
 
+import hashlib
 import json
 import math
 
@@ -233,14 +234,14 @@ class TestConfiguredArtefactPaths:
             with TestClient(m.app):
                 pass
 
-    def test_the_monitor_reads_the_artefact_whose_digest_startup_verified(self):
-        """Startup verifies ``baseline_stats``, then builds the monitor. Reading
-        the config a second time lets those be different files, and the one that
-        aborts on a mismatch is not the one the detector opened."""
-        declared = json.loads((m.ROOT / m.VALIDATED_CFG.model.baseline_stats_path).read_text(encoding="utf-8"))
+    def test_the_monitor_holds_the_artefact_whose_digest_startup_verified(self):
+        """The digest /health publishes and the stats the detector runs on are one file."""
+        declared = m.ROOT / m.VALIDATED_CFG.model.baseline_stats_path
+        digest = hashlib.sha256(declared.read_bytes()).hexdigest()
         with TestClient(m.app) as client:
             assert client.get("/health").status_code == 200
-            assert m.state.drift_monitor.baseline == declared
+            assert m.state.artifact_sha256["baseline_stats"] == digest
+            assert m.state.drift_monitor.baseline == json.loads(declared.read_text(encoding="utf-8"))
 
 
 class TestTheConfiguredDriftWindowReachesTheMonitor:

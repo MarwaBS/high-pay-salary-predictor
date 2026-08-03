@@ -336,16 +336,13 @@ class TestPredictBatch:
         assert "predicted_p90" in item
         assert item["predicted_p10"] <= item["predicted_p50"] <= item["predicted_p90"]
 
-    def test_the_batch_budget_does_not_carry_across_modules(self, client, base_payload):
-        """The bucket must be both reachable and clearable."""
-        codes = [client.post("/predict/batch", json={"items": [base_payload]}).status_code for _ in range(11)]
-        assert 429 in codes, "the batch budget is unreachable — this test would prove nothing"
-        api_main.limiter.reset()
-        assert client.post("/predict/batch", json={"items": [base_payload]}).status_code == 200
-
-    @pytest.mark.parametrize("responses", [[None], ["first", None], [None, "second"], ["a", None, "c"]])
-    def test_incomplete_batch_raises_rather_than_shortening(self, responses):
-        """One result per input item; a partial shortening counts."""
+    @pytest.mark.parametrize("size", [1, 2, 3, 20, 200])
+    @pytest.mark.parametrize("hole", [0, -1, "middle"])
+    def test_incomplete_batch_raises_rather_than_shortening(self, size, hole):
+        """One result per input item, whichever item went missing."""
+        index = size // 2 if hole == "middle" else hole % size
+        responses = [f"item{i}" for i in range(size)]
+        responses[index] = None
         with pytest.raises(RuntimeError, match="incomplete"):
             api_main._complete_batch(responses)
 

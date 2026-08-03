@@ -430,19 +430,22 @@ class TestRateLimiting:
                 f"a request was rejected before the limit: {statuses}"
             )
 
-    def test_batch_limit_enforced_returns_429(self):
-        """``/predict/batch`` carries its own fixed 10/minute budget, not ``RATE_LIMIT``.
+    def _batch_statuses(self, m, calls: int) -> list[int]:
+        with TestClient(m.app) as client:
+            body = {"items": [self._payload(m)]}
+            return [client.post("/predict/batch", json=body).status_code for _ in range(calls)]
 
-        The exact cut is asserted, not just that some 429 appears, so widening the
-        budget by one is caught. The window opens on the first request and the 12
-        calls take milliseconds, so it cannot roll over mid-run.
-        """
-        with reloaded_module() as m:
-            with TestClient(m.app) as client:
-                body = {"items": [self._payload(m)]}
-                statuses = [client.post("/predict/batch", json=body).status_code for _ in range(12)]
-
+    def test_batch_limit_defaults_to_ten_a_minute(self):
+        """The exact cut is asserted, so widening the default by one is caught."""
+        with reloaded_module(BATCH_RATE_LIMIT=None) as m:
+            statuses = self._batch_statuses(m, 12)
         assert statuses == [200] * 10 + [429] * 2, f"batch budget is not exactly 10/minute: {statuses}"
+
+    def test_batch_limit_is_read_from_its_own_variable(self):
+        """``RATE_LIMIT`` governs the other routes; batch must have its own knob."""
+        with reloaded_module(BATCH_RATE_LIMIT="3/minute", RATE_LIMIT="1000/minute") as m:
+            statuses = self._batch_statuses(m, 5)
+        assert statuses == [200] * 3 + [429] * 2, f"batch budget did not follow its variable: {statuses}"
 
     def test_429_body_has_detail(self):
         with reloaded_module(RATE_LIMIT="2/minute") as m:

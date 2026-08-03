@@ -43,6 +43,19 @@ _SCAN_SUFFIXES = {
 }
 
 
+def _eligible_tracked_count() -> int:
+    """How many tracked files the sweep must reach, counted without its filters."""
+    out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
+    names = [Path(n) for n in out.splitlines() if n.strip()]
+    eligible = [
+        rel
+        for rel in names
+        if (rel.suffix in _SCAN_SUFFIXES or rel.name in {"Dockerfile", "Makefile"}) and rel not in _EXCLUDED_FILES
+    ]
+    assert eligible, "no eligible tracked files found — this counter is stale"
+    return len(eligible)
+
+
 def _iter_tracked_files():
     """Yield every tracked file eligible for the scan — only tracked files ship."""
     listed = subprocess.run(
@@ -76,7 +89,10 @@ def test_no_dangling_train_model_references():
                 if "train_model.py" in line:
                     offenders.append(f"{rel}:{lineno}: {line.strip()}")
 
-    assert scanned > 1, f"only {scanned} file(s) scanned — an empty sweep passes on any repo"
+    assert scanned >= _eligible_tracked_count(), (
+        f"only {scanned} of {_eligible_tracked_count()} eligible tracked files were read — "
+        f"a narrowed sweep passes while a dangling reference survives outside it"
+    )
     assert not offenders, (
         "The legacy trainer ``scripts/train_model.py`` no longer exists, "
         "but the following files still reference it. Update each to point "

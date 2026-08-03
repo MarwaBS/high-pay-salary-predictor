@@ -16,6 +16,7 @@ import os
 # the module, overriding this default for their scope. setdefault() so an
 # explicit environment value still wins.
 os.environ.setdefault("RATE_LIMIT", "1000000/minute")
+os.environ.setdefault("BATCH_RATE_LIMIT", "1000000/minute")
 
 from pathlib import Path  # noqa: E402
 
@@ -24,21 +25,6 @@ import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 from pipeline import engineer_features, load_group_means, load_model  # noqa: E402
-
-
-@pytest.fixture(autouse=True, scope="module")
-def _fresh_rate_limit_buckets():
-    """Clear the per-IP budget between modules.
-
-    ``/predict/batch``'s fixed 10/minute limit is not relaxed by ``RATE_LIMIT``
-    and every module shares one client address.
-    """
-    from api.main import limiter
-
-    limiter.reset()
-    yield
-    limiter.reset()
-
 
 # ---------------------------------------------------------------------------
 # Session-scope: load once, reuse across the entire test run

@@ -26,6 +26,9 @@ Environment variables:
                         require X-API-Key. Unset = dev mode (no auth).
   RATE_LIMIT            Per-IP rate limit for /predict and /drift, counted per
                         route rather than shared (default: "60/minute").
+  BATCH_RATE_LIMIT      Per-IP rate limit for /predict/batch, counted separately
+                        because one call scores up to MAX_BATCH_ITEMS profiles
+                        (default: "10/minute").
   TRUSTED_PROXY_HOPS    Number of reverse proxies in front of the API. The
                         rate limiter and logging read the Nth-from-last
                         entry of X-Forwarded-For. Default: 0 (bind to the
@@ -229,6 +232,9 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
 # from the right (right-most entries are the ones added by trusted hops).
 
 RATE_LIMIT = os.getenv("RATE_LIMIT", "60/minute")
+# Batch scores up to MAX_BATCH_ITEMS profiles per call, so its budget is
+# counted separately from the single-prediction one.
+BATCH_RATE_LIMIT = os.getenv("BATCH_RATE_LIMIT", "10/minute")
 TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 
 
@@ -767,6 +773,7 @@ async def meta():
 
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
 @limiter.limit(RATE_LIMIT)
+# slowapi resolves the limiter key from a parameter named `request`.
 def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Predict annual income for a given demographic + occupational profile.
 
@@ -856,9 +863,9 @@ def _complete_batch(responses: list[PredictResponse | None]) -> list[PredictResp
 
 
 @app.post("/predict/batch", response_model=PredictBatchResponse, tags=["Prediction"])
-@limiter.limit("10/minute")
+@limiter.limit(BATCH_RATE_LIMIT)
 def predict_batch(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 — slowapi resolves the limiter key from this name
     req: PredictBatchRequest,
     _key: str | None = Depends(verify_api_key),
 ):
@@ -955,6 +962,7 @@ def predict_batch(
 @limiter.limit(RATE_LIMIT)
 # Sync, so Starlette runs it in the threadpool: check_drift reads the window over
 # the blocking Redis client and would otherwise stall the event loop.
+# slowapi resolves the limiter key from a parameter named `request`.
 def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Return feature drift report comparing recent predictions to training baseline.
 

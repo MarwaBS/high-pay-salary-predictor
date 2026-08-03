@@ -66,6 +66,9 @@ project uses SemVer.
   a key.
 
 ### Added
+- **`BATCH_RATE_LIMIT`** — `/predict/batch`'s per-IP budget is now read from the
+  environment like every other route's, defaulting to the `10/minute` it was
+  previously pinned to in code. No behaviour change unless the variable is set.
 - `SECURITY.md` with disclosure policy + in-scope / out-of-scope
   boundaries.
 - `CHANGELOG.md` (this file).

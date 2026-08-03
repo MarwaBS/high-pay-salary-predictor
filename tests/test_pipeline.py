@@ -69,6 +69,29 @@ def assert_calibration_bands(metrics: dict) -> None:
     )
 
 
+class TestTheSplitPrimitive:
+    """Every caller derives the test rows from here, so nothing else pins it."""
+
+    @pytest.mark.parametrize(("n", "test_size", "seed"), [(500, 0.2, 42), (997, 0.35, 7), (50, 0.5, 0)])
+    def test_it_is_sklearns_split_at_the_seed_it_was_given(self, n, test_size, seed):
+        from sklearn.model_selection import train_test_split
+
+        from pipeline import train_test_positions
+
+        want_train, want_test = train_test_split(np.arange(n), test_size=test_size, random_state=seed)
+        got_train, got_test = train_test_positions(n, test_size=test_size, random_state=seed)
+        assert list(got_train) == list(want_train)
+        assert list(got_test) == list(want_test)
+
+    def test_a_different_seed_selects_different_rows(self):
+        """Otherwise the seed is decorative and every caller shares one split."""
+        from pipeline import train_test_positions
+
+        a = set(train_test_positions(500, test_size=0.2, random_state=1)[1])
+        b = set(train_test_positions(500, test_size=0.2, random_state=2)[1])
+        assert a != b
+
+
 # ── Config Tests ──────────────────────────────────────────────────────────────
 
 
@@ -306,24 +329,46 @@ class TestModelPrediction:
         with pytest.raises(FileNotFoundError):
             load_conformal_delta(str(tmp_path / "does_not_exist.json"))
 
-    def test_every_key_the_bands_read_is_one_they_require(self, cfg):
-        """Each key removed in turn: the bands must refuse by name, not KeyError."""
+    def _shipped_metrics(self, cfg) -> dict:
         from pathlib import Path
 
         from pipeline import load_metrics
 
         metrics = load_metrics(str(Path(__file__).parent.parent / cfg["model"]["metrics_path"]))
         _require(bool(metrics), "metrics file unavailable")
+        return metrics
+
+    def test_the_bands_refuse_every_calibration_key_they_declare(self, cfg):
+        """Each key removed in turn must be refused by name, never skipped."""
+        metrics = self._shipped_metrics(cfg)
+        refused = set()
         for key in sorted(metrics):
             stripped = {k: v for k, v in metrics.items() if k != key}
             try:
                 assert_calibration_bands(stripped)
             except AssertionError:
-                continue  # refused by name — correct
-            except Exception as exc:  # noqa: BLE001 — any other failure is the defect
+                refused.add(key)
+            except Exception as exc:
                 raise AssertionError(
                     f"removing {key!r} raised {type(exc).__name__}, so the bands read a key they do not require"
                 ) from exc
+        unenforced = set(CALIBRATION_KEYS) - refused
+        assert not unenforced, f"the bands accept a metrics file with {sorted(unenforced)} missing"
+
+    @pytest.mark.parametrize(
+        ("key", "bad"),
+        [
+            ("quantile_coverage_80", 0.30),
+            ("quantile_crossings", 5),
+            ("conformal_coverage_80", 0.10),
+            ("conformal_delta", 0.0),
+        ],
+    )
+    def test_each_band_refuses_a_value_outside_it(self, cfg, key, bad):
+        """A band nobody can fail is a band that certifies nothing."""
+        metrics = {**self._shipped_metrics(cfg), key: bad}
+        with pytest.raises(AssertionError):
+            assert_calibration_bands(metrics)
 
     def test_saved_metrics_within_expected_range(self, cfg):
         """Saved model metrics must fall inside explicit regression windows.
