@@ -2,9 +2,10 @@
 
 Compares SHA-256 digests from ``.private-name-hashes`` rather than plaintext
 patterns, so the guard cannot become the leak it exists to prevent. Matching is
-on a normalised form — lowercase, alphanumerics only — so a name split by
-punctuation, suffixed, or run into a neighbouring word reduces to the same
-digest as the plain form.
+on a normalised form — lowercase, alphanumerics only — over whole tokens and
+runs of two or three adjacent ones, so a name split by any punctuation reduces
+to the same digest as the plain form. A name concatenated into a longer token
+with no separator does not; see ``_candidates``.
 """
 
 from __future__ import annotations
@@ -37,10 +38,11 @@ def _banned_digests() -> set[str]:
 
 
 def _candidates(text: str) -> set[str]:
-    """Every fragment a name could hide in: tokens, their joins, and pairs.
+    """Whole tokens, and the joins of two or three adjacent ones.
 
-    A name split by punctuation or camel-cased into a longer word is the same
-    disclosure as the bare name, so both have to reduce to the same digest.
+    A separator between a name's parts is not protection, so any punctuation
+    split reduces to the bare name. A name welded into a longer token with no
+    separator at all is NOT reached — the tokeniser never splits inside a word.
     """
     tokens = TOKEN.findall(text)
     forms = set(tokens)

@@ -1,8 +1,9 @@
-"""No tracked text file may name ``train_model.py`` — that trainer does not exist.
+"""``train_model.py`` may not be named outside the two guards that assert on it.
 
 A substring search rather than an AST walk: the references that matter live in
 comments, docstrings and response bodies, which an AST walk cannot see. Scope is
-the suffixes in ``_SCAN_SUFFIXES``; notebooks are excluded, and why is stated there.
+tracked files whose suffix is in ``_SCAN_SUFFIXES``, minus ``_EXCLUDED_FILES``;
+both sets say beside themselves what they leave out.
 """
 
 from __future__ import annotations

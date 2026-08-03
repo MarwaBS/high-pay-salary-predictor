@@ -65,6 +65,12 @@ project uses SemVer.
   per-feature means, so it was the one route publishing that summary without
   a key.
 
+### Removed
+- **`pipeline.FEATURES_DEMO`.** The demographic-only feature list had no
+  consumer: the one notebook importing it defined its own, different list in a
+  later cell, and its comment described a vector "with no BLS context" that
+  contained four BLS columns.
+
 ### Added
 - **`BATCH_RATE_LIMIT`** — `/predict/batch`'s per-IP budget is now read from the
   environment like every other route's, defaulting to the `10/minute` it was

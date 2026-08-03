@@ -120,19 +120,23 @@ without an experiment-tracking stack. Hyper-parameters are pinned in
 record. See D-001.
 
 **Measured:** the narrow label is a usable task on the shipped data, not a
-degenerate one: positive rate 0.3974 train / 0.3852 test, ROC-AUC 0.6735 against
-a logistic reference of 0.68 and a majority-class accuracy of 0.6148, Brier
-0.2177 against a base-rate 0.2368. The regressor is scored separately on
+degenerate one: positive rate 0.3974 train / 0.3852 test, Brier 0.2177 against a
+base rate of 0.2368, accuracy 0.6543 against a majority-class 0.6148. **It does
+not beat every reference:** ROC-AUC is 0.6735 against a logistic baseline of
+0.68 — the head is calibrated better than the base rate but does not out-rank a
+linear model on the same features. The regressor is scored separately on
 quantile coverage and crossings, which a single head could not report.
 
 **What would reverse it:** the unfiltered IPUMS microdata landing in `Data/`,
 which makes the broader "above the $100K line at all?" label supportable and
-turns the classifier's cohort scoping from a data limit into a choice. A
-classifier that stopped beating both reference baselines would retire the head
-rather than rescope it.
+turns the classifier's cohort scoping from a data limit into a choice. The head
+is retired, not rescoped, if its Brier stops beating the base rate — the
+ranking gap against the logistic baseline is already recorded under Known gaps.
 
 **Evidence:** `scripts/train_quantile.py`, `tests/test_classifier.py`,
 `models/model_metrics.json` (`classifier_*` keys).
+
+---
 
 ---
 
@@ -142,6 +146,13 @@ Carried deliberately, not overlooked. Each states why it is open and what would
 close it, so a reader does not have to infer the difference between a decision
 and an omission.
 
+- **The premium-tier classifier does not out-rank a linear baseline.** ROC-AUC
+  0.6735 against `classifier_baseline_logreg_roc_auc` 0.68, both in
+  `models/model_metrics.json`. It is kept because it is calibrated (Brier 0.2177
+  vs base rate 0.2368) and answers a question the regressor cannot, not because
+  it ranks best. `tests/test_classifier.py` enforces the no-skill floor and the
+  base-rate Brier, so nothing fails on this gap; closing it means either beating
+  the logistic reference or replacing the head with it.
 - **The tuning study's absolute scores are not portable across builds.** See
   D-001: the observed cross-build spread is 24x the margin the study turns on.
   `tests/test_hyperparameter_provenance.py` therefore re-derives the incumbent
