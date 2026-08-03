@@ -33,6 +33,42 @@ def _require(condition: bool, reason: str) -> None:
     pytest.skip(reason)
 
 
+#: Calibration fields ``assert_calibration_bands`` reads.
+CALIBRATION_KEYS = (
+    "quantile_coverage_80",
+    "quantile_crossings",
+    "conformal_coverage_80",
+    "conformal_target_coverage",
+    "conformal_delta",
+)
+
+
+def assert_calibration_bands(metrics: dict) -> None:
+    """Hold the served quantile + conformal calibration inside its bands."""
+    missing = [key for key in CALIBRATION_KEYS if key not in metrics]
+    assert not missing, f"metrics file does not report {missing} — the bands below would not be checked"
+
+    coverage = metrics["quantile_coverage_80"]
+    crossings = metrics["quantile_crossings"]
+    # 80% PI should empirically cover ~80% of test targets (band [0.72, 0.88]).
+    assert 0.72 <= coverage <= 0.88, (
+        f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
+    )
+    assert crossings == 0, f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
+
+    # Cross-conformal calibration: the served (conformalized) interval must land
+    # near its nominal target and beat the raw interval's coverage.
+    conf_cov = metrics["conformal_coverage_80"]
+    target = metrics["conformal_target_coverage"]
+    assert metrics["conformal_delta"] > 0, "conformal margin must be positive to widen the interval"
+    assert abs(conf_cov - target) <= 0.03, (
+        f"Conformalized coverage {conf_cov:.3f} not within 0.03 of target {target:.2f}"
+    )
+    assert conf_cov >= coverage, (
+        f"Conformalized coverage {conf_cov:.3f} should not under-cover the raw interval {coverage:.3f}"
+    )
+
+
 # ── Config Tests ──────────────────────────────────────────────────────────────
 
 
@@ -270,6 +306,25 @@ class TestModelPrediction:
         with pytest.raises(FileNotFoundError):
             load_conformal_delta(str(tmp_path / "does_not_exist.json"))
 
+    def test_every_key_the_bands_read_is_one_they_require(self, cfg):
+        """Each key removed in turn: the bands must refuse by name, not KeyError."""
+        from pathlib import Path
+
+        from pipeline import load_metrics
+
+        metrics = load_metrics(str(Path(__file__).parent.parent / cfg["model"]["metrics_path"]))
+        _require(bool(metrics), "metrics file unavailable")
+        for key in sorted(metrics):
+            stripped = {k: v for k, v in metrics.items() if k != key}
+            try:
+                assert_calibration_bands(stripped)
+            except AssertionError:
+                continue  # refused by name — correct
+            except Exception as exc:  # noqa: BLE001 — any other failure is the defect
+                raise AssertionError(
+                    f"removing {key!r} raised {type(exc).__name__}, so the bands read a key they do not require"
+                ) from exc
+
     def test_saved_metrics_within_expected_range(self, cfg):
         """Saved model metrics must fall inside explicit regression windows.
 
@@ -297,38 +352,7 @@ class TestModelPrediction:
         assert 30_000 <= mae <= 90_000, f"P50 MAE ${mae:,.0f} outside expected band"
         assert 60_000 <= rmse <= 160_000, f"P50 RMSE ${rmse:,.0f} outside expected band"
 
-        # Guarding these behind ``if key in metrics`` made a metrics file that
-        # lost them pass in silence — and the point model the fallback was
-        # written for is refused at startup, so there is nothing to skip for.
-        required = (
-            "quantile_coverage_80",
-            "quantile_crossings",
-            "conformal_coverage_80",
-            "conformal_target_coverage",
-            "conformal_delta",
-        )
-        missing = [key for key in required if key not in metrics]
-        assert not missing, f"metrics file does not report {missing} — the guards below would not run"
-
-        coverage = metrics["quantile_coverage_80"]
-        crossings = metrics["quantile_crossings"]
-        # 80% PI should empirically cover ~80% of test targets (band [0.72, 0.88]).
-        assert 0.72 <= coverage <= 0.88, (
-            f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
-        )
-        assert crossings == 0, f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
-
-        # Cross-conformal calibration: the served (conformalized) interval must
-        # land near its nominal target and beat the raw interval's coverage.
-        conf_cov = metrics["conformal_coverage_80"]
-        target = metrics["conformal_target_coverage"]
-        assert metrics["conformal_delta"] > 0, "conformal margin must be positive to widen the interval"
-        assert abs(conf_cov - target) <= 0.03, (
-            f"Conformalized coverage {conf_cov:.3f} not within 0.03 of target {target:.2f}"
-        )
-        assert conf_cov >= coverage, (
-            f"Conformalized coverage {conf_cov:.3f} should not under-cover the raw interval {coverage:.3f}"
-        )
+        assert_calibration_bands(metrics)
 
     def test_saved_cv_matches_test(self, cfg):
         """CV R² and Test R² must agree within ~0.15.

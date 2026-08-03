@@ -28,12 +28,10 @@ from pipeline import engineer_features, load_group_means, load_model  # noqa: E4
 
 @pytest.fixture(autouse=True, scope="module")
 def _fresh_rate_limit_buckets():
-    """Give each module its own rate-limit budget.
+    """Clear the per-IP budget between modules.
 
-    ``/predict/batch`` carries a fixed 10/minute budget keyed by client IP, which
-    ``RATE_LIMIT`` above does not relax, and every module drives ``TestClient``
-    from the same address inside one wall-clock minute. Without this a module
-    that sends eleven batches 429s an unrelated module that runs after it.
+    ``/predict/batch``'s fixed 10/minute limit is not relaxed by ``RATE_LIMIT``
+    and every module shares one client address.
     """
     from api.main import limiter
 

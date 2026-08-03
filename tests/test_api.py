@@ -337,12 +337,7 @@ class TestPredictBatch:
         assert item["predicted_p10"] <= item["predicted_p50"] <= item["predicted_p90"]
 
     def test_the_batch_budget_does_not_carry_across_modules(self, client, base_payload):
-        """One fixed 10/minute bucket, keyed by an IP every module shares.
-
-        Exhausting it here must not be what the next module inherits, so the
-        conftest fixture clears it — this drives the bucket empty to prove both
-        that it is reachable and that clearing it restores service.
-        """
+        """The bucket must be both reachable and clearable."""
         codes = [client.post("/predict/batch", json={"items": [base_payload]}).status_code for _ in range(11)]
         assert 429 in codes, "the batch budget is unreachable — this test would prove nothing"
         api_main.limiter.reset()
@@ -350,11 +345,7 @@ class TestPredictBatch:
 
     @pytest.mark.parametrize("responses", [[None], ["first", None], [None, "second"], ["a", None, "c"]])
     def test_incomplete_batch_raises_rather_than_shortening(self, responses):
-        """The schema promises one result per input item.
-
-        The all-empty case alone is passed by a guard that only asks whether
-        anything survived, which is exactly the batch that is shortened by one.
-        """
+        """One result per input item; a partial shortening counts."""
         with pytest.raises(RuntimeError, match="incomplete"):
             api_main._complete_batch(responses)
 

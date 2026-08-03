@@ -49,9 +49,8 @@ logger = logging.getLogger(__name__)
 REDIS_DRIFT_KEY = "drift:observations"
 
 #: Smallest sample ``check_drift`` will rule on, applied to the window and to
-#: each feature's own observations — 30 is the conventional floor for placing a
-#: mean on a normal tail, and a feature can be sparse in a full window. Below
-#: it the verdict is withheld rather than reported clean.
+#: each feature's own observations. 30 is the conventional floor for placing a
+#: mean on a normal tail.
 MIN_WINDOW_FOR_VERDICT = 30
 
 
@@ -293,9 +292,7 @@ class DriftMonitor:
             feat: [obs[feat] for obs in observations if feat in obs]
             for feat in self.baseline
         }
-        # A long window does not make a sparse feature testable: each p-value is
-        # a normal tail over that feature's own observations, so the floor that
-        # gates the window has to gate the feature too.
+        # Each p-value is a normal tail over one feature's own observations.
         n_tested = sum(1 for vals in feature_values.values() if len(vals) >= MIN_WINDOW_FOR_VERDICT)
 
         # Nothing testable: a renamed or absent feature set would otherwise score
@@ -341,9 +338,7 @@ class DriftMonitor:
             n = len(values)
 
             if n < MIN_WINDOW_FOR_VERDICT:
-                # Too few observations of this feature to place its mean on a
-                # normal tail. Scoring it False here would be the clean bill of
-                # health the window-level floor exists to refuse.
+                # Too few to place this feature's mean on a normal tail.
                 result[feat] = {
                     "z_score": None,
                     "effect_size": None,
@@ -407,9 +402,8 @@ class DriftMonitor:
                 "drifted": drifted,
             }
 
-        # A feature left unruled cannot make the verdict False: the union has an
-        # untested term. It can still make it True — one feature that cleared
-        # both gates is drift whatever the sparse ones would have said.
+        # An unruled feature leaves the union with an untested term, so it can
+        # withhold the verdict but not clear it.
         unruled = sorted(feat for feat, v in result.items() if v["drifted"] is None)
         report: dict[str, Any] = {
             "observations": total_count,

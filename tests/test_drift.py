@@ -145,12 +145,7 @@ class TestDriftEdgeCases:
         return mon.check_drift()
 
     def test_a_feature_too_sparse_to_test_cannot_be_ruled_on(self, baseline_stats):
-        """A long window does not make every feature in it a large sample.
-
-        Each p-value is a normal tail over that feature's own observations, so a
-        feature seen a handful of times in a full window would otherwise be
-        placed on that tail and alarm from a sample no one would rule on.
-        """
+        """A long window does not make every feature in it a large sample."""
         report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT - 1)
         edu = report["features"]["Education_Ord"]
         assert edu["n_observed"] == MIN_WINDOW_FOR_VERDICT - 1
@@ -165,6 +160,21 @@ class TestDriftEdgeCases:
         assert edu["n_observed"] == MIN_WINDOW_FOR_VERDICT
         assert edu["drifted"] is True, "at the floor the shift is real and must be reported"
         assert report["any_drifted"] is True
+
+    def test_a_window_where_no_feature_reached_the_floor_scores_nothing(self, baseline_stats):
+        """The correction counts features that can be ruled on, not seen."""
+        mon = DriftMonitor(baseline_stats, window=100)
+        for i in range(100):
+            obs = {}
+            if i < MIN_WINDOW_FOR_VERDICT - 1:
+                obs["Age"] = 99.0
+            if i < 5:
+                obs["Education_Ord"] = 99.0
+            mon.observe(obs)
+        report = mon.check_drift()
+        assert report["any_drifted"] is None
+        assert report["features"] == {}, "no feature reached the floor, so none may carry a score"
+        assert str(MIN_WINDOW_FOR_VERDICT) in report["message"]
 
     def test_the_per_feature_floor_reads_the_constant_rather_than_a_literal(self, monkeypatch, baseline_stats):
         """Moving the constant must move the per-feature gate with it."""
@@ -717,12 +727,7 @@ class TestBaselinePersistence:
 
 
 def _withholding_reports(baseline_stats) -> dict[str, dict]:
-    """One report per way ``check_drift`` can decline to rule.
-
-    Collected in one place so a new withholding branch has to be added here to
-    be exercised, rather than inheriting the shape of whichever branch its
-    author copied.
-    """
+    """One report per way ``check_drift`` can decline to rule."""
     degraded = DriftMonitor(baseline_stats, window=200, redis_client=_ReadFailingRedis())
     for _ in range(200):
         degraded.observe({"Age": 999.0, "Education_Ord": 2.0})
@@ -768,12 +773,7 @@ class TestVerdictWithheldWhenNothingTestable:
             assert report.get("message"), f"{reason}: a withheld verdict must name its cause"
 
     def test_the_withholding_branches_agree_on_what_they_return(self, baseline_stats):
-        """One shape, or a caller must special-case which reason it got.
-
-        A key present on one branch and absent from the others describes that
-        branch, not the condition — and a caller reading it learns nothing about
-        the other three.
-        """
+        """One shape, or a caller must special-case which reason it got."""
         reports = _withholding_reports(baseline_stats)
         shapes = {reason: frozenset(report) for reason, report in reports.items()}
         assert len(set(shapes.values())) == 1, f"withholding branches return different keys: {shapes}"

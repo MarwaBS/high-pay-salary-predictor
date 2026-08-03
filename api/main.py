@@ -498,9 +498,7 @@ async def lifespan(_app: FastAPI):
                 "advertised threshold matches the model's decision boundary."
             )
 
-    # Load drift baseline (optional — produced by the training script). Taken
-    # from the set above so the monitor reads the file whose digest was just
-    # verified; a second config read could name another artefact and still start.
+    # From the verified set, so the monitor opens the file whose digest matched.
     baseline_path = artefact_files["baseline_stats"]
     if baseline_path.exists():
         state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)

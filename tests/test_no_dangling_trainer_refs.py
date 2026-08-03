@@ -44,11 +44,7 @@ _SCAN_SUFFIXES = {
 
 
 def _iter_tracked_files():
-    """Yield every tracked file eligible for the dangling-ref scan.
-
-    Only what git tracks is published, and a filesystem walk both scans local
-    scratch files nobody ships and needs its own list of directories to skip.
-    """
+    """Yield every tracked file eligible for the scan — only tracked files ship."""
     listed = subprocess.run(
         ["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
     ).stdout.split("\0")

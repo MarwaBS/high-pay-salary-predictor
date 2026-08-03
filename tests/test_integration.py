@@ -28,11 +28,7 @@ from pipeline import (
 
 
 def _split_rows(df_raw: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """The project's one split, on the configured parameters.
-
-    Re-deriving it here would let these tests score rows the trainer trained on
-    the moment either parameter changes, while still passing.
-    """
+    """The project's one split, on the configured parameters."""
     train_pos, test_pos = train_test_positions(
         len(df_raw), test_size=cfg["model"]["test_size"], random_state=cfg["model"]["random_state"]
     )

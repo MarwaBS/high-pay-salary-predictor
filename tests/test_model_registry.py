@@ -210,12 +210,8 @@ def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
 
 
 def _shipped_modules() -> list[str]:
-    """Every shipped module, from what git tracks.
-
-    A hand-kept list of directories is a whitelist wearing a glob: it misses the
-    nested package (``api/routers/``) that packaging would still ship, and the
-    file it misses is the one that hardcodes a path.
-    """
+    """Every shipped module, from what git tracks — a directory list misses
+    nested packages that packaging still ships."""
     listed = subprocess.run(
         ["git", "ls-files", "-z", "*.py"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
     ).stdout.split("\0")
