@@ -8,6 +8,7 @@ Run: pytest tests/test_performance.py -v
 """
 
 import math
+import re
 import time
 from pathlib import Path
 
@@ -20,7 +21,8 @@ REPO_ROOT = Path(__file__).parent.parent
 
 #: The budgets this module enforces; the README publishes them.
 PREDICT_BUDGET_S = 0.200
-P99_SAMPLES = 100
+PERCENTILE = 0.99
+LATENCY_SAMPLES = 100
 THROUGHPUT_CALLS = 50
 THROUGHPUT_BUDGET_S = 5.0
 
@@ -54,24 +56,24 @@ def _disable_rate_limit():
 
 
 class TestLatency:
-    """SLO: single prediction must complete under 200ms (p99)."""
+    """Latency held against the budgets above."""
 
-    def test_predict_single_under_200ms(self, client, base_payload):
-        """A single /predict call must respond within 200ms."""
+    def test_predict_single_within_budget(self, client, base_payload):
+        """A single /predict call must respond inside the latency budget."""
         start = time.perf_counter()
         resp = client.post("/predict", json=base_payload)
         elapsed = time.perf_counter() - start
         assert resp.status_code == 200
         assert elapsed < PREDICT_BUDGET_S, f"Single prediction took {elapsed:.3f}s, over the {PREDICT_BUDGET_S}s SLO"
 
-    def test_predict_p99_under_200ms(self, client, base_payload):
-        """p99 of 100 sequential predictions must stay under 200ms.
+    def test_predict_p99_within_budget(self, client, base_payload):
+        """The p99 of a run of sequential predictions must stay inside the budget.
 
         Uses enough samples that the 99th percentile is a genuine percentile
         rather than the max of a shorter run.
         """
         times = []
-        for _ in range(P99_SAMPLES):
+        for _ in range(LATENCY_SAMPLES):
             start = time.perf_counter()
             resp = client.post("/predict", json=base_payload)
             elapsed = time.perf_counter() - start
@@ -79,8 +81,8 @@ class TestLatency:
             times.append(elapsed)
 
         times.sort()
-        p50 = times[math.ceil(0.50 * P99_SAMPLES) - 1]
-        p99 = times[math.ceil(0.99 * P99_SAMPLES) - 1]  # nearest rank
+        p50 = times[math.ceil(0.50 * LATENCY_SAMPLES) - 1]
+        p99 = times[math.ceil(PERCENTILE * LATENCY_SAMPLES) - 1]  # nearest rank
         assert p99 < PREDICT_BUDGET_S, f"p99 latency {p99:.3f}s over the {PREDICT_BUDGET_S}s SLO (p50={p50:.3f}s)"
 
     def test_health_under_100ms(self, client):
@@ -103,9 +105,9 @@ class TestLatency:
 
 
 class TestThroughput:
-    """Baseline throughput: 50 sequential predictions under 5 seconds."""
+    """Sequential throughput held against the budgets above."""
 
-    def test_50_predictions_under_5s(self, client, base_payload):
+    def test_throughput_within_budget(self, client, base_payload):
         start = time.perf_counter()
         for _ in range(THROUGHPUT_CALLS):
             resp = client.post("/predict", json=base_payload)
@@ -126,13 +128,15 @@ def _slo_paragraph() -> str:
 
 
 def test_the_published_slo_prints_the_budgets_enforced_here():
-    """Every figure the README's SLO claim prints is one of the budgets above."""
+    """The README's SLO claim prints these budgets and no figure this module does not decide."""
     published = _slo_paragraph()
-    expected = {
-        f"{PREDICT_BUDGET_S * 1000:.0f}ms",
-        f"{P99_SAMPLES} sequential",
-        f"{THROUGHPUT_CALLS} predictions",
-        f"{THROUGHPUT_BUDGET_S:.0f}s",
-    }
-    missing = sorted(token for token in expected if token not in published)
-    assert not missing, f"README's SLO claim does not print {missing}: {published.strip()!r}"
+    percentile = f"{PERCENTILE * 100:.0f}"
+    milliseconds = f"{PREDICT_BUDGET_S * 1000:.0f}"
+    sourced = {percentile, milliseconds, str(LATENCY_SAMPLES), str(THROUGHPUT_CALLS), f"{THROUGHPUT_BUDGET_S:.0f}"}
+    printed = set(re.findall(r"\d+(?:\.\d+)?", published))
+    assert printed == sourced, (
+        f"README's SLO claim prints {sorted(printed - sourced)} that nothing here decides "
+        f"and omits {sorted(sourced - printed)}"
+    )
+    bound = f"p{percentile} < {milliseconds}ms"
+    assert bound in published, f"the claim is not stated as {bound!r}: {published.strip()!r}"

@@ -163,11 +163,12 @@ and an omission.
   says won — verified by mutation.
 
 - **The weekly retrainer runs an interpreter no measurement covers.**
-  `train.yml` pins CPython 3.13, while the cross-build spread the 1% tolerance
-  is set from was observed on 3.11 and 3.12. `requirements-lock.txt` pins the
-  library set, not the interpreter, so a release trained by the schedule sits
-  outside the range anything here has measured. Closing it means pinning the
-  trainer to a measured interpreter, which is a release-process decision.
+  `train.yml` pins CPython 3.13. The cross-build spread is 0.11% across three
+  builds, two of them 3.11 and 3.12 and the third a machine whose interpreter is
+  unstated — so nothing measured covers 3.13. The enforced 1% is a round bound
+  comfortably above that 0.11%, not a figure derived from it.
+  `requirements-lock.txt` pins the library set, not the interpreter. Closing it
+  means pinning the trainer to a measured interpreter, a release-process decision.
 
 - **The classifier head's six hyper-parameters have no producer.**
   `config.yaml` sets `classifier_n_estimators 200`, `classifier_max_depth 4`,
@@ -193,9 +194,9 @@ and an omission.
 
 - **`requirements-lock.txt` still pins the notebook-only packages.** The split in
   `requirements.txt` does not extend to the lock, because the lock is the
-  reproducibility contract the trainer installs to regenerate byte-identical
-  artefacts. Regenerating it is a deliberate act that has to be followed by a
-  bit-identical retrain check, not a side effect of a dependency tidy-up.
+  reproducibility contract the trainer installs. Regenerating it is a deliberate
+  act that has to be followed by a retrain and a metrics comparison against the
+  1% the suite enforces, not a side effect of a dependency tidy-up.
 
 - **Both private repository names remain on `main`** in `.gitignore`,
   `.trivyignore` and one published commit message. This branch removes them from

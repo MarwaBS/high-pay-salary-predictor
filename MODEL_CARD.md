@@ -45,11 +45,11 @@ compensation benchmarking, or any consequential use.
 - Census rows are kept only if `INCTOT ≥ $100K` (cell 21)
 - The two are then inner-joined on `(OCC_CODE, STATE)` (cell 9)
 
-This truncation pre-removes most of the occupation-wage signal, which is
-why the shipped point estimator reaches only R² ≈ 0.03 on held-out test.
-Whether a better estimator could do more on this cohort has not been
-measured, so no ceiling is claimed. The quantile model still produces
-useful output because the P10/P50/P90 spread itself is informative.
+This truncation removes occupation-wage signal. The shipped
+point estimator reaches R² ≈ 0.026 on held-out test; how much of that is
+attributable to the truncation has not been measured, and no ceiling is claimed.
+The quantile model still produces useful output because the P10/P50/P90
+spread itself is informative.
 
 **Gap 1 remediation — phases.**
 
