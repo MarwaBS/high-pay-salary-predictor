@@ -50,7 +50,7 @@ pydantic_core==2.46.4
 Pygments==2.20.0
 pyparsing==3.3.2
 pytest-cov==7.1.0
-pytest==9.0.3
+pytest==9.1.1
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 PyYAML==6.0.3
