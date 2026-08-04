@@ -96,6 +96,53 @@ exposes the series on the public listener would make the key unnecessary.
 **Evidence:** `tests/test_api_security.py::TestMetricsEndpointIsProtected`.
 
 
+## D-004 — Two heads, and the classifier scoped inside the high-pay cohort
+
+**Decided:** `scripts/train_quantile.py` trains a multi-quantile regressor and a
+premium-tier classifier in one pass, and the classifier's label is
+`Annual Income >= premium_threshold` *within the existing $100K+ cohort*.
+
+**Why two heads:** inside that cohort, individual income has extreme
+within-group variance driven by unobserved factors — equity, bonuses, tenure,
+employer. No point estimator resolves that, so the regressor returns a
+calibrated interval. The classifier answers a different question: is the premium
+tier plausible at all for this profile? A caller needs both.
+
+**Why the narrow label:** it is a supportable binary task on the data that is
+actually in the repo (roughly 40/60 balance, see `models/model_metrics.json`). A
+broader "above the $100K line at all?" membership classifier would need the
+*unfiltered* IPUMS microdata — a separate fetch behind an IPUMS API key, not a
+file in `Data/` — so it is a follow-up, not an omission.
+
+**No MLflow / Optuna.** The trainer stays lean enough to run on a CI worker
+without an experiment-tracking stack. Hyper-parameters are pinned in
+`config.yaml` and chosen by `scripts/tune.py`; `models/tuning_study.json` is the
+record. See D-001.
+
+**Measured:** the narrow label is a usable task on the shipped data, not a
+degenerate one: positive rate 0.3974 train / 0.3852 test, Brier 0.2177 against a
+base rate of 0.2368, accuracy 0.6543 against a majority-class 0.6148. **It does
+not beat every reference:** ROC-AUC is 0.6735 against a logistic baseline of
+0.68 — on the shipped split the head is calibrated better than the base rate but
+does not out-rank a linear model on the same features. That comparison is one
+split: the baseline is fitted once, while the head's own five-seed mean is
+0.6958 ± 0.0075, so the shipped draw sits below its own mean and the gap is
+inside seed noise. XGBoost is kept for the serving constraint stated in
+MODEL_CARD — the repo ships zero pickle, and an sklearn head would introduce a
+joblib artefact — not for a ranking win. The regressor is scored separately on
+quantile coverage and crossings, which a single head could not report.
+
+**What would reverse it:** the unfiltered IPUMS microdata landing in `Data/`,
+which makes the broader "above the $100K line at all?" label supportable and
+turns the classifier's cohort scoping from a data limit into a choice. The head
+is retired, not rescoped, if its Brier stops beating the base rate — the
+ranking gap against the logistic baseline is already recorded under Known gaps.
+
+**Evidence:** `scripts/train_quantile.py`, `tests/test_classifier.py`,
+`models/model_metrics.json` (`classifier_*` keys).
+
+---
+
 ---
 
 ## Known gaps
@@ -104,6 +151,25 @@ Carried deliberately, not overlooked. Each states why it is open and what would
 close it, so a reader does not have to infer the difference between a decision
 and an omission.
 
+- **The classifier's baseline comparison rests on one split.** ROC-AUC 0.6735
+  against `classifier_baseline_logreg_roc_auc` 0.68, both in
+  `models/model_metrics.json`. `scripts/train_quantile.py:551` fits the logistic
+  reference once, outside `_headline_metrics_for_seed`, so the head carries a
+  five-seed mean (0.6958 ± 0.0075) and the baseline carries none — the two are
+  not measured on comparable footing, and the shipped gap is smaller than the
+  head's own seed spread. `tests/test_classifier.py` enforces the no-skill floor
+  and the base-rate Brier, so nothing fails on this. Closing it means recording
+  the baseline per seed alongside the head.
+- **`premium_threshold: 150000` has no producer.** `config.yaml` sets it and
+  `config_schema.py` bounds it at `ge=100_000`; no script emits it and no
+  measurement selects it. It is a product definition — where "premium" is drawn
+  — and the 40/60 class balance quoted in D-004 is its consequence, not its
+  derivation. Closing it means naming the balance as the target and choosing the
+  threshold that hits it.
+- **Four notebook dependencies were split out; `requirements-dashboard.txt`
+  still pins `matplotlib`.** That file is a `pip freeze` of the dashboard image,
+  so trimming it without rebuilding the image would make the freeze describe
+  something that was never built.
 - **The tuning study's absolute scores are not portable across builds.** See
   D-001: the observed cross-build spread is 24x the margin the study turns on.
   `tests/test_hyperparameter_provenance.py` therefore re-derives the incumbent
@@ -112,6 +178,15 @@ and an omission.
   that flips the study's conclusion is caught instead by the retained-value
   chain, which compares `config.yaml` against whichever parameters the study
   says won — verified by mutation.
+
+- **The weekly retrainer runs an interpreter no measurement covers.**
+  `train.yml` pins CPython 3.13. The only cross-build measurement here is of the
+  tuning study's CV score — 0.11% across three builds, two of them 3.11 and 3.12
+  and the third a machine whose interpreter is unstated — so nothing covers 3.13,
+  and nothing measures the published metrics across builds at all. The enforced 1%
+  is a round bound comfortably above that 0.11%, not a figure derived from it.
+  `requirements-lock.txt` pins the library set, not the interpreter. Closing it
+  means pinning the trainer to a measured interpreter, a release-process decision.
 
 - **The classifier head's six hyper-parameters have no producer.**
   `config.yaml` sets `classifier_n_estimators 200`, `classifier_max_depth 4`,
@@ -137,11 +212,11 @@ and an omission.
 
 - **`requirements-lock.txt` still pins the notebook-only packages.** The split in
   `requirements.txt` does not extend to the lock, because the lock is the
-  reproducibility contract the trainer installs to regenerate byte-identical
-  artefacts. Regenerating it is a deliberate act that has to be followed by a
-  bit-identical retrain check, not a side effect of a dependency tidy-up.
+  reproducibility contract the trainer installs. Regenerating it is a deliberate
+  act that has to be followed by a retrain and a comparison of the published
+  metrics, not a side effect of a dependency tidy-up.
 
-- **Both private repository names remain on `main`** in `.gitignore`,
-  `.trivyignore` and one published commit message. This branch removes them from
-  the working tree and `tests/test_private_names_absent.py` blocks re-entry, but
-  a published message can only be changed by rewriting history and force-pushing.
+- **Private repository names: closed, and guarded.** A sweep of `.gitignore`,
+  `.trivyignore` and every published commit message on `main` returns no hit, by
+  the digest matcher or the external ban-list. `tests/test_private_names_absent.py`
+  blocks re-entry. Recorded because the guard, not the absence, is the deliverable.

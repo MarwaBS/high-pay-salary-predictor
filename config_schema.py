@@ -16,21 +16,22 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class DataConfig(BaseModel):
-    resources_dir: str
-    data_dir: str
-    images_dir: str
-    models_dir: str
-    raw_bls: str
-    raw_census: str
     cleaned: str
-    bls_processed: str
-    census_processed: str
 
 
 class ThresholdsConfig(BaseModel):
     # Floors match the advertised ≥$100K cohort (hourly = 100000 / 2080).
     min_annual_income: int = Field(ge=100_000)
     min_hourly_mean: float = Field(ge=48.0)
+
+
+class DriftConfig(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    # Only positivity is checkable here. The binding bound is the detector's
+    # effect-floor handover, which depends on its tuning, so the API checks it
+    # at startup where both are known.
+    window: int = Field(ge=1)
 
 
 class ModelConfig(BaseModel):
@@ -51,7 +52,6 @@ class ModelConfig(BaseModel):
     subsample: float = Field(gt=0, le=1.0)
     colsample_bytree: float = Field(gt=0, le=1.0)
     reg_lambda: float = Field(ge=0)
-    log_transform_target: bool
     cv_folds: int = Field(ge=2, le=20)
     # Seeds the trainer refits under to report metric stability.
     stability_seeds: list[int] = Field(min_length=1)
@@ -59,44 +59,21 @@ class ModelConfig(BaseModel):
     features_path: str
     metrics_path: str
     group_means_path: str
+    baseline_stats_path: str
     # Cross-conformal interval margin. Optional: when absent, the API serves
     # the raw (uncalibrated) interval.
     conformal_path: str | None = None
-    # Premium-tier classifier head. Optional: when these fields are absent the
-    # API runs without the classifier head (``p_above_premium_threshold`` is
-    # ``None``).
-    classifier_path: str | None = None
-    premium_threshold: int | None = Field(default=None, ge=100_000)
-    classifier_n_estimators: int | None = Field(default=None, ge=1)
-    classifier_max_depth: int | None = Field(default=None, ge=1, le=20)
-    classifier_learning_rate: float | None = Field(default=None, gt=0, le=1.0)
-    classifier_subsample: float | None = Field(default=None, gt=0, le=1.0)
-    classifier_colsample_bytree: float | None = Field(default=None, gt=0, le=1.0)
-    classifier_reg_lambda: float | None = Field(default=None, ge=0)
-
-    @model_validator(mode="after")
-    def _classifier_config_is_all_or_nothing(self) -> ModelConfig:
-        """A configured classifier needs every hyperparameter the trainer reads.
-
-        The trainer reads six of them unguarded and falls back to 150000 for
-        ``premium_threshold``, so a half-declared classifier either dies partway
-        through or trains against a boundary nobody configured. Enforced at API
-        startup and in CI, where ``ProjectConfig`` is loaded.
-        """
-        required = {
-            "premium_threshold": self.premium_threshold,
-            "classifier_n_estimators": self.classifier_n_estimators,
-            "classifier_max_depth": self.classifier_max_depth,
-            "classifier_learning_rate": self.classifier_learning_rate,
-            "classifier_subsample": self.classifier_subsample,
-            "classifier_colsample_bytree": self.classifier_colsample_bytree,
-            "classifier_reg_lambda": self.classifier_reg_lambda,
-        }
-        if self.classifier_path:
-            missing = sorted(name for name, value in required.items() if value is None)
-            if missing:
-                raise ValueError(f"classifier_path is set but these classifier settings are missing: {missing}")
-        return self
+    # Premium-tier classifier head. Required together — the trainer trains both
+    # heads. A configured artefact that is missing on disk still degrades to
+    # ``p_above_premium_threshold: None``.
+    classifier_path: str = Field(min_length=1)
+    premium_threshold: int = Field(ge=100_000)
+    classifier_n_estimators: int = Field(ge=1)
+    classifier_max_depth: int = Field(ge=1, le=20)
+    classifier_learning_rate: float = Field(gt=0, le=1.0)
+    classifier_subsample: float = Field(gt=0, le=1.0)
+    classifier_colsample_bytree: float = Field(gt=0, le=1.0)
+    classifier_reg_lambda: float = Field(ge=0)
 
 
 class VisualizationColors(BaseModel):
@@ -104,12 +81,10 @@ class VisualizationColors(BaseModel):
     count_seq: str
     gender_male: str
     gender_female: str
-    accent: str
 
 
 class VisualizationConfig(BaseModel):
     dpi: int = Field(ge=72, le=600)
-    figure_size: list[int]
     colors: VisualizationColors
 
 
@@ -118,6 +93,7 @@ class ProjectConfig(BaseModel):
 
     data: DataConfig
     thresholds: ThresholdsConfig
+    drift: DriftConfig
     model: ModelConfig
     visualization: VisualizationConfig
     education_order: dict[str, int]

@@ -4,6 +4,7 @@ Uses FastAPI's TestClient (synchronous, no server needed).
 Run: pytest tests/test_api.py -v
 """
 
+import inspect
 from unittest.mock import MagicMock
 
 import pytest
@@ -335,6 +336,31 @@ class TestPredictBatch:
         assert "predicted_p90" in item
         assert item["predicted_p10"] <= item["predicted_p50"] <= item["predicted_p90"]
 
+    @pytest.mark.parametrize("size", [1, 2, 3, 20, 200])
+    @pytest.mark.parametrize("hole", [0, -1, "middle"])
+    def test_incomplete_batch_raises_rather_than_shortening(self, size, hole):
+        """One result per input item, whichever item went missing."""
+        index = size // 2 if hole == "middle" else hole % size
+        responses = [f"item{i}" for i in range(size)]
+        responses[index] = None
+        with pytest.raises(RuntimeError, match="incomplete"):
+            api_main._complete_batch(responses)
+
+    def test_complete_batch_preserves_order(self):
+        filled = ["first", "second", "third"]
+        assert api_main._complete_batch(filled) == filled
+
+    def test_the_route_actually_calls_the_completeness_check(self, client, base_payload, monkeypatch):
+        """Testing the helper alone leaves the wiring unproven: a check whose
+        result is never consulted looks identical to one that is enforced."""
+
+        def _refuse(_responses):
+            raise RuntimeError("completeness check reached")
+
+        monkeypatch.setattr(api_main, "_complete_batch", _refuse)
+        with pytest.raises(RuntimeError, match="completeness check reached"):
+            client.post("/predict/batch", json={"items": [base_payload]})
+
 
 # ── Drift Endpoint ───────────────────────────────────────────────────────────
 
@@ -358,6 +384,27 @@ class TestDriftEndpoint:
         assert data.get("observations", 0) >= 35
         assert "features" in data
 
+    @pytest.mark.parametrize(("route", "age"), [("/predict", 41), ("/predict/batch", 43)])
+    def test_every_scored_row_observes_every_baseline_feature(self, client, base_payload, route, age):
+        """A feature the encoder stops emitting is one the monitor can never rule
+        on, so no window reaches a clean verdict again."""
+        monitor = api_main.state.drift_monitor
+        before = len(monitor.buffer)
+        payload = {**base_payload, "age": age}
+        body = {"items": [payload]} if route.endswith("batch") else payload
+        assert client.post(route, json=body).status_code == 200
+
+        recorded = list(monitor.buffer)[before:]
+        assert recorded, f"{route} scored a row without observing it"
+        for observation in recorded:
+            missing = set(monitor.baseline) - set(observation)
+            assert not missing, f"{route} observed without {sorted(missing)} — /drift can never rule on them"
+
+    def test_drift_is_sync_so_blocking_redis_leaves_the_loop_free(self):
+        """check_drift reads the window over the blocking Redis client."""
+        endpoints = {r.path: r.endpoint for r in app.routes if hasattr(r, "endpoint")}
+        assert not inspect.iscoroutinefunction(endpoints["/drift"])
+
 
 # ── Fallback-means counter ───────────────────────────────────────────────────
 
@@ -380,6 +427,19 @@ class TestFallbackMeansCounter:
         r = client.post("/predict", json=payload)
         assert r.status_code == 200
         assert api_main.FALLBACK_MEANS_USED._value.get() == before
+
+    @pytest.mark.parametrize("route", ["/predict", "/predict/batch"], ids=["single", "batch"])
+    def test_the_served_prediction_moves_with_the_loaded_fallback(self, client, base_payload, monkeypatch, route):
+        """Entering the fallback branch is not enough — the loaded mean has to reach the model."""
+        monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
+
+        def served(fallback: float) -> float:
+            monkeypatch.setattr(api_main.state, "occ_fallback", fallback)
+            if route == "/predict":
+                return client.post(route, json=base_payload).json()["predicted_p50"]
+            return client.post(route, json={"items": [base_payload]}).json()["items"][0]["predicted_p50"]
+
+        assert served(90_000.0) != served(250_000.0), "the route ignores the loaded occupation fallback"
 
     def test_batch_counts_each_fallback_item(self, client, base_payload, monkeypatch):
         monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)

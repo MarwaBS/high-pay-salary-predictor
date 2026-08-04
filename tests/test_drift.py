@@ -6,10 +6,14 @@ Run: pytest tests/test_drift.py -v
 
 import json
 import math
+from pathlib import Path
 
 import pytest
 
-from api.drift import DriftMonitor, save_baseline_stats
+from api.drift import MIN_WINDOW_FOR_VERDICT, DriftMonitor, save_baseline_stats
+from config_schema import ProjectConfig
+
+CONFIGURED_WINDOW = ProjectConfig.from_yaml(Path(__file__).parent.parent / "config.yaml").drift.window
 
 
 @pytest.fixture
@@ -84,9 +88,9 @@ class TestDriftDetection:
             monitor.observe({"Age": 40.0})  # Education_Ord never observed
         report = monitor.check_drift()
         assert report["features"]["Education_Ord"]["n_observed"] == 0
-        assert report["features"]["Education_Ord"]["drifted"] is False
         assert report["features"]["Education_Ord"]["current_mean"] is None
-        assert report["any_drifted"] is False
+        assert report["features"]["Education_Ord"]["drifted"] is None
+        assert report["any_drifted"] is None
 
     def test_drift_clears_after_normal_observations(self, baseline_stats):
         """Drift flag should clear when window fills with normal data."""
@@ -106,21 +110,78 @@ class TestDriftDetection:
 
 class TestDriftEdgeCases:
     def test_insufficient_observations(self, monitor):
-        """Under 30 observations should return empty features with message."""
+        """Below the floor: no features scored, and the message names the shortfall."""
         for _ in range(10):
             monitor.observe({"Age": 70.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
         assert report["features"] == {}
-        assert "Need at least 30" in report.get("message", "")
-        assert not report["any_drifted"]
+        assert f"Need at least {MIN_WINDOW_FOR_VERDICT}" in report.get("message", "")
+        assert report["any_drifted"] is None
 
-    def test_exactly_30_observations_reports(self, monitor):
-        """Exactly 30 observations should produce a drift report."""
-        for _ in range(30):
+    def test_the_gate_reads_the_constant_rather_than_a_literal(self, monkeypatch, baseline_stats):
+        """Moving the constant must move the gate, or it is a rename and the
+        derivation beside it defends nothing."""
+        monkeypatch.setattr("api.drift.MIN_WINDOW_FOR_VERDICT", MIN_WINDOW_FOR_VERDICT + 10)
+        mon = DriftMonitor(baseline_stats, window=100)
+        for _ in range(MIN_WINDOW_FOR_VERDICT + 5):
+            mon.observe({"Age": 40.0, "Education_Ord": 2.0})
+        assert mon.check_drift()["any_drifted"] is None
+
+    def test_exactly_at_the_floor_reports(self, monitor):
+        """At the floor a verdict is issued — the gate is ``<``, not ``<=``."""
+        for _ in range(MIN_WINDOW_FOR_VERDICT):
             monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
-        assert "features" in report
         assert len(report["features"]) == 2
+
+    def _sparse_window(self, baseline_stats, seen: int, window: int = 500):
+        """Fill a window in which ``Education_Ord`` is observed ``seen`` times."""
+        mon = DriftMonitor(baseline_stats, window=window)
+        for i in range(window):
+            obs = {"Age": 40.0}
+            if i < seen:
+                obs["Education_Ord"] = 99.0  # far from baseline, if it were testable
+            mon.observe(obs)
+        return mon.check_drift()
+
+    def test_a_feature_too_sparse_to_test_cannot_be_ruled_on(self, baseline_stats):
+        """A long window does not make every feature in it a large sample."""
+        report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT - 1)
+        edu = report["features"]["Education_Ord"]
+        assert edu["n_observed"] == MIN_WINDOW_FOR_VERDICT - 1
+        assert edu["drifted"] is None
+        assert edu["p_value"] is None, "an unruled feature must not publish a score"
+        assert report["any_drifted"] is None, "never a clean False while a feature went untested"
+
+    def test_the_same_feature_is_ruled_on_once_it_reaches_the_floor(self, baseline_stats):
+        """The boundary is ``<``, and the sparse branch is not a permanent mute."""
+        report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT)
+        edu = report["features"]["Education_Ord"]
+        assert edu["n_observed"] == MIN_WINDOW_FOR_VERDICT
+        assert edu["drifted"] is True, "at the floor the shift is real and must be reported"
+        assert report["any_drifted"] is True
+
+    def test_a_window_where_no_feature_reached_the_floor_scores_nothing(self, baseline_stats):
+        """The correction counts features that can be ruled on, not seen."""
+        mon = DriftMonitor(baseline_stats, window=100)
+        for i in range(100):
+            obs = {}
+            if i < MIN_WINDOW_FOR_VERDICT - 1:
+                obs["Age"] = 99.0
+            if i < 5:
+                obs["Education_Ord"] = 99.0
+            mon.observe(obs)
+        report = mon.check_drift()
+        assert report["any_drifted"] is None
+        assert report["features"] == {}, "no feature reached the floor, so none may carry a score"
+        assert str(MIN_WINDOW_FOR_VERDICT) in report["message"]
+
+    def test_the_per_feature_floor_reads_the_constant_rather_than_a_literal(self, monkeypatch, baseline_stats):
+        """Moving the constant must move the per-feature gate with it."""
+        monkeypatch.setattr("api.drift.MIN_WINDOW_FOR_VERDICT", MIN_WINDOW_FOR_VERDICT + 10)
+        report = self._sparse_window(baseline_stats, seen=MIN_WINDOW_FOR_VERDICT)
+        assert report["features"]["Education_Ord"]["drifted"] is None
+        assert report["any_drifted"] is None
 
     def test_zero_std_feature(self):
         """Feature with zero std in baseline should not crash."""
@@ -144,12 +205,12 @@ class TestDriftEdgeCases:
 # ── Sensitivity at the real operating window ─────────────────────────────────
 
 
-class TestDriftSensitivityAtWindow500:
+class TestDriftSensitivityAtTheConfiguredWindow:
     """The effect-size floor must suppress benign wobble at the real window.
 
     With the SE z-score alone, the alarm fires whenever the window mean shifts by
-    more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the default
-    window=500. Production traffic is never i.i.d. from the training baseline, so
+    more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the configured
+    500. Production traffic is never i.i.d. from the training baseline, so
     significance alone alarms on benign sampling wobble; ``min_effect_size`` gates
     it with a practical effect-size floor on TOP of significance.
     """
@@ -161,8 +222,8 @@ class TestDriftSensitivityAtWindow500:
         "Hourly_Mean": {"mean": 65.7, "std": 13.7, "min": 48.0, "max": 123.0},
     }
 
-    def test_iid_from_baseline_at_n500_does_not_alarm(self):
-        """Drawing 500 observations straight from the baseline distribution — i.e.
+    def test_iid_from_baseline_at_the_configured_window_does_not_alarm(self):
+        """Drawing a full window straight from the baseline distribution — i.e.
         NO real drift — must not alarm. Without the effect-size floor these four
         tests alarm on ≈4.5% of windows even with the Šidák correction in place,
         and on 1 - (1 - 0.0455)^4 ≈ 17% if the correction goes too."""
@@ -172,22 +233,22 @@ class TestDriftSensitivityAtWindow500:
         false_alarms = 0
         trials = 25
         for _ in range(trials):
-            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
-            for _ in range(500):
+            mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
+            for _ in range(CONFIGURED_WINDOW):
                 mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
             if mon.check_drift()["any_drifted"]:
                 false_alarms += 1
         # Allow a hair of slack for the rare tail, but it must be near-zero.
         assert false_alarms <= 1, f"{false_alarms}/{trials} i.i.d. windows alarmed"
 
-    def test_genuine_consistent_shift_still_alarms_at_n500(self):
+    def test_genuine_consistent_shift_still_alarms_at_the_configured_window(self):
         """A consistent >= min_effect_size shift in a feature mean must still be
         caught at the real window — the fix must not make the monitor deaf."""
         import numpy as np
 
         rng = np.random.default_rng(7)
-        mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
-        for _ in range(500):
+        mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
+        for _ in range(CONFIGURED_WINDOW):
             obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
             obs["Age"] = 40.0 + 0.5 * 10.0  # consistent +0.5 std shift on Age
             mon.observe(obs)
@@ -198,16 +259,21 @@ class TestDriftSensitivityAtWindow500:
 
     def test_significant_but_trivial_effect_does_not_alarm(self):
         """The precise failure mode: a statistically significant (SE z > 2) but
-        practically trivial (< 0.2 std) mean shift must NOT alarm at n=500."""
-        # +0.1 std on Age: at n=500 the SE z-score is 0.1*sqrt(500) ~= 2.24 > 2
-        # (significant), but the effect size is 0.1 < 0.2 (trivial) -> no alarm.
-        mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
-        for _ in range(500):
-            mon.observe({"Age": 41.0})  # exactly +0.1 std, zero sample variance
+        practically trivial mean shift must NOT alarm at the real window."""
+        mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
+        # Halfway between what significance alone detects and the effect floor,
+        # so the shift is significant and trivial at whatever window is configured
+        # — a fixed 0.1 would stop being significant below n=401 and fail there
+        # for a reason that has nothing to do with what this test checks.
+        significant_from = mon.alert_threshold / math.sqrt(CONFIGURED_WINDOW)
+        effect = (significant_from + mon.min_effect_size) / 2
+        assert significant_from < effect < mon.min_effect_size, "no trivial-yet-significant shift exists here"
+        for _ in range(CONFIGURED_WINDOW):
+            mon.observe({"Age": self.BASELINE["Age"]["mean"] + effect * self.BASELINE["Age"]["std"]})
         report = mon.check_drift()
         age = report["features"]["Age"]
-        assert age["z_score"] > 2.0, "shift should be statistically significant"
-        assert age["effect_size"] == pytest.approx(0.1, abs=1e-6)
+        assert age["z_score"] > mon.alert_threshold, "shift should be statistically significant"
+        assert age["effect_size"] == pytest.approx(effect, abs=1e-3), "reported effect is rounded to 3dp"
         assert age["drifted"] is False, "trivial effect must not alarm"
 
 
@@ -225,7 +291,7 @@ class TestDriftRampUpFalseAlarms:
     The monitor therefore Šidák-corrects the per-feature α across the k tested
     features AND ramp-scales the effect floor (max(0.2, z·√(2/n))), bounding the
     familywise false-alarm rate at ≈ erfc(2/√2) ≈ 4.6% at ANY window fill —
-    without touching the n=500 operating point (see TestDriftSensitivityAtWindow500).
+    without touching the configured operating point (see TestDriftSensitivityAtTheConfiguredWindow).
     """
 
     # Ten features, mirroring the width of the production baseline — the
@@ -249,26 +315,37 @@ class TestDriftRampUpFalseAlarms:
         rng = np.random.default_rng(seed)
         false_alarms = 0
         for _ in range(trials):
-            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            mon = DriftMonitor(self.BASELINE, window=500)  # shipped tuning, not a fixed threshold
             for _ in range(n_obs):
                 mon.observe({f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()})
             if mon.check_drift()["any_drifted"]:
                 false_alarms += 1
         return false_alarms / trials
 
-    def test_stationary_n30_familywise_false_alarm_rate_bounded(self):
-        """At the 30-observation reporting floor, i.i.d.-from-baseline windows
-        (NO real drift) must false-alarm at ≲ the designed familywise ≈4.6% —
-        allow 7% for binomial noise over 150 trials."""
-        rate = self._familywise_false_alarm_rate(n_obs=30, trials=150, seed=20260704)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=30 exceeds 7% bound"
+    #: Familywise level the detector is allowed to design for. A drift alarm is
+    #: a page: at the conventional 5% one stationary window in twenty wakes
+    #: someone, and looser than that the endpoint is noise.
+    DESIGN_CEILING = 0.05
+
+    def _bound(self, trials: int) -> float:
+        """Two binomial standard deviations above the level the shipped tuning
+        designs for — a bound on the measurement, not a second design choice."""
+        designed = math.erfc(DriftMonitor(self.BASELINE, window=1).alert_threshold / math.sqrt(2.0))
+        assert designed <= self.DESIGN_CEILING, f"the shipped alert_threshold designs for {designed:.1%}"
+        return designed + 2 * math.sqrt(designed * (1 - designed) / trials)
+
+    def test_stationary_at_the_floor_familywise_false_alarm_rate_bounded(self):
+        """At the reporting floor, i.i.d.-from-baseline windows (NO real drift)
+        must false-alarm at ≲ the designed familywise level."""
+        rate = self._familywise_false_alarm_rate(n_obs=MIN_WINDOW_FOR_VERDICT, trials=150, seed=20260704)
+        assert rate <= self._bound(150), f"familywise FA rate {rate:.1%} at the floor exceeds {self._bound(150):.1%}"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
         """Same bound at n=100 — the stress point where the fixed 0.2σ floor
         exactly coincides with the uncorrected z>2 bound, so the effect floor
         adds no protection and only the Šidák α-correction bounds the union."""
         rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
-        assert rate <= 0.07, f"familywise FA rate {rate:.1%} at n=100 exceeds 7% bound"
+        assert rate <= self._bound(150), f"familywise FA rate {rate:.1%} at n=100 exceeds {self._bound(150):.1%}"
 
     def test_mid_window_real_drift_still_fires(self):
         """Deaf-check: the ramp-up conservatism must NOT silence real drift
@@ -280,7 +357,7 @@ class TestDriftRampUpFalseAlarms:
         detections = 0
         trials = 25
         for _ in range(trials):
-            mon = DriftMonitor(self.BASELINE, window=500, alert_threshold=2.0)
+            mon = DriftMonitor(self.BASELINE, window=500)
             for _ in range(150):
                 obs = {f: float(rng.normal(s["mean"], s["std"])) for f, s in self.BASELINE.items()}
                 obs["Age"] += 5.0  # +0.5 baseline std
@@ -470,7 +547,7 @@ class _ReadFailingRedis(_FakeRedis):
     """Writes succeed (shared list populates) but reads raise — models a Redis
     partition where the authoritative window cannot be loaded."""
 
-    def lrange(self, key, start, end):
+    def lrange(self, _key, _start, _end):
         raise ConnectionError("simulated redis read failure")
 
 
@@ -513,7 +590,6 @@ class TestDriftBackendFailureIsLoud:
         # The read fell back to the empty local deque: the verdict must be
         # withheld, not a confident "no drift".
         assert report["degraded"] is True
-        assert report["status"] == "unavailable"
         assert report["backend"] == "memory", "must name the path that actually served the read"
         assert report["any_drifted"] is None, "never a clean False from an unloadable window"
         assert report["features"] == {}
@@ -556,7 +632,6 @@ class TestDriftBackendFailureIsLoud:
 
         report = mon.check_drift()
         assert report["degraded"] is True
-        assert report["status"] == "unavailable"
         assert report["any_drifted"] is None, "never a clean False while observations are being dropped"
         assert report["dropped_observations"] == 200
 
@@ -631,7 +706,7 @@ class TestBaselinePersistence:
         path = tmp_path / "baseline.json"
         save_baseline_stats(data, str(path))
 
-        monitor = DriftMonitor.from_baseline(str(path))
+        monitor = DriftMonitor.from_baseline(str(path), window=100)
         assert "Age" in monitor.baseline
         assert monitor.baseline["Age"]["mean"] == pytest.approx(40.0, abs=0.01)
         assert monitor.baseline["Age"]["std"] == pytest.approx(8.1650, abs=0.01)
@@ -648,4 +723,143 @@ class TestBaselinePersistence:
     def test_from_baseline_missing_file_raises(self, tmp_path):
         """Loading a nonexistent baseline should raise FileNotFoundError."""
         with pytest.raises(FileNotFoundError):
-            DriftMonitor.from_baseline(str(tmp_path / "nonexistent.json"))
+            DriftMonitor.from_baseline(str(tmp_path / "nonexistent.json"), window=100)
+
+
+def _withholding_reports(baseline_stats) -> dict[str, dict]:
+    """One report per way ``check_drift`` can decline to rule."""
+    degraded = DriftMonitor(baseline_stats, window=200, redis_client=_ReadFailingRedis())
+    for _ in range(200):
+        degraded.observe({"Age": 999.0, "Education_Ord": 2.0})
+
+    short = DriftMonitor(baseline_stats, window=100)
+    for _ in range(MIN_WINDOW_FOR_VERDICT - 1):
+        short.observe({"Age": 40.0, "Education_Ord": 2.0})
+
+    # A renamed feature is the realistic trigger: the window fills, but no key
+    # matches, so every feature would otherwise score n_observed=0.
+    renamed = DriftMonitor(baseline_stats, window=100)
+    for _ in range(40):
+        renamed.observe({"Age_renamed": 40.0, "Education_Ord_renamed": 2.0})
+
+    sparse = DriftMonitor(baseline_stats, window=100)
+    for i in range(100):
+        obs = {"Age": 40.0}
+        if i < MIN_WINDOW_FOR_VERDICT - 1:
+            obs["Education_Ord"] = 99.0
+        sparse.observe(obs)
+
+    return {
+        "backend unreadable": degraded.check_drift(),
+        "window below the floor": short.check_drift(),
+        "no baseline feature observed": renamed.check_drift(),
+        "one feature too sparse": sparse.check_drift(),
+    }
+
+
+class TestVerdictWithheldWhenNothingTestable:
+    """A window that could not be tested must not read as a clean pass.
+
+    Every branch returns ``any_drifted: None``; asserting ``not any_drifted``
+    would pass on ``False`` too, so these assert identity.
+    """
+
+    def test_every_withholding_branch_withholds(self, baseline_stats):
+        for reason, report in _withholding_reports(baseline_stats).items():
+            assert report["any_drifted"] is None, reason
+
+    def test_every_withholding_branch_says_why(self, baseline_stats):
+        for reason, report in _withholding_reports(baseline_stats).items():
+            assert report.get("message"), f"{reason}: a withheld verdict must name its cause"
+
+    def test_the_withholding_branches_agree_on_what_they_return(self, baseline_stats):
+        """One shape, or a caller must special-case which reason it got."""
+        reports = _withholding_reports(baseline_stats)
+        shapes = {reason: frozenset(report) for reason, report in reports.items()}
+        assert len(set(shapes.values())) == 1, f"withholding branches return different keys: {shapes}"
+
+
+# ── Configured window vs the ramp-scaled effect floor ────────────────────────
+
+
+class TestConfiguredWindowClearsTheEffectFloorHandover:
+    """``config.yaml::drift.window`` must put normal operation past the ramp.
+
+    Below the handover the ramp term rules and the advertised
+    ``min_effect_size`` sensitivity is unreachable — a shift just over the
+    advertised floor goes unreported. The probe is exactly that limiting shift,
+    so the window at which it stops being masked IS the handover; a bigger probe
+    would clear the ramp early and pass at windows the bound forbids.
+    """
+
+    BASELINE = {"Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0}}
+
+    def _monitor(self, window: int, **tuning: float) -> DriftMonitor:
+        """Built the way ``api.main`` builds it: tuning comes from the defaults."""
+        return DriftMonitor(self.BASELINE, window=window, **tuning)
+
+    @property
+    def handover(self) -> int:
+        return self._monitor(1).effect_floor_handover()
+
+    def _verdict_at(self, window: int, **tuning: float) -> bool:
+        mon = self._monitor(window, **tuning)
+        handover = mon.effect_floor_handover()
+        assert handover > MIN_WINDOW_FOR_VERDICT, (
+            f"at this tuning the handover ({handover}) is under the verdict floor, so a withheld "
+            f"verdict — not the ramp — would decide the result"
+        )
+        # Halfway between the advertised floor and the ramp one observation short
+        # of the handover — the only band that is masked below the handover and
+        # reported at it, whatever the tuning makes those two values.
+        ramp_below = mon.alert_threshold * math.sqrt(2.0 / (handover - 1))
+        probe = (mon.min_effect_size + ramp_below) / 2
+        for _ in range(window):
+            mon.observe({"Age": self.BASELINE["Age"]["mean"] + probe * self.BASELINE["Age"]["std"]})
+        return bool(mon.check_drift()["any_drifted"])
+
+    def test_the_advertised_sensitivity_is_reached_at_the_handover(self):
+        assert self._verdict_at(self.handover) is True
+
+    def test_one_observation_short_of_the_handover_still_masks_it(self):
+        """Pins where the ramp stops binding, so the bound below is a real line."""
+        assert self._verdict_at(self.handover - 1) is False
+
+    def test_the_configured_window_is_not_below_the_handover(self):
+        assert CONFIGURED_WINDOW >= self.handover, (
+            f"config.yaml::drift.window={CONFIGURED_WINDOW} cannot reach the advertised "
+            f"sensitivity; the ramp binds until {self.handover}"
+        )
+
+    def test_the_configured_window_reports_that_shift(self):
+        assert self._verdict_at(CONFIGURED_WINDOW) is True
+
+    # Exact, and fractional on either side of a half, so rounding in any
+    # direction but up is visible.
+    @pytest.mark.parametrize("min_effect_size", [0.2, 0.32, 0.35, 0.3])
+    def test_the_handover_is_the_first_window_the_fixed_floor_binds_at(self, min_effect_size):
+        """The handover is where the two floors cross, so it is asserted as that
+        crossing rather than as a number that holds at one tuning."""
+        mon = self._monitor(1, min_effect_size=min_effect_size)
+        crossing = mon.effect_floor_handover()
+        assert mon.alert_threshold * math.sqrt(2.0 / crossing) <= min_effect_size, (
+            f"the ramp still rules at n={crossing}"
+        )
+        assert mon.alert_threshold * math.sqrt(2.0 / (crossing - 1)) > min_effect_size, (
+            f"the ramp had already yielded at n={crossing - 1}"
+        )
+
+    def test_a_fractional_handover_masks_the_shift_one_observation_below_it(self):
+        """The crossing above is arithmetic; this is the behaviour it buys, at a
+        tuning whose exact handover (88.9) is not a whole number."""
+        tuning = {"min_effect_size": 0.3}
+        handover = self._monitor(1, **tuning).effect_floor_handover()
+        assert self._verdict_at(handover - 1, **tuning) is False
+        assert self._verdict_at(handover, **tuning) is True
+
+
+class TestVerdictFloorStaysInTheNormalApproximation:
+    def test_the_floor_is_not_lowered_below_the_clt_rule_of_thumb(self):
+        """A minimum, not an equality: raising it only withholds more verdicts,
+        while lowering it rules on windows too small for the normal tail."""
+        assert MIN_WINDOW_FOR_VERDICT >= 30

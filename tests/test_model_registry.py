@@ -1,33 +1,27 @@
-"""The model registry must ship every artefact the API loads.
+"""Every artefact ``config.yaml`` declares must survive a registry deploy.
 
-The GitHub Release published by ``.github/workflows/train.yml`` IS the model
-registry: the k8s initContainer (``k8s/api-deployment.yaml``) downloads the
-serving artefacts from it on every deploy/rollback. If an artefact the API
-loads at startup is absent from the release (or from the initContainer's
-download list), a registry-based deploy silently ships without it: an artefact
-present in git and baked into the Space image but absent from the release and
-the k8s download list is lost on any rollback, so the premium-tier classifier
-head disappears and every ``p_above_premium_threshold`` returns null.
-
-These tests machine-check that the release list and the initContainer download
-list both cover the artefacts config.yaml tells the API to load, so the three
-can never drift apart again.
+The GitHub Release ``train.yml`` publishes is the model registry, and the k8s
+initContainers stage from it into an ``emptyDir`` on every pod start. An artefact
+missing from either list is present in git and absent at runtime.
 """
 
 from __future__ import annotations
 
+import ast
 import re
-from pathlib import Path
+import shlex
+import subprocess
+from pathlib import Path, PurePosixPath
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Artefacts the API loads directly, NOT via a config.yaml `*_path` key, so they
-# won't be discovered by scanning the model config. baseline_stats.json is
-# loaded by api/main.py for the drift monitor; assert that reference exists so
-# this set stays honest if the loader changes.
-_NON_CONFIG_SERVING_ARTIFACTS = {"baseline_stats.json"}
+# The directory a serving stage's relative COPY destinations resolve against,
+# and so the one each app derives its artefact paths from. The k8s mountPaths
+# are written for it; a stage that moves leaves them pointing nowhere.
+IMAGE_WORKDIR = PurePosixPath("/app")
 
 
 def _config_serving_artifacts() -> set[str]:
@@ -40,14 +34,8 @@ def _config_serving_artifacts() -> set[str]:
 
 
 def _required_serving_artifacts() -> set[str]:
-    required = _config_serving_artifacts() | _NON_CONFIG_SERVING_ARTIFACTS
-    # Keep the non-config set honest: baseline_stats.json must actually be loaded.
-    main_src = (REPO_ROOT / "api" / "main.py").read_text(encoding="utf-8")
-    assert "baseline_stats.json" in main_src, (
-        "baseline_stats.json is declared a serving artefact but api/main.py no "
-        "longer references it — update _NON_CONFIG_SERVING_ARTIFACTS"
-    )
-    return required
+    """Every served artefact is discoverable from the model config alone."""
+    return _config_serving_artifacts()
 
 
 def _release_artifacts() -> set[str]:
@@ -61,13 +49,44 @@ def _release_artifacts() -> set[str]:
     raise AssertionError("no action-gh-release step found in train.yml")
 
 
-def _k8s_download_artifacts() -> set[str]:
-    """Basenames the api-deployment initContainer curls into /shared-models."""
-    text = (REPO_ROOT / "k8s" / "api-deployment.yaml").read_text(encoding="utf-8")
-    # The initContainer stages artefacts with `curl ... -o /shared-models/<name>`.
-    names = set(re.findall(r"-o\s+/shared-models/(\S+)", text))
-    assert names, "no /shared-models downloads found in k8s/api-deployment.yaml"
-    return names
+def _app_model_dir() -> PurePosixPath:
+    """Absolute directory the app resolves config.yaml's model artefacts from."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
+    parents = {
+        PurePosixPath(v).parent for v in cfg["model"].values() if isinstance(v, str) and v.endswith((".ubj", ".json"))
+    }
+    assert len(parents) == 1, f"model artefacts span several directories: {sorted(map(str, parents))}"
+    return IMAGE_WORKDIR / parents.pop()
+
+
+def _staged_for_the_app(manifest: str) -> set[str]:
+    """Basenames a deployment's initContainer leaves where the app reads them.
+
+    Follows the volume rather than the text: a `-o` inside a shell comment
+    writes nothing, and a file written to a volume the app mounts elsewhere is
+    staged into a directory the app never opens.
+    """
+    spec = yaml.safe_load((REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8"))["spec"]["template"]["spec"]
+    (init,) = spec["initContainers"]
+    assert init["command"] == ["sh", "-c"], f"k8s/{manifest} stages artefacts some other way — this check is stale"
+
+    staging = {PurePosixPath(m["mountPath"]): m["name"] for m in init["volumeMounts"]}
+    app_dir = _app_model_dir()
+    readable = {
+        m["name"]
+        for c in spec["containers"]
+        for m in c.get("volumeMounts", [])
+        if PurePosixPath(m["mountPath"]) == app_dir
+    }
+
+    staged = set()
+    for line in "\n".join(init["args"]).splitlines():
+        tokens = shlex.split(line, comments=True)
+        for flag, target in zip(tokens, tokens[1:], strict=False):
+            written = PurePosixPath(target)
+            if flag == "-o" and staging.get(written.parent) in readable:
+                staged.add(written.name)
+    return staged
 
 
 def test_release_publishes_every_serving_artifact() -> None:
@@ -81,13 +100,56 @@ def test_release_publishes_every_serving_artifact() -> None:
     )
 
 
-def test_k8s_initcontainer_downloads_every_serving_artifact() -> None:
-    required = _required_serving_artifacts()
-    downloaded = _k8s_download_artifacts()
-    missing = required - downloaded
+@pytest.mark.parametrize("manifest", ["api-deployment.yaml", "dashboard-deployment.yaml"])
+def test_every_pod_stages_every_declared_serving_artifact(manifest: str) -> None:
+    """Both pods stage the whole declared set, not the subset each is thought to need.
+
+    A per-pod list has to be kept in step with what that pod's code loads, which
+    no check can read off the source. The volume is an emptyDir, so an artefact
+    absent from the list is absent at runtime; fetching a few unused files costs
+    one download, guessing wrong crashes a pod.
+    """
+    missing = _required_serving_artifacts() - _staged_for_the_app(manifest)
     assert not missing, (
-        f"k8s initContainer does not download {sorted(missing)} — the API pod "
-        f"would start without them. Add a curl for each to api-deployment.yaml."
+        f"k8s {manifest} does not leave {sorted(missing)} in {_app_model_dir()} — the pod "
+        f"mounts an emptyDir, so anything the initContainer does not write there is absent "
+        f"at runtime. Add a curl for each, and check both mountPaths still agree."
+    )
+
+
+def _stage_workdirs() -> dict[str, str]:
+    """WORKDIR in effect at the end of each named Dockerfile stage."""
+    stage = None
+    workdirs: dict[str, str] = {}
+    for line in (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
+        if named := re.match(r"^FROM\s+\S+\s+AS\s+(\S+)", line):
+            stage = named.group(1)
+        elif (workdir := re.match(r"^WORKDIR\s+(\S+)", line)) and stage:
+            workdirs[stage] = workdir.group(1)
+    assert workdirs, "no named build stages found in the Dockerfile — this parser is stale"
+    return workdirs
+
+
+def _served_stage(manifest: str) -> str:
+    """The Dockerfile stage a deployment's app container runs."""
+    spec = yaml.safe_load((REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8"))["spec"]["template"]["spec"]
+    (image,) = {c["image"] for c in spec["containers"]}
+    return PurePosixPath(image.rsplit(":", 1)[0]).name
+
+
+@pytest.mark.parametrize("manifest", ["api-deployment.yaml", "dashboard-deployment.yaml"])
+def test_the_image_each_pod_runs_works_from_where_its_mountpaths_assume(manifest: str) -> None:
+    """Both images are checked, because both manifests mount for both.
+
+    Reading one stage covers one image, and the pod running the other fails at
+    startup with the manifest and the suite both looking correct.
+    """
+    stage = _served_stage(manifest)
+    workdirs = _stage_workdirs()
+    assert stage in workdirs, f"k8s/{manifest} runs an image with no matching Dockerfile stage: {stage!r}"
+    assert workdirs[stage] == str(IMAGE_WORKDIR), (
+        f"Dockerfile stage {stage!r} now works from {workdirs[stage]}, not {IMAGE_WORKDIR} — "
+        f"k8s/{manifest} mounts the artefacts at the old directory and the app will not find them."
     )
 
 
@@ -136,3 +198,29 @@ def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
         assert "ghcr.io/marwabs/high-pay-salary-predictor/" in text, (
             f"{manifest} must use the GHCR path CI publishes to (ghcr.io/marwabs/high-pay-salary-predictor/*)"
         )
+
+
+def _shipped_modules() -> list[str]:
+    """Every shipped module, from what git tracks — a directory list misses
+    nested packages that packaging still ships."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "*.py"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+    ).stdout.split("\0")
+    found = sorted(name for name in filter(None, listed) if not name.startswith("tests/"))
+    assert found, "no shipped modules discovered — the enumeration rotted"
+    return found
+
+
+@pytest.mark.parametrize("rel", _shipped_modules())
+def test_no_module_names_an_artefact_file(rel: str) -> None:
+    """Artefact paths come from config.yaml, and the release and k8s gates above
+    derive their coverage from it. A module naming a file directly drops that
+    artefact out of both gates while they stay green."""
+    declared = _config_serving_artifacts()
+    source = (REPO_ROOT / rel).read_text(encoding="utf-8")
+    named = {
+        node.value
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and Path(node.value).name in declared
+    }
+    assert not named, f"{rel} names artefact file(s) {sorted(named)} instead of reading config.yaml"

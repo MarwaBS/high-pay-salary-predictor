@@ -1,72 +1,14 @@
-"""
-scripts/train_quantile.py
--------------------------
-Train two XGBoost heads in a single pass:
+"""Train the multi-quantile regressor and the premium-tier classifier in one pass.
 
-1. **Quantile regressor** — predicts P10 / P50 / P90 of ``log1p(Annual
-   Income)`` via ``reg:quantileerror`` with
-   ``quantile_alpha=[0.10, 0.50, 0.90]``. Answers the "what income
-   range should I expect?" question.
-2. **Premium-tier classifier** — predicts ``P(Annual Income >=
-   premium_threshold)`` via ``binary:logistic``. Answers the "how
-   likely is this profile to cross the premium threshold?" question.
-   Threshold lives in ``config.yaml::model.premium_threshold`` (default
-   $150,000). Trained on the same engineered feature matrix as the
-   regressor to keep the two heads comparable.
+The regressor predicts P10/P50/P90 of ``log1p(Annual Income)`` via
+``reg:quantileerror``; the classifier predicts
+``P(Annual Income >= config.yaml::model.premium_threshold)`` on the same feature
+matrix. Both read their hyper-parameters from ``config.yaml::model`` with no
+fallback, and write to the paths declared there. See DESIGN_DECISIONS.md D-004
+for why there are two heads and why the classifier's label is scoped to the
+high-pay cohort.
 
-Why two heads, not one?
------------------------
-Within the $100K+ cohort, individual income has extreme within-group
-variance driven by unobserved factors (equity, bonuses, tenure, specific
-employer). No point estimator can resolve that — the regressor returns
-a calibrated quantile interval instead. The classifier head answers a
-*different* product question: given this profile, is the premium tier
-(>= $150K) even plausible? A caller needs *both* — "will I likely clear
-the bar?" plus "if so, what's the range?".
-
-Classifier scope
-----------------
-This file trains the premium-tier classifier *inside the existing
-high-pay cohort*. The label is ``Annual Income >= $150K`` — a
-well-defined, supportable binary task on the data that exists in the
-repo (roughly 40/60 class balance, see ``models/model_metrics.json``).
-
-A broader "is this profile above the $100K line at all?" membership
-classifier is deferred: it would require the *unfiltered* IPUMS Census
-microdata — a separate fetch with an IPUMS API key, not just a file in
-``Data/`` — and becomes a follow-up to this trainer once that raw file
-is added.
-
-No MLflow / Optuna dependencies — this trainer is deliberately lean so
-it can run on a CI worker or a dev machine without pulling an
-experiment-tracking stack. The regressor hyper-parameters are pinned in
-``config.yaml`` and chosen by ``scripts/tune.py``, which scores candidates on
-pinball loss under the quantile objective this trainer uses. The committed
-``models/tuning_study.json`` records that run.
-
-Artefacts saved
----------------
-  models/xgb_salary_model.ubj        multi-quantile XGBoost regressor
-                                     (primary path, loaded by the API
-                                     and dashboard via
-                                     config.yaml::model.model_path)
-  models/xgb_premium_classifier.ubj  binary XGBoost classifier head
-                                     (config.yaml::model.classifier_path)
-  models/model_metrics.json          quantile metrics (coverage, pinball
-                                     losses, crossings), point-estimate
-                                     metrics (P50 R²/MAE/RMSE), classifier
-                                     metrics (ROC-AUC, PR-AUC, Brier +
-                                     majority/logistic reference
-                                     baselines), AND stability mean±std of the
-                                     headline metrics across several seeds
-  models/baseline_stats.json         drift-monitor baseline
-  models/group_means.json            target-encoding lookup
-  models/feature_names.json          feature list
-
-Usage
------
-    python scripts/train_quantile.py
-    python scripts/train_quantile.py --config config.yaml
+Usage: ``python -m scripts.train_quantile [--config config.yaml]``
 """
 
 from __future__ import annotations
@@ -98,6 +40,7 @@ from xgboost import XGBClassifier, XGBRegressor
 
 from api import __version__ as SERVICE_VERSION
 from api.drift import save_baseline_stats
+from config_schema import ProjectConfig
 from pipeline import (
     FEATURES_FULL,
     compute_group_means,
@@ -125,6 +68,12 @@ logger = logging.getLogger(__name__)
 # (``predicted_p10``, ``predicted_p50``, ``predicted_p90``) and with any
 # downstream consumers.
 QUANTILE_ALPHAS: list[float] = [0.10, 0.50, 0.90]
+
+# Smallest slice that gets its own published fairness metric — subgroup
+# coverage below, classifier AUC further down. At n=30 a coverage rate near 0.8
+# already carries a 95% sampling interval of ±0.14, so thinner slices would
+# publish their own sampling noise as unfairness.
+MIN_SUBGROUP_SIZE = 30
 
 
 def parse_args() -> argparse.Namespace:
@@ -347,11 +296,9 @@ def _train_premium_classifier(
     """Fit the premium-tier head with the ``classifier_*`` config hyper-parameters.
 
     No ``scale_pos_weight``: at the ~40/60 class balance of this cohort the
-    imbalance is mild, and reweighting trades *probability calibration* (which
-    the API serves to callers as ``p_above_premium_threshold``) for a
-    negligible ranking gain. Honest, well-calibrated probabilities are worth
-    more here than a fractional AUC bump — the Brier score in the metrics
-    proves the served numbers mean what they claim.
+    imbalance is mild, and the head is served as a probability
+    (``p_above_premium_threshold``) rather than a ranking. The weighted variant
+    was not run, so this follows from the class balance, not from a measurement.
     """
     clf = XGBClassifier(
         objective="binary:logistic",
@@ -408,6 +355,10 @@ def main() -> None:
 
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
+
+    # Validate before training: the trainer produces the artefacts the API
+    # loads, so a config the API would refuse must not reach a model file.
+    ProjectConfig.model_validate(cfg)
 
     model_cfg = cfg["model"]
     edu_order = cfg["education_order"]
@@ -494,7 +445,7 @@ def main() -> None:
             continue
         for val in sorted(df_test[col].dropna().unique()):
             mask = (df_test[col] == val).to_numpy()
-            if mask.sum() < 30:
+            if mask.sum() < MIN_SUBGROUP_SIZE:
                 continue
             subgroup_hit = (y_test.values[mask] >= p10_dollar[mask]) & (y_test.values[mask] <= p90_dollar[mask])
             cov = float(subgroup_hit.mean())
@@ -507,7 +458,7 @@ def main() -> None:
     cv_r2_mean, cv_r2_std = _cross_val_r2(
         df_train_raw,
         seed=random_state,
-        n_splits=model_cfg.get("cv_folds", 5),
+        n_splits=model_cfg["cv_folds"],
         edu_order=edu_order,
         region_map=region_map,
         params=params,
@@ -522,7 +473,7 @@ def main() -> None:
     conformal_delta, n_conf_scores = _cross_conformal_delta(
         df_train_raw,
         seed=random_state,
-        n_splits=model_cfg.get("cv_folds", 5),
+        n_splits=model_cfg["cv_folds"],
         edu_order=edu_order,
         region_map=region_map,
         params=params,
@@ -545,7 +496,7 @@ def main() -> None:
     # matrix as the quantile regressor. Label: Annual Income >= the
     # premium threshold configured in config.yaml; hyper-parameters come
     # from config.yaml::model.classifier_* alongside the regressor's.
-    premium_threshold = int(model_cfg.get("premium_threshold") or 150_000)
+    premium_threshold = int(model_cfg["premium_threshold"])
     clf_params = {
         "n_estimators": model_cfg["classifier_n_estimators"],
         "max_depth": model_cfg["classifier_max_depth"],
@@ -617,7 +568,7 @@ def main() -> None:
             continue
         for val in sorted(df_test[col].dropna().unique()):
             mask = (df_test[col] == val).to_numpy()
-            if mask.sum() < 30:
+            if mask.sum() < MIN_SUBGROUP_SIZE:
                 continue
             y_sub = y_test_clf.values[mask]
             # Skip degenerate slices (all pos or all neg) — AUC is undefined
@@ -687,7 +638,7 @@ def main() -> None:
     # alongside the other artefacts below.
     features_path = ROOT / cfg["model"]["features_path"]
     group_means_path = ROOT / cfg["model"]["group_means_path"]
-    baseline_path = primary_model_path.parent / "baseline_stats.json"
+    baseline_path = ROOT / cfg["model"]["baseline_stats_path"]
     baseline_data = {feat: X_train[feat].tolist() for feat in FEATURES_FULL}
     save_baseline_stats(baseline_data, str(baseline_path))
 

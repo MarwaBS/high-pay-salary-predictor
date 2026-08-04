@@ -11,11 +11,9 @@ encoding, log/dollar-scale confusion).
 Run: pytest tests/test_integration.py -v
 """
 
-import numpy as np
 import pandas as pd
 import pytest
 from sklearn.metrics import r2_score
-from sklearn.model_selection import train_test_split
 
 from pipeline import (
     FEATURES_FULL,
@@ -23,14 +21,23 @@ from pipeline import (
     engineer_features,
     load_group_means,
     save_group_means,
+    train_test_positions,
 )
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def _make_split(df_raw: pd.DataFrame, edu_order: dict, region_map: dict):
+def _split_rows(df_raw: pd.DataFrame, cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """The project's one split, on the configured parameters."""
+    train_pos, test_pos = train_test_positions(
+        len(df_raw), test_size=cfg["model"]["test_size"], random_state=cfg["model"]["random_state"]
+    )
+    return df_raw.iloc[train_pos], df_raw.iloc[test_pos]
+
+
+def _make_split(df_raw: pd.DataFrame, edu_order: dict, region_map: dict, cfg: dict):
     """Split raw data, compute group means from train, engineer both splits."""
-    train_raw, test_raw = train_test_split(df_raw, test_size=0.2, random_state=42)
+    train_raw, test_raw = _split_rows(df_raw, cfg)
     gm = compute_group_means(train_raw)
     df_train = engineer_features(
         train_raw, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"]
@@ -47,15 +54,16 @@ def _make_split(df_raw: pd.DataFrame, edu_order: dict, region_map: dict):
 class TestSplitThenEngineer:
     """Group means must be derived from train split only."""
 
-    def test_train_test_sizes(self, df, edu_order, region_map):
-        df_train, df_test, _ = _make_split(df, edu_order, region_map)
+    def test_train_test_sizes(self, df, edu_order, region_map, cfg):
+        df_train, df_test, _ = _make_split(df, edu_order, region_map, cfg)
         n = len(df)
-        assert abs(len(df_train) / n - 0.8) < 0.02
-        assert abs(len(df_test) / n - 0.2) < 0.02
+        held_out = cfg["model"]["test_size"]
+        assert abs(len(df_test) / n - held_out) < 0.02
+        assert abs(len(df_train) / n - (1 - held_out)) < 0.02
 
-    def test_no_occ_mean_leakage(self, df, edu_order, region_map):
+    def test_no_occ_mean_leakage(self, df, cfg):
         """Training-set occ means must not equal full-dataset means (leakage check)."""
-        gm_train = compute_group_means(train_test_split(df, test_size=0.2, random_state=42)[0])
+        gm_train = compute_group_means(_split_rows(df, cfg)[0])
         gm_full = compute_group_means(df)
         # At least one occupation's mean should differ after splitting
         shared = set(gm_train["occ_means"]) & set(gm_full["occ_means"])
@@ -64,14 +72,14 @@ class TestSplitThenEngineer:
             "Train-only group means are identical to full-dataset means — leakage may not have been eliminated."
         )
 
-    def test_features_present_after_split_engineer(self, df, edu_order, region_map):
-        df_train, df_test, _ = _make_split(df, edu_order, region_map)
+    def test_features_present_after_split_engineer(self, df, edu_order, region_map, cfg):
+        df_train, df_test, _ = _make_split(df, edu_order, region_map, cfg)
         for col in FEATURES_FULL:
             assert col in df_train.columns
             assert col in df_test.columns
 
-    def test_no_nulls_after_split_engineer(self, df, edu_order, region_map):
-        df_train, df_test, _ = _make_split(df, edu_order, region_map)
+    def test_no_nulls_after_split_engineer(self, df, edu_order, region_map, cfg):
+        df_train, df_test, _ = _make_split(df, edu_order, region_map, cfg)
         assert df_train[FEATURES_FULL].isnull().sum().sum() == 0
         assert df_test[FEATURES_FULL].isnull().sum().sum() == 0
 
@@ -101,13 +109,12 @@ class TestProductionModelEndToEnd:
         """Model trained with training-set means must get same feature names as saved means."""
         from pathlib import Path
 
-        from pipeline import predict_quantiles
+        from pipeline import predict_quantiles_batch
 
         gm = load_group_means(str(Path(__file__).parent.parent / cfg["model"]["group_means_path"]))
         df_eng = engineer_features(df, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"])
         X = df_eng[FEATURES_FULL].head(10)
-        # Iterate row-by-row so this works for both quantile and legacy models.
-        p50s = [predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))]
+        p50s = predict_quantiles_batch(production_model, X)[:, 1]
         assert all(p > 0 for p in p50s)
         assert min(p50s) > 50_000
 
@@ -123,19 +130,21 @@ class TestProductionModelEndToEnd:
         """
         from pathlib import Path
 
-        from pipeline import predict_quantiles
+        from pipeline import predict_quantiles_batch
 
         gm = load_group_means(str(Path(__file__).parent.parent / cfg["model"]["group_means_path"]))
         df_eng = engineer_features(df, edu_order, region_map, occ_means=gm["occ_means"], state_means=gm["state_means"])
-        X = df_eng[FEATURES_FULL]
-        y = df_eng["Annual Income"]
-        _, X_test, _, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+        _, test_pos = train_test_positions(
+            len(df_eng), test_size=cfg["model"]["test_size"], random_state=cfg["model"]["random_state"]
+        )
+        X_test = df_eng[FEATURES_FULL].iloc[test_pos]
+        y_test = df_eng["Annual Income"].iloc[test_pos]
 
-        p50_preds = np.asarray([predict_quantiles(production_model, X_test.iloc[[i]])[1] for i in range(len(X_test))])
+        p50_preds = predict_quantiles_batch(production_model, X_test)[:, 1]
         r2 = r2_score(y_test, p50_preds)
         assert r2 > -0.05, f"End-to-end P50 R² {r2:.4f} is implausibly negative"
 
-    def test_quantile_metrics_shape(self, production_model, df, cfg, edu_order, region_map):
+    def test_quantile_metrics_shape(self, cfg):
         """Metrics file must expose the quantile calibration fields.
 
         Asserts on the real SLO for the multi-quantile model: empirical

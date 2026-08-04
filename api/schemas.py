@@ -48,11 +48,14 @@ class PredictRequest(BaseModel):
         ),
         examples=["Female"],
     )
+    # Bounds are the model's training support, recorded as Age min/max in
+    # ``models/baseline_stats.json``. Accepting outside it would serve
+    # extrapolation; refusing inside it would decline answerable requests.
     age: int = Field(
         ...,
-        ge=18,
-        le=80,
-        description="Age in years (18–80).",
+        ge=19,
+        le=94,
+        description="Age in years (19–94).",
         examples=[32],
     )
 

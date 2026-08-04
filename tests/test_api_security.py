@@ -181,6 +181,14 @@ class TestApiKeyAuth:
             r = client.post("/predict", json={"state": "CA"}, headers={"X-API-Key": "nope"})
             assert r.status_code == 401
 
+    @pytest.mark.parametrize("headers", [None, {"X-API-Key": "nope"}], ids=["missing", "wrong"])
+    def test_batch_rejects_an_unkeyed_caller_401(self, headers):
+        """The batch route scores up to MAX_BATCH_ITEMS profiles per call, so it needs its own proof."""
+        with reloaded_module(API_KEY="s3cret") as m:
+            client = TestClient(m.app)
+            r = client.post("/predict/batch", json={"items": [{"state": "CA"}]}, headers=headers)
+            assert r.status_code == 401, r.text
+
     def test_non_ascii_key_rejected_401(self):
         """A key carrying bytes outside ASCII is a wrong key, not a server fault.
 
@@ -208,18 +216,18 @@ class TestApiKeyAuth:
             assert codes[3:] == [429, 429, 429], codes
 
     @pytest.mark.parametrize(
-        ("label", "bad_key"),
+        "bad_key",
         [
-            ("non-ascii", "café-secret"),
-            ("trailing newline", "s3cret\n"),  # `kubectl create secret --from-file`
-            ("leading space", " s3cret"),
-            ("trailing space", "s3cret "),
-            ("embedded tab", "s3\tcret"),
-            ("embedded space", "s3 cret"),
-            ("control character", "s3cret\x01"),
+            pytest.param("café-secret", id="non-ascii"),
+            pytest.param("s3cret\n", id="trailing newline"),  # `kubectl create secret --from-file`
+            pytest.param(" s3cret", id="leading space"),
+            pytest.param("s3cret ", id="trailing space"),
+            pytest.param("s3\tcret", id="embedded tab"),
+            pytest.param("s3 cret", id="embedded space"),
+            pytest.param("s3cret\x01", id="control character"),
         ],
     )
-    def test_unusable_key_shape_is_refused_at_startup(self, label, bad_key):
+    def test_unusable_key_shape_is_refused_at_startup(self, bad_key):
         """Keys outside printable non-space ASCII must fail loudly at startup."""
         with pytest.raises(RuntimeError, match="API_KEY must be printable ASCII"):
             with reloaded_module(API_KEY=bad_key):
@@ -430,19 +438,22 @@ class TestRateLimiting:
                 f"a request was rejected before the limit: {statuses}"
             )
 
-    def test_batch_limit_enforced_returns_429(self):
-        """``/predict/batch`` carries its own fixed 10/minute budget, not ``RATE_LIMIT``.
+    def _batch_statuses(self, m, calls: int) -> list[int]:
+        with TestClient(m.app) as client:
+            body = {"items": [self._payload(m)]}
+            return [client.post("/predict/batch", json=body).status_code for _ in range(calls)]
 
-        The exact cut is asserted, not just that some 429 appears, so widening the
-        budget by one is caught. The window opens on the first request and the 12
-        calls take milliseconds, so it cannot roll over mid-run.
-        """
-        with reloaded_module() as m:
-            with TestClient(m.app) as client:
-                body = {"items": [self._payload(m)]}
-                statuses = [client.post("/predict/batch", json=body).status_code for _ in range(12)]
-
+    def test_batch_limit_defaults_to_ten_a_minute(self):
+        """The exact cut is asserted, so widening the default by one is caught."""
+        with reloaded_module(BATCH_RATE_LIMIT=None) as m:
+            statuses = self._batch_statuses(m, 12)
         assert statuses == [200] * 10 + [429] * 2, f"batch budget is not exactly 10/minute: {statuses}"
+
+    def test_batch_limit_is_read_from_its_own_variable(self):
+        """``RATE_LIMIT`` governs the other routes; batch must have its own knob."""
+        with reloaded_module(BATCH_RATE_LIMIT="3/minute", RATE_LIMIT="1000/minute") as m:
+            statuses = self._batch_statuses(m, 5)
+        assert statuses == [200] * 3 + [429] * 2, f"batch budget did not follow its variable: {statuses}"
 
     def test_429_body_has_detail(self):
         with reloaded_module(RATE_LIMIT="2/minute") as m:

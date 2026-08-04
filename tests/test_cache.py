@@ -8,6 +8,9 @@ use a tiny in-memory fake client (no Redis required) to lock that contract.
 
 from __future__ import annotations
 
+import hashlib
+import json
+
 from api.cache import PredictionCache
 
 
@@ -20,7 +23,7 @@ class _FakeRedis:
     def get(self, key: str):
         return self.store.get(key)
 
-    def setex(self, key: str, ttl: int, value: str) -> None:
+    def setex(self, key: str, _ttl: int, value: str) -> None:
         self.store[key] = value
 
     def ping(self) -> bool:
@@ -71,10 +74,10 @@ def test_disabled_cache_is_noop():
 class _DeadRedis(_FakeRedis):
     """Every operation raises — Redis died after the cache was constructed."""
 
-    def get(self, key: str):
+    def get(self, _key: str):
         raise ConnectionError("simulated redis outage")
 
-    def setex(self, key: str, ttl: int, value: str) -> None:
+    def setex(self, _key: str, _ttl: int, _value: str) -> None:
         raise ConnectionError("simulated redis outage")
 
 
@@ -103,3 +106,16 @@ def test_corrupt_cached_value_degrades_to_a_miss():
     key = next(iter(c._client.store))
     c._client.store[key] = "{not-json"
     assert c.get(payload) is None
+
+
+def test_the_key_that_reaches_redis_carries_the_whole_digest():
+    """Truncating anywhere between the digest and the key shrinks the space
+    below SHA-256's collision resistance, and a collision serves one caller
+    another caller's prediction."""
+    c = _cache_with_fake()
+    c.version = "v1"
+    payload = {"state": "CA", "age": 30}
+    c.set(payload, {"predicted_salary": 1.0})
+    canonical = json.dumps(payload, sort_keys=True, default=str)
+    stored = next(iter(c._client.store))
+    assert stored == f"predict:v1:{hashlib.sha256(canonical.encode()).hexdigest()}"

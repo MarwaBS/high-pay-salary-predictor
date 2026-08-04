@@ -1,13 +1,11 @@
 """No private repository name may appear in a tracked file.
 
-Two of them reached `.gitignore` and `.trivyignore` once and survived three
-reviews, because nothing checked. This is that check. It compares SHA-256
-digests from ``.private-name-hashes`` rather than plaintext patterns, so the
-guard cannot become the leak it exists to prevent.
-
-Matching is on a normalised form — lowercase, alphanumerics only — so a name
-split by punctuation, suffixed, or run into a neighbouring word reduces to the
-same digest as the plain form.
+Compares SHA-256 digests from ``.private-name-hashes`` rather than plaintext
+patterns, so the guard cannot become the leak it exists to prevent. Matching is
+on a normalised form — lowercase, alphanumerics only — over whole tokens and
+runs of two or three adjacent ones, so a name split by any punctuation reduces
+to the same digest as the plain form. A name concatenated into a longer token
+with no separator does not; see ``_candidates``.
 """
 
 from __future__ import annotations
@@ -40,10 +38,11 @@ def _banned_digests() -> set[str]:
 
 
 def _candidates(text: str) -> set[str]:
-    """Every fragment a name could hide in: tokens, their joins, and pairs.
+    """Whole tokens, and the joins of two or three adjacent ones.
 
-    A name split by punctuation or camel-cased into a longer word is the same
-    disclosure as the bare name, so both have to reduce to the same digest.
+    A separator between a name's parts is not protection, so any punctuation
+    split reduces to the bare name. A name welded into a longer token with no
+    separator at all is NOT reached — the tokeniser never splits inside a word.
     """
     tokens = TOKEN.findall(text)
     forms = set(tokens)
@@ -110,29 +109,22 @@ def _git(*args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
 
 
-def _default_branch_ref() -> str:
-    """Whichever name the default branch has here.
-
-    A CI checkout of a pull request has no origin/main; a local clone does.
-    HEAD is the last resort and still reaches the same history.
-    """
-    for ref in ("origin/main", "main", "HEAD"):
-        if _git("rev-parse", "--verify", "--quiet", ref).returncode == 0:
-            return ref
-    raise AssertionError("no ref to sweep")
-
-
 def _commit_messages() -> list[tuple[str, str]]:
+    """Every commit reachable from HEAD, so a branch is swept before it is merged.
+
+    Sweeping the default branch instead would only fire once a leak is published,
+    when removing it needs a force-push.
+    """
     assert _git("rev-parse", "--is-shallow-repository").stdout.strip() == "false", (
         "shallow clone: a sweep of a truncated history passes for the wrong reason "
         "(CI needs actions/checkout with fetch-depth: 0)"
     )
-    out = _git("log", "--format=%H%x1f%B%x1e", _default_branch_ref()).stdout
+    out = _git("log", "--format=%H%x1f%B%x1e", "HEAD").stdout
     records = []
     for record in out.split("\x1e"):
-        if sha_and_body := record.strip().split("\x1f"):
-            if len(sha_and_body) == 2:
-                records.append((sha_and_body[0], sha_and_body[1]))
+        sha_and_body = record.strip().split("\x1f")
+        if len(sha_and_body) == 2:
+            records.append((sha_and_body[0], sha_and_body[1]))
     return records
 
 
@@ -153,3 +145,13 @@ def test_the_message_sweep_reads_real_bodies():
     most_common, _ = tokens.most_common(1)[0]
     offenders = {sha for sha, body in messages if _offending(body, {_digest(most_common)})}
     assert offenders, "found nothing for a token taken from the history itself"
+
+
+def test_the_sweep_covers_this_branch_not_only_the_default():
+    """Sweeping the default branch would only catch a leak once it is published.
+
+    On a feature branch the two ref choices differ, so this fails if the sweep
+    is ever pointed back at ``origin/main``.
+    """
+    swept = {sha for sha, _ in _commit_messages()}
+    assert swept == set(_git("rev-list", "HEAD").stdout.split())

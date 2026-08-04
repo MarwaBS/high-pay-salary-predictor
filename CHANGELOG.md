@@ -7,13 +7,85 @@ project uses SemVer.
 ## [Unreleased]
 
 ### Changed
+- **`age` now accepts 19–94 instead of 18–80** (breaking both ways: `18` is
+  refused, `81`–`94` are accepted). The bounds are the model's training
+  support, recorded as `Age` min/max in `models/baseline_stats.json`. The old
+  range both extrapolated below the support and declined answerable requests
+  inside it. The dashboard derives its range from that artefact through
+  `pipeline.training_age_support`; the API's bounds stay declared on the schema,
+  where `PredictRequest` needs them at class-definition time, and a test holds
+  them to the artefact so a retrain that shifts the support fails CI.
+- **The eight `model.classifier_*` settings are now required** (breaking for any
+  config file carried over that omits them): `classifier_path`,
+  `premium_threshold`, and the six hyperparameters. They were optional, so a
+  config without them validated and then died inside training on an unguarded
+  read, after a model file had already been written. `scripts/train_quantile.py`
+  trains both heads unconditionally, so omitting them was never an opt-out.
+- **`config.yaml` gains a required `drift.window`** (breaking for any config
+  file carried over: `ProjectConfig` rejects one without it). The drift
+  monitor's rolling-window size was a default buried in `DriftMonitor`, where
+  nothing could state why it held that value. It is an operating choice, so it
+  now lives beside the bound it has to clear, and `DriftMonitor` requires the
+  caller to name one. API startup aborts on a window below either floor it has to
+  clear — the detector's effect-floor handover, which moves with its tuning, and
+  the minimum any verdict is issued from — since only startup holds the
+  configured value and the tuning together. There is no derivable upper bound,
+  and the trade-off a larger window buys is written beside the key.
+
+### Fixed
+- **`GET /drift` withholds a per-feature verdict below 30 observations of that
+  feature** (breaking for a caller reading `features[f].drifted` as a boolean:
+  it is now `null` when the feature was too sparse to rule on, and `z_score`,
+  `effect_size` and `p_value` are `null` with it). The floor gated the window
+  length, while each p-value is a normal tail over that feature's own sample —
+  so a feature seen three times in a full window was placed on that tail and
+  could raise `any_drifted`. A feature left unruled can no longer make
+  `any_drifted` false, only `message` names which features were skipped.
+- **The degraded `/drift` payload no longer carries `status: "unavailable"`.**
+  It described one of the four verdict-withheld paths and was absent from the
+  other three, so a caller reading it learned nothing about the rest; `degraded`
+  already carries the same fact. All withholding paths now return one shape.
+- **The drift monitor is built from the artefact whose digest startup verified.**
+  It re-read `model.baseline_stats_path` from config after the integrity check,
+  so the file that aborts on a mismatch and the file the detector opens could be
+  different ones.
+- **The k8s dashboard pod now stages `baseline_stats.json`.** Its initContainer
+  fetched four artefacts into an `emptyDir`; the dashboard reads a fifth to
+  bound its Age input, so the predictor tab would have raised on first render.
+  Both pods now stage every artefact `config.yaml` declares, rather than a list
+  per pod, and a test holds each manifest to that set — previously only the API
+  pod's list was checked at all.
+- **Prediction cache keys carry the full SHA-256 digest** rather than its first
+  16 hex chars. The truncation bought nothing and left a 64-bit key space in
+  which a collision serves one caller another's prediction. Cached entries
+  written before the change are unreachable and expire on their existing TTL.
+- **`GET /drift` returns `any_drifted: null` in two further cases** — fewer than
+  30 observations, and no observed feature matching the baseline (a renamed
+  feature is the realistic trigger). Both previously returned `false`, which
+  reads as "no drift" when in fact nothing was testable. Callers treating the
+  field as a boolean should treat `null` as "verdict withheld"; `message` says
+  which case applies.
 - **`GET /drift` now requires `X-API-Key` when `API_KEY` is set, and spends
   the same per-IP `RATE_LIMIT` budget as `/predict`** (breaking for any caller
   that read it anonymously). It aggregates live request traffic down to
   per-feature means, so it was the one route publishing that summary without
   a key.
 
+### Removed
+- **`pipeline.load_features`.** No caller anywhere in the repo or the notebooks.
+- **Two unreachable branches in `api/main.py`.** The startup integrity check
+  refuses a missing `baseline_stats.json` before either could run, so the
+  "drift monitoring disabled" warning and `/drift`'s `status: "disabled"` reply
+  were dead — the latter the last withholding path with its own shape.
+- **`pipeline.FEATURES_DEMO`.** The demographic-only feature list had no
+  consumer: the one notebook importing it defined its own, different list in a
+  later cell, and its comment described a vector "with no BLS context" that
+  contained four BLS columns.
+
 ### Added
+- **`BATCH_RATE_LIMIT`** — `/predict/batch`'s per-IP budget is now read from the
+  environment like every other route's, defaulting to the `10/minute` it was
+  previously pinned to in code. No behaviour change unless the variable is set.
 - `SECURITY.md` with disclosure policy + in-scope / out-of-scope
   boundaries.
 - `CHANGELOG.md` (this file).
@@ -33,7 +105,7 @@ project uses SemVer.
 - CI `schedule:` trigger (weekly, Mondays 05:00 UTC) re-running the full
   pipeline on `main` — including the Docker builds + Trivy scans — so
   newly published image CVEs are caught by time, not only by pushes.
-- Annotated tag `training/2.0.0` pinning training commit `1c5e9d896ee5`,
+- Annotated tag `training/2.0.0` pinning training commit `d361a769`,
   the code/data state the 2.0.0 model release was trained at, so
   provenance survives feature-branch cleanup. (The shipped
   `model_metrics.json` has since been regenerated — see Fixed below —

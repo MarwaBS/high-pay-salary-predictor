@@ -1,21 +1,12 @@
-"""
-tests/conftest.py
------------------
-Session-scoped fixtures shared across ALL test modules.
-
-Having fixtures here (instead of duplicated in each test file) means
-pytest auto-discovers them and any test can use them without importing.
-"""
+"""Fixtures shared across all test modules, and the environment they load under."""
 
 import os
 
-# Disable per-IP rate limiting for the shared test app. ``api.main`` reads
-# RATE_LIMIT at import time; many tests issue dozens of /predict calls and would
-# otherwise exhaust the default 60/min budget and flake with 429s. The security
-# tests that actually exercise the limiter set RATE_LIMIT explicitly and reload
-# the module, overriding this default for their scope. setdefault() so an
-# explicit environment value still wins.
+# Both per-IP budgets are read at ``api.main`` import time, and the suite issues
+# far more calls than either allows. setdefault() so the security tests, which
+# set them explicitly and reload the module, still win.
 os.environ.setdefault("RATE_LIMIT", "1000000/minute")
+os.environ.setdefault("BATCH_RATE_LIMIT", "1000000/minute")
 
 from pathlib import Path  # noqa: E402
 
@@ -24,10 +15,6 @@ import pytest  # noqa: E402
 import yaml  # noqa: E402
 
 from pipeline import engineer_features, load_group_means, load_model  # noqa: E402
-
-# ---------------------------------------------------------------------------
-# Session-scope: load once, reuse across the entire test run
-# ---------------------------------------------------------------------------
 
 
 @pytest.fixture(scope="session")

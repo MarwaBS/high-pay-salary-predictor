@@ -1,16 +1,15 @@
 """Every tuned hyper-parameter in ``config.yaml`` must trace to the study that chose it.
 
-The XGBoost values the model ships had no producer: nothing in the repo
-emitted them, so they could not be re-derived or defended. ``scripts/tune.py``
-is now that producer and ``models/tuning_study.json`` is its record. These tests
-bind the three together, so editing a shipped value without re-running the study
-fails rather than passing quietly.
+Binds ``config.yaml``, ``scripts/tune.py`` and ``models/tuning_study.json``
+together, so editing a shipped value without re-running the study fails rather
+than passing quietly.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +25,20 @@ from scripts.tune import SEARCH_SPACE, TUNED_KEYS, _sample, cv_pinball, training
 
 REPO_ROOT = Path(__file__).parent.parent
 STUDY_PATH = REPO_ROOT / "models" / "tuning_study.json"
+
+#: How far a re-run may land from a recorded score, XGBoost's float reductions
+#: differing by build.
+REPRODUCTION_TOLERANCE = 0.01
+
+#: Any percentage a doc publishes as this tolerance, wherever it sits.
+PUBLISHED_TOLERANCE = re.compile(r"to within ([0-9.]+)%|([0-9.]+)% relative tolerance")
+MINIMUM_PUBLISHED = 2
+
+#: A doc may not claim exact reproduction without scoping it to one machine or
+#: to the tolerance.
+EXACTNESS = re.compile(r"bit-exact|bit-identical|byte-identical|identical metrics|identical artefacts", re.I)
+RERUN = re.compile(r"re-?run|re-?running|regenerat|reproduc|retrain", re.I)
+SCOPED = re.compile(r"on one machine|same machine|to within [0-9.]+%", re.I)
 CFG = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))["model"]
 
 
@@ -49,6 +62,51 @@ def tiny_train() -> pd.DataFrame:
 def study() -> dict:
     assert STUDY_PATH.exists(), "no tuning study committed — the shipped values have no producer"
     return json.loads(STUDY_PATH.read_text(encoding="utf-8"))
+
+
+def _doc_surface() -> list[Path]:
+    """The published text files, from git rather than a hand-kept directory list."""
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "*.md", "*.yml", "*.yaml"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=True,
+    ).stdout
+    paths = [REPO_ROOT / name for name in listed.split("\0") if name]
+    assert len(paths) >= 10, f"only {len(paths)} tracked docs found — this scan is looking at nothing"
+    return paths
+
+
+def test_every_published_reproduction_tolerance_is_the_enforced_one():
+    """No doc may print a tolerance other than the one the re-derivations assert."""
+    published = [
+        (path.name, number, figure)
+        for path in _doc_surface()
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+        for match in PUBLISHED_TOLERANCE.finditer(line)
+        for figure in [next(g for g in match.groups() if g)]
+    ]
+    assert len(published) >= MINIMUM_PUBLISHED, (
+        f"only {len(published)} published tolerances found; a rewording leaves this scanning nothing"
+    )
+    wrong = [
+        f"{name}:{number} prints {figure}%"
+        for name, number, figure in published
+        if float(figure) / 100 != pytest.approx(REPRODUCTION_TOLERANCE)
+    ]
+    assert not wrong, f"{REPRODUCTION_TOLERANCE:.0%} is enforced but " + "; ".join(wrong)
+
+
+def test_no_doc_claims_exact_reproduction_unscoped():
+    """An exactness claim about a re-run has to name one machine or the tolerance."""
+    offenders = []
+    for path in _doc_surface():
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if EXACTNESS.search(line) and RERUN.search(line) and not SCOPED.search(line):
+                offenders.append(f"{path.name}:{number}: {line.strip()[:100]}")
+    assert not offenders, "unscoped exact-reproduction claims:\n" + "\n".join(offenders)
 
 
 @pytest.mark.parametrize("key", TUNED_KEYS)
@@ -275,7 +333,7 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
         n_jobs=study["n_jobs"],
         **tune_inputs,
     )
-    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=0.01), (
+    assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=REPRODUCTION_TOLERANCE), (
         f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} — "
         "further apart than build-to-build float variation explains"
     )
@@ -299,7 +357,7 @@ def test_the_recorded_best_score_re_derives(study, tune_inputs):
         n_jobs=study["n_jobs"],
         **tune_inputs,
     )
-    assert recomputed == pytest.approx(study["best"]["cv_pinball"], rel=0.01), (
+    assert recomputed == pytest.approx(study["best"]["cv_pinball"], rel=REPRODUCTION_TOLERANCE), (
         f"study records {study['best']['cv_pinball']} for trial {study['best']['trial']}, "
         f"re-running its parameters gives {recomputed}"
     )

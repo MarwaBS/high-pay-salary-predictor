@@ -22,10 +22,12 @@ import numpy as np
 import pandas as pd
 import pytest
 import yaml
+from pydantic import ValidationError
 from sklearn.metrics import r2_score
 from sklearn.model_selection import KFold
 
 import scripts.train_quantile as tq
+from config_schema import ProjectConfig
 from pipeline import FEATURES_FULL, compute_group_means, engineer_features
 
 REPO_ROOT = Path(tq.__file__).resolve().parent.parent
@@ -52,8 +54,7 @@ def trained_in_tmp(tmp_path, monkeypatch):
     cfg_path.write_text(yaml.safe_dump(cfg))
 
     (tmp_path / "models").mkdir(parents=True, exist_ok=True)
-    # ROOT drives every *output* path (model/classifier/metrics + the
-    # hardcoded baseline_stats.json), so redirecting it isolates the run.
+    # ROOT drives every *output* path, so redirecting it isolates the run.
     monkeypatch.setattr(tq, "ROOT", tmp_path)
     monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
 
@@ -249,3 +250,169 @@ def test_cross_val_r2_is_leakage_free():
         "per-fold encoding may have regressed to global encoding"
     )
     assert honest < 0.10, f"honest CV R² {honest:.4f} too high for a pure-noise frame — encoding still leaks"
+
+
+def _config_with(tmp_path, drop=(), overrides=None):
+    """Real config with keys dropped or values overridden, written to tmp."""
+    with open(REPO_ROOT / "config.yaml") as f:
+        cfg = yaml.safe_load(f)
+    cfg["data"]["cleaned"] = str((REPO_ROOT / cfg["data"]["cleaned"]).resolve())
+    for key in drop:
+        del cfg["model"][key]
+    cfg["model"].update(overrides or {})
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    return cfg_path
+
+
+@pytest.mark.parametrize(
+    ("drop", "overrides"),
+    [(["cv_folds"], None), (["premium_threshold"], None), ((), {"test_size": 0.9})],
+    ids=["required-key-absent", "half-declared-classifier", "value-out-of-range"],
+)
+def test_a_config_the_api_would_refuse_never_reaches_a_model_file(tmp_path, monkeypatch, drop, overrides):
+    """Only the schema knows a value is out of range, so this expects
+    ValidationError specifically: a KeyError would mean the trainer tripped over
+    the key on its own and the validation call proved nothing.
+    """
+    cfg_path = _config_with(tmp_path, drop, overrides)
+    monkeypatch.setattr(tq, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
+    with pytest.raises(ValidationError):
+        tq.main()
+    assert not list(tmp_path.glob("**/*.ubj")), "training ran before the config was rejected"
+
+
+CLASSIFIER_KEYS = [
+    "classifier_path",
+    "premium_threshold",
+    "classifier_n_estimators",
+    "classifier_max_depth",
+    "classifier_learning_rate",
+    "classifier_subsample",
+    "classifier_colsample_bytree",
+    "classifier_reg_lambda",
+]
+
+
+@pytest.mark.parametrize(
+    ("drop", "overrides"),
+    [(CLASSIFIER_KEYS, None), ([], {"classifier_path": ""})],
+    ids=["all-eight-dropped", "empty-path"],
+)
+def test_a_config_that_does_not_declare_a_usable_classifier_is_refused(tmp_path, monkeypatch, drop, overrides):
+    """Omitting the classifier is not an opt-out, and an empty path is not a declaration."""
+    cfg_path = _config_with(tmp_path, drop=drop, overrides=overrides)
+    monkeypatch.setattr(tq, "ROOT", tmp_path)
+    monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
+    with pytest.raises(ValidationError):
+        tq.main()
+    assert not list(tmp_path.glob("**/*.ubj")), "training wrote a model before the config was rejected"
+
+
+@pytest.mark.parametrize("drop", ["block", "window"], ids=["no-drift-block", "block-without-window"])
+def test_a_config_that_declares_no_window_is_refused(drop):
+    """Either shape puts the window back in code, where no config file states it
+    and nothing can say why it holds that value."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    if drop == "block":
+        del cfg["drift"]
+    else:
+        del cfg["drift"]["window"]
+    with pytest.raises(ValidationError):
+        ProjectConfig(**cfg)
+
+
+def test_a_mistyped_drift_knob_is_refused():
+    """Silently ignored, the monitor would run on the default the typo replaced."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    cfg["drift"]["windwo"] = 200
+    with pytest.raises(ValidationError):
+        ProjectConfig(**cfg)
+
+
+def test_a_non_positive_drift_window_is_refused():
+    """A zero window caps the dropped-write backlog at zero: a permanent all-clear."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    cfg["drift"]["window"] = 0
+    with pytest.raises(ValidationError):
+        ProjectConfig(**cfg)
+
+
+#: The test's own statement of the floor, deliberately not read from
+#: ``tq.MIN_SUBGROUP_SIZE``: sharing it would let the implementation move the
+#: floor and carry this expectation along with it.
+_MEANINGFUL_SLICE = 30
+
+
+def _test_split_slices() -> tuple[dict[str, int], dict[str, bool], dict]:
+    """Per-subgroup test-row counts and two-class flags, from the shared split."""
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    df_raw = pd.read_csv(REPO_ROOT / cfg["data"]["cleaned"])
+    region_map = {s: r for r, states in cfg["regions"].items() for s in states}
+    _, df_test, _, _ = tq._prepare_split(
+        df_raw,
+        seed=cfg["model"]["random_state"],
+        test_size=cfg["model"]["test_size"],
+        edu_order=cfg["education_order"],
+        region_map=region_map,
+    )
+    premium = df_test["Annual Income"] >= cfg["model"]["premium_threshold"]
+    sizes, two_class = {}, {}
+    for col in ("Gender", "Region"):
+        for val in sorted(df_test[col].dropna().unique()):
+            mask = df_test[col] == val
+            sizes[f"{col}={val}"] = int(mask.to_numpy().sum())
+            two_class[f"{col}={val}"] = bool(premium[mask].nunique() == 2)
+    return sizes, two_class, cfg
+
+
+def test_every_slice_big_enough_to_score_is_in_the_published_fairness_table():
+    """Set equality in both directions, on BOTH published tables. Raising the
+    trainer's floor drops a real subgroup — even after a retrain, which is when
+    it would otherwise pass unnoticed — and lowering it publishes a slice whose
+    rate is mostly its own sampling error. The AUC table carries one further
+    exclusion, single-class slices, so that is computed rather than waived."""
+    sizes, two_class, cfg = _test_split_slices()
+    expected = {name for name, n in sizes.items() if n >= _MEANINGFUL_SLICE}
+    metrics = json.loads((REPO_ROOT / cfg["model"]["metrics_path"]).read_text())
+    assert set(metrics["subgroup_coverage_80"]) == expected
+    assert set(metrics["classifier_subgroup_roc_auc"]) == {n for n in expected if two_class[n]}
+
+
+def test_the_trainer_publishes_at_exactly_the_floor_the_policy_states():
+    """A coverage rate near the 0.80 target carries a 95% sampling interval of
+    about ±0.14 at n=30. Equality, not a minimum: a lower floor publishes a rate
+    that is mostly its own sampling noise, and a higher one hides a real
+    subgroup — including the worst-covered one, which is the one that matters.
+    """
+    assert tq.MIN_SUBGROUP_SIZE == _MEANINGFUL_SLICE
+
+
+def test_the_subgroup_gates_read_the_constant_rather_than_a_literal(tmp_path, monkeypatch):
+    """Trains with the floor raised past the smallest slice and checks the table
+    shrinks to match. Gates comparing against a literal would publish the same
+    table whatever the constant says, leaving the pin above asserting nothing.
+    """
+    sizes, two_class, _ = _test_split_slices()
+    # The second-smallest slice: high enough to exclude the smallest, and equal to
+    # a slice of its own, so the comparison's own boundary decides whether that
+    # one is published.
+    raised = sorted(sizes.values())[1]
+    expected = {name for name, n in sizes.items() if n >= raised}
+    assert expected < set(sizes), "floor is not high enough to exclude anything — the check would be vacuous"
+
+    cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
+    cfg["data"]["cleaned"] = str((REPO_ROOT / cfg["data"]["cleaned"]).resolve())
+    cfg["model"]["stability_seeds"] = [11]
+    cfg_path = tmp_path / "config.yaml"
+    cfg_path.write_text(yaml.safe_dump(cfg))
+    (tmp_path / "models").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(tq, "ROOT", tmp_path)
+    monkeypatch.setattr(tq, "MIN_SUBGROUP_SIZE", raised)
+    monkeypatch.setattr(sys, "argv", ["train_quantile.py", "--config", str(cfg_path)])
+    tq.main()
+
+    published = json.loads((tmp_path / "models" / "model_metrics.json").read_text())
+    assert set(published["subgroup_coverage_80"]) == expected
+    assert set(published["classifier_subgroup_roc_auc"]) == {n for n in expected if two_class[n]}

@@ -5,8 +5,12 @@
 # serving path never imports. Install with:
 #   pip install -r requirements-notebooks.txt
 
+geopandas>=0.12.0            # choropleths in us_high_income_jobs_mapping.ipynb
 lightgbm>=3.3.0
+matplotlib>=3.11.1
+openpyxl>=3.0.0              # Excel I/O for the raw BLS OEWS workbook
 optuna>=3.0.0                # HPO exploration in ARCHIVED_04_salary_prediction_model_v1.ipynb
+pyshp>=2.3.1
 seaborn>=0.13.2
 shap>=0.51.0
 statsmodels>=0.14.6

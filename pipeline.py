@@ -2,7 +2,7 @@
 pipeline.py
 -----------
 Single source of truth for:
-  - Feature constants (FEATURES_FULL, FEATURES_DEMO, REGION_CODES)
+  - Feature constants (FEATURES_FULL, REGION_CODES)
   - Feature-engineering function (engineer_features)
   - Group-means helpers (compute_group_means, save/load_group_means)
   - Model save / load helpers (no pickle — XGBoost native + JSON)
@@ -10,10 +10,9 @@ Single source of truth for:
 
 Design notes
 ------------
-* ``Annual Mean Wage`` is excluded from FEATURES_FULL / FEATURES_DEMO because
-  it is a near-perfect linear transformation of ``Hourly Mean`` (×2080,
-  corr ≈ 1.0000, VIF ≈ 2.3×10⁷).  Keeping both distorts feature-importance
-  scores and wastes a feature slot with zero new information.
+* ``Annual Mean Wage`` is excluded from FEATURES_FULL: it is a near-perfect
+  linear transform of ``Hourly Mean`` (x2080, corr 1.0000 to 4 dp, VIF 2.3e7),
+  so keeping both distorts feature importances for no new information.
 
 * ``Occ_Mean_Income`` and ``State_Mean_Income`` are computed from the **training
   set only** during model training (see scripts/train_quantile.py) and saved as
@@ -24,14 +23,6 @@ Design notes
 
 * The model is trained on ``log1p(Annual Income)`` and predicts in log space;
   callers must ``numpy.expm1()`` the raw output to get dollar predictions.
-
-Shared across the entire project:
-
-  - api/main.py
-  - streamlit_app.py
-  - scripts/train_quantile.py
-  - tests/test_pipeline.py
-  - notebooks/ARCHIVED_04_salary_prediction_model_v1.ipynb (archived v1 EDA)
 """
 
 from __future__ import annotations
@@ -43,6 +34,25 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from xgboost import XGBClassifier, XGBRegressor
+
+
+def artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
+    """Return a problem string for every artefact not proven identical to its
+    recorded SHA-256. An unrecorded or absent artefact counts: verifying only
+    the ones the metrics file happens to name leaves the rest unchecked.
+    """
+    problems = []
+    for key, path in artefact_files.items():
+        want = recorded.get(key)
+        if not want:
+            problems.append(f"{key} ({path.name}): no recorded digest in artifact_sha256")
+        elif not path.exists():
+            problems.append(f"{key}: artefact missing at {path}")
+        else:
+            got = sha256_file(path)
+            if got != want:
+                problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
+    return problems
 
 
 def sha256_file(path: str | Path) -> str:
@@ -60,13 +70,7 @@ def sha256_file(path: str | Path) -> str:
     return hasher.hexdigest()
 
 
-# ---------------------------------------------------------------------------
-# Feature sets
-# ---------------------------------------------------------------------------
-
 #: Full feature vector used by the production XGBoost model.
-#: ``Annual Mean Wage`` is intentionally excluded — it is a near-perfect linear
-#: transform of ``Hourly Mean`` (correlation 1.0000 to 4 dp, VIF ≈ 2.3×10⁷).
 FEATURES_FULL: list[str] = [
     "Age",
     "Education_Ord",
@@ -80,28 +84,9 @@ FEATURES_FULL: list[str] = [
     "State_Mean_Income",
 ]
 
-#: Demographic-only feature vector (no BLS context) used in the
-#: "fairness / demographic gap" model in notebook 4.
-#: ``Annual Mean Wage`` also excluded here for the same collinearity reason.
-FEATURES_DEMO: list[str] = [
-    "Age",
-    "Education_Ord",
-    "Gender_Bin",
-    "Employment",
-    "Location Quotient",
-    "Jobs per 1000",
-    "Hourly Mean",
-    "Occ_Mean_Income",
-    "State_Mean_Income",
-]
-
-# ---------------------------------------------------------------------------
-# Deterministic region → integer encoding
-# ---------------------------------------------------------------------------
-# Alphabetical order matches both pd.Categorical default and the API's
-# enumerate(sorted(...)) approach — guaranteeing consistent encoding across
-# training (notebook), serving (API), and the dashboard (Streamlit).
-
+#: Region -> integer encoding the shipped model was fitted against. The values
+#: are the alphabetical rank of the region name, which is what
+#: ``pd.Categorical(...).codes`` produces; changing one re-encodes the feature.
 REGION_CODES: dict[str, int] = {
     "Midwest": 0,
     "Northeast": 1,
@@ -159,8 +144,9 @@ def engineer_features(
 
     Raises
     ------
-    ValueError  if any required column is missing, or if any Education Level,
-                Gender, or State Abbreviation value has no mapping — encoding
+    ValueError  if any required column is missing, if any Education Level,
+                Gender, or State Abbreviation value has no mapping, or if
+                *region_map* names a region absent from REGION_CODES — encoding
                 an unknown category silently (NaN, or a Region_Code 0 collision)
                 would ship a quietly-degraded model on a config typo.
     """
@@ -181,6 +167,12 @@ def engineer_features(
     bad_states = sorted(set(df["State Abbreviation"].unique()) - set(region_map), key=str)
     if bad_states:
         raise ValueError(f"engineer_features: unmapped State Abbreviation values {bad_states}")
+    bad_regions = sorted(set(region_map.values()) - set(REGION_CODES), key=str)
+    if bad_regions:
+        raise ValueError(
+            f"engineer_features: region names {bad_regions} are absent from REGION_CODES; "
+            f"expected one of {sorted(REGION_CODES)}"
+        )
 
     out = df.copy()
     out["Education_Ord"] = out["Education Level"].map(edu_order)
@@ -201,6 +193,24 @@ def engineer_features(
         out["State_Mean_Income"] = out.groupby("State Abbreviation")["Annual Income"].transform("mean")
 
     return out
+
+
+def training_age_support(baseline_stats_path: str | Path) -> tuple[int, int]:
+    """Youngest and oldest ages the model was fitted on.
+
+    Read from the drift baseline, the one artefact that records the training
+    distribution, so the API and the dashboard bound their inputs by the same
+    numbers rather than each keeping a copy.
+    """
+    with open(baseline_stats_path) as f:
+        age = json.load(f)["Age"]
+    return int(age["min"]), int(age["max"])
+
+
+def typical_training_age(baseline_stats_path: str | Path) -> int:
+    """Mean age of the training rows, for a UI that must open on some value."""
+    with open(baseline_stats_path) as f:
+        return round(float(json.load(f)["Age"]["mean"]))
 
 
 def train_test_positions(n_rows: int, *, test_size: float, random_state: int) -> tuple[np.ndarray, np.ndarray]:
@@ -336,13 +346,6 @@ def save_features(features: list[str], path: str) -> None:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", newline="\n") as f:
         json.dump(features, f, indent=2)
-
-
-def load_features(path: str) -> list[str]:
-    """Load the feature name list from JSON."""
-    with open(path) as f:
-        features: list[str] = json.load(f)
-    return features
 
 
 def save_metrics(metrics: dict, path: str) -> None:

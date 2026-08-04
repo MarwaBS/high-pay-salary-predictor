@@ -27,6 +27,8 @@ from pipeline import (
     load_model,
     predict_quantiles_batch,
     train_test_positions,
+    training_age_support,
+    typical_training_age,
 )
 
 warnings.filterwarnings("ignore")
@@ -71,6 +73,13 @@ def get_model() -> XGBRegressor:
         st.error("Model not found. Run `make model` (or `python -m scripts.train_quantile`) first.")
         st.stop()
         raise  # unreachable, keeps mypy happy
+
+
+@st.cache_data(show_spinner=False)
+def get_age_range() -> tuple[int, int, int]:
+    """Age bounds and opening value, from the drift baseline."""
+    path = ROOT / CFG["model"]["baseline_stats_path"]
+    return (*training_age_support(path), typical_training_age(path))
 
 
 @st.cache_data(show_spinner=False)
@@ -356,7 +365,10 @@ def tab_predictor(df: pd.DataFrame) -> None:
         gender = st.radio("Gender", ["Male", "Female"], horizontal=True)
 
     with col2:
-        age = st.slider("Age", min_value=18, max_value=80, value=35)  # match the API's accepted range
+        # Bounded by the model's training support and opened at its mean, so a
+        # retrain that moves the distribution moves the widget with it.
+        low, high, typical = get_age_range()
+        age = st.slider("Age", min_value=low, max_value=high, value=typical)
         show_adv = st.checkbox("Show advanced inputs (BLS context)")
         if show_adv:
             employment = st.number_input("State-Occupation Employment", value=1000, min_value=0)

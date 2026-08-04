@@ -1,26 +1,9 @@
-"""
-Regression guard for the model-registry / provenance story.
+"""The provenance string must be one value from training to ``/health``.
 
-Background
-----------
-``scripts/train_quantile.py`` emits a composite ``model_version`` string of
-the form::
-
-    {service_version}+{git_sha}.{data_sha256_prefix}
-
-into ``models/model_metrics.json``. The string is the reproducibility
-primitive for the model registry: any operator looking at a live API can
-recover the exact training state (code + data) from the three fragments.
-The scheduled ``train.yml`` workflow uses it to tag GitHub Releases.
-
-These tests lock in three invariants so the provenance contract cannot
-silently regress:
-
-1. The trained artefact on disk has a ``model_version`` field.
-2. The string matches the shape the release workflow parses.
-3. The running API surfaces the same value on ``/health`` — i.e. the
-   model loaded into the FastAPI process advertises the same provenance
-   string that was written at training time.
+``scripts/train_quantile.py`` stamps ``{service_version}+{git_sha}.{data_sha}``
+into ``models/model_metrics.json``; ``train.yml`` parses it to tag releases and
+the API republishes it. These pin its presence, its shape, and that the running
+process advertises the same one.
 """
 
 from __future__ import annotations

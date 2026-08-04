@@ -86,7 +86,8 @@ def _assert_route_carries_margin(client, url, body, monkeypatch, unwrap):
         _assert_margin_applied(raw, wide, delta)
 
 
-def test_startup_loads_the_committed_margin(client):
+@pytest.mark.usefixtures("client")  # starts the app; the assertion reads the state it populated
+def test_startup_loads_the_committed_margin():
     """Compared against the file, not ``state``: state compared to itself agrees at zero."""
     committed = _committed_delta()
     assert committed > 0.0, "a zero margin would make every assertion below vacuous"

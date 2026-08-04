@@ -1,26 +1,8 @@
-"""
-tests/test_classifier.py
-------------------------
-Regression guards for the premium-tier classifier head.
+"""Regression guards for the premium-tier classifier head.
 
-The classifier is trained alongside the quantile regressor by
-``scripts/train_quantile.py`` and persisted to
-``models/xgb_premium_classifier.ubj``. These tests lock in:
-
-1. The saved artefact exists and loads as an ``XGBClassifier``.
-2. ``predict_proba`` returns calibrated [0, 1] probabilities for every
-   feature row.
-3. ``model_metrics.json`` records the classifier-specific metrics
-   (``classifier_objective``, ``classifier_roc_auc``, threshold,
-   subgroup AUCs) with sensible values — ROC-AUC must clear the
-   no-skill baseline and stay under the perfect-score ceiling so a
-   regression like "classifier trained on the wrong label" fails loudly.
-4. The FastAPI ``/predict`` endpoint surfaces
-   ``p_above_premium_threshold`` and ``premium_threshold`` on every
-   response as either a calibrated probability or ``None`` (legacy
-   artefacts) — never a wrong type.
-5. ``/predict/batch`` preserves the same contract item-for-item so bulk
-   callers get the same payload shape as single-row consumers.
+Covers the artefact ``scripts/train_quantile.py`` persists, the metrics it
+records, and the ``p_above_premium_threshold`` contract both serving routes
+publish — a probability or ``None``, never a wrong type.
 """
 
 from __future__ import annotations

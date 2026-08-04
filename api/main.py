@@ -26,6 +26,9 @@ Environment variables:
                         require X-API-Key. Unset = dev mode (no auth).
   RATE_LIMIT            Per-IP rate limit for /predict and /drift, counted per
                         route rather than shared (default: "60/minute").
+  BATCH_RATE_LIMIT      Per-IP rate limit for /predict/batch, counted separately
+                        because one call scores up to MAX_BATCH_ITEMS profiles
+                        (default: "10/minute").
   TRUSTED_PROXY_HOPS    Number of reverse proxies in front of the API. The
                         rate limiter and logging read the Nth-from-last
                         entry of X-Forwarded-For. Default: 0 (bind to the
@@ -69,7 +72,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from api import __version__
 from api.cache import PredictionCache
-from api.drift import DriftMonitor
+from api.drift import MIN_WINDOW_FOR_VERDICT, DriftMonitor
 from api.inference import (
     BlsDefaults,
     GroupStats,
@@ -93,6 +96,7 @@ from api.schemas import (
 from config_schema import ProjectConfig
 from pipeline import (
     REGION_CODES,
+    artifact_mismatches,
     compute_fallback_means,
     engineer_features,
     is_quantile_model,
@@ -102,7 +106,6 @@ from pipeline import (
     load_metrics,
     load_model,
     predict_quantiles_batch,
-    sha256_file,
 )
 
 # ── Structured JSON Logging ──────────────────────────────────────────────────
@@ -229,6 +232,9 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
 # from the right (right-most entries are the ones added by trusted hops).
 
 RATE_LIMIT = os.getenv("RATE_LIMIT", "60/minute")
+# Batch scores up to MAX_BATCH_ITEMS profiles per call, so its budget is
+# counted separately from the single-prediction one.
+BATCH_RATE_LIMIT = os.getenv("BATCH_RATE_LIMIT", "10/minute")
 TRUSTED_PROXY_HOPS = int(os.getenv("TRUSTED_PROXY_HOPS", "0"))
 
 
@@ -255,6 +261,8 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "unknown"
 
 
+# Route handlers must keep a parameter literally named `request`: slowapi reads
+# the bucket key from it, so the unused-argument suppressions below are load-bearing.
 limiter = Limiter(key_func=_client_ip)
 
 # ── Prediction Cache ─────────────────────────────────────────────────────────
@@ -324,26 +332,36 @@ state = AppState()
 # ── Lifespan (startup / shutdown) ─────────────────────────────────────────────
 
 
-def _artifact_mismatches(artefact_files: dict[str, Path], recorded: dict[str, str]) -> list[str]:
-    """Return a problem string for every artefact not proven identical to its
-    recorded SHA-256. An unrecorded or absent artefact counts: verifying only
-    the ones the metrics file happens to name leaves the rest unchecked."""
-    problems = []
-    for key, path in artefact_files.items():
-        want = recorded.get(key)
-        if not want:
-            problems.append(f"{key} ({path.name}): no recorded digest in artifact_sha256")
-        elif not path.exists():
-            problems.append(f"{key}: artefact missing at {path}")
-        else:
-            got = sha256_file(path)
-            if got != want:
-                problems.append(f"{key} ({path.name}): loaded {got[:12]} != recorded {want[:12]}")
-    return problems
+#: Every artefact whose bytes change a cached response.
+_CACHE_KEYED_ARTEFACTS = ("model", "classifier", "conformal")
+
+
+def _cache_namespace(model_version: str, digests: dict[str, str]) -> str:
+    """Namespace the prediction cache by every artefact it can serve from.
+
+    Binding to the regressor alone lets a classifier-only retrain reuse the
+    namespace, so a shared Redis serves the old probabilities for a full TTL
+    under an unchanged ``model_version``.
+    """
+    keyed = ".".join(digests.get(key, "")[:12] for key in _CACHE_KEYED_ARTEFACTS)
+    return f"{model_version}.{keyed}"
+
+
+def _served_interval_coverage(metrics: dict[str, Any]) -> float:
+    """Coverage of the interval the API actually serves.
+
+    With a conformal margin applied that is the conformalized coverage, not the
+    raw quantile coverage — surfacing the raw number would understate the served
+    interval. A recorded 0.0 is a real measurement, not a missing one.
+    """
+    coverage = metrics.get("conformal_coverage_80")
+    if coverage is None:
+        coverage = metrics.get("quantile_coverage_80", 0.0)
+    return float(coverage)
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     # ── startup ──
     logger.info("Starting up: loading dataset, model, group means, and metrics…")
 
@@ -390,28 +408,23 @@ async def lifespan(app: FastAPI):
         logger.info("Conformal interval margin loaded (delta=%.4f, log space)", state.conformal_delta)
 
     # ── Premium-tier classifier head ────────────────────────────────────────
-    # Optional: when no classifier is configured/present the API runs without it
-    # and a missing artefact → ``p_above_premium_threshold``
-    # becomes ``None`` on every response, the rest of the pipeline is
-    # unaffected. Any *other* exception is a real fault and should crash
-    # the probe — do not silently swallow it.
+    # The config always declares one, so only a missing artefact degrades:
+    # ``p_above_premium_threshold`` becomes ``None`` on every response and the
+    # rest of the pipeline is unaffected. Any *other* exception is a real fault
+    # and should crash the probe — do not silently swallow it.
     classifier_cfg_path = VALIDATED_CFG.model.classifier_path
-    premium_threshold_cfg = VALIDATED_CFG.model.premium_threshold
-    if classifier_cfg_path and premium_threshold_cfg is not None:
-        try:
-            state.classifier = load_classifier(str(ROOT / classifier_cfg_path))
-            state.premium_threshold = int(premium_threshold_cfg)
-            logger.info(
-                "Premium-tier classifier loaded (threshold=$%d)",
-                state.premium_threshold,
-            )
-        except FileNotFoundError:
-            logger.warning(
-                "No classifier artefact at %s — premium-tier probability will be None",
-                classifier_cfg_path,
-            )
-    else:
-        logger.info("Classifier not configured — premium-tier probability disabled")
+    try:
+        state.classifier = load_classifier(str(ROOT / classifier_cfg_path))
+        state.premium_threshold = int(VALIDATED_CFG.model.premium_threshold)
+        logger.info(
+            "Premium-tier classifier loaded (threshold=$%d)",
+            state.premium_threshold,
+        )
+    except FileNotFoundError:
+        logger.warning(
+            "No classifier artefact at %s — premium-tier probability will be None",
+            classifier_cfg_path,
+        )
 
     # Precompute (state, education) benchmark lookup so /predict becomes
     # an O(log n) dict get + binary search instead of a per-request
@@ -429,11 +442,7 @@ async def lifespan(app: FastAPI):
     # for a quick operator sanity check; intervals come from the model's
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
-    # Report the coverage of the interval the API actually serves. With a
-    # conformal margin applied that is the conformalized coverage, not the raw
-    # quantile coverage — surfacing the raw number would understate the served
-    # interval. Falls back to the raw coverage when no margin is calibrated.
-    state.quantile_coverage_80 = float(metrics.get("conformal_coverage_80") or metrics.get("quantile_coverage_80", 0.0))
+    state.quantile_coverage_80 = _served_interval_coverage(metrics)
     # Model provenance string (``{service_version}+{git_sha}.{data_sha}``)
     # emitted by scripts/train_quantile.py alongside the digests required below.
     state.model_version = str(metrics.get("model_version", "unknown"))
@@ -443,20 +452,17 @@ async def lifespan(app: FastAPI):
     # reports to the files on disk, so a swapped one crashes the probe.
     state.artifact_sha256 = dict(metrics.get("artifact_sha256") or {})
 
-    # The digest is required: model_version comes from the git SHA and input
-    # CSV, so a hyperparameter-only retrain leaves it identical.
-    cache.version = f"{state.model_version}.{state.artifact_sha256.get('model', '')[:12]}"
     artefact_files = {
         "model": ROOT / VALIDATED_CFG.model.model_path,
         "features": ROOT / VALIDATED_CFG.model.features_path,
         "group_means": ROOT / VALIDATED_CFG.model.group_means_path,
-        "baseline_stats": ROOT / "models" / "baseline_stats.json",
+        "baseline_stats": ROOT / VALIDATED_CFG.model.baseline_stats_path,
     }
     if state.classifier is not None and VALIDATED_CFG.model.classifier_path:
         artefact_files["classifier"] = ROOT / VALIDATED_CFG.model.classifier_path
     if VALIDATED_CFG.model.conformal_path:
         artefact_files["conformal"] = ROOT / VALIDATED_CFG.model.conformal_path
-    mismatches = _artifact_mismatches(artefact_files, state.artifact_sha256)
+    mismatches = artifact_mismatches(artefact_files, state.artifact_sha256)
     if mismatches:
         raise RuntimeError(
             "Artifact integrity check failed at startup — served files could not be "
@@ -468,6 +474,9 @@ async def lifespan(app: FastAPI):
     # recorded digest for one that did not load would advertise an artefact
     # this process is not serving.
     state.artifact_sha256 = {key: state.artifact_sha256[key] for key in artefact_files}
+    # After the filter: a pod missing an optional artefact must not share a
+    # namespace with one that has it.
+    cache.version = _cache_namespace(state.model_version, state.artifact_sha256)
 
     # Classifier ↔ config threshold consistency check. The trainer writes
     # the exact ``classifier_threshold`` it was fitted against into
@@ -492,13 +501,25 @@ async def lifespan(app: FastAPI):
                 "advertised threshold matches the model's decision boundary."
             )
 
-    # Load drift baseline (optional — produced by the training script)
-    baseline_path = ROOT / "models" / "baseline_stats.json"
-    if baseline_path.exists():
-        state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path))
-        logger.info("Drift monitor loaded from %s", baseline_path)
-    else:
-        logger.warning("No baseline_stats.json found — drift monitoring disabled")
+    # From the verified set, so the monitor opens the file whose digest matched
+    # and the integrity check above has already refused a missing one.
+    baseline_path = artefact_files["baseline_stats"]
+    state.drift_monitor = DriftMonitor.from_baseline(str(baseline_path), window=VALIDATED_CFG.drift.window)
+    # Two floors, and either can be the binding one: the handover moves with
+    # the detector's tuning and drops below the verdict floor once
+    # min_effect_size is loose. Checked here because only startup holds the
+    # configured window and the tuning it must clear at the same time.
+    required = max(state.drift_monitor.effect_floor_handover(), MIN_WINDOW_FOR_VERDICT)
+    if state.drift_monitor.window < required:
+        raise RuntimeError(
+            f"drift.window={state.drift_monitor.window} is below {required}, the larger of the "
+            f"effect-floor handover ({state.drift_monitor.effect_floor_handover()}) for "
+            f"alert_threshold={state.drift_monitor.alert_threshold} / "
+            f"min_effect_size={state.drift_monitor.min_effect_size} and the verdict floor "
+            f"({MIN_WINDOW_FOR_VERDICT}): /drift could not report a shift at the advertised "
+            f"sensitivity."
+        )
+    logger.info("Drift monitor loaded from %s", baseline_path)
 
     logger.info(
         "Ready — dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f, model_version: %s",
@@ -585,14 +606,14 @@ class _BodySizeLimitMiddleware(BaseHTTPMiddleware):
 app.add_middleware(_BodySizeLimitMiddleware)
 
 
-def _rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+def _rate_limit_handler(_request: Request, exc: RateLimitExceeded) -> JSONResponse:
     return JSONResponse(
         status_code=429,
         content={"detail": f"Rate limit exceeded: {exc.detail}"},
     )
 
 
-async def _global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+async def _global_exception_handler(request: Request, _exc: Exception) -> JSONResponse:
     """Scrub unhandled exceptions: log the stack trace server-side, return a
     generic 500 body with the request ID so operators can correlate without
     leaking internal details to the caller.
@@ -747,7 +768,7 @@ async def meta():
 
 @app.post("/predict", response_model=PredictResponse, tags=["Prediction"])
 @limiter.limit(RATE_LIMIT)
-def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):
+def predict(request: Request, req: PredictRequest, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Predict annual income for a given demographic + occupational profile.
 
     Required: ``state``, ``occupation``, ``education_level``, ``gender``, ``age``.
@@ -823,10 +844,22 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     return response
 
 
+def _complete_batch(responses: list[PredictResponse | None]) -> list[PredictResponse]:
+    """Drop nothing silently: the schema promises one result per input item.
+
+    Raising lets the global handler log the trace and return the generic 500 with
+    a request id, rather than a caller receiving a shorter list than it sent.
+    """
+    items = [r for r in responses if r is not None]
+    if len(items) != len(responses):
+        raise RuntimeError(f"batch response incomplete: {len(items)} of {len(responses)} items")
+    return items
+
+
 @app.post("/predict/batch", response_model=PredictBatchResponse, tags=["Prediction"])
-@limiter.limit("10/minute")
+@limiter.limit(BATCH_RATE_LIMIT)
 def predict_batch(
-    request: Request,
+    request: Request,  # noqa: ARG001
     req: PredictBatchRequest,
     _key: str | None = Depends(verify_api_key),
 ):
@@ -840,8 +873,7 @@ def predict_batch(
 
     Items that fail domain validation raise 422 for the whole batch.
     """
-    # 1. Validate every item up-front so a bad item at position N doesn't
-    #    waste inference work on items 0..N-1.
+    # Validated up-front so a bad item at position N wastes no inference on 0..N-1.
     for idx, item in enumerate(req.items):
         try:
             _validate_domain(item)
@@ -851,9 +883,7 @@ def predict_batch(
                 detail=f"Item {idx}: {exc.detail}",
             ) from exc
 
-    # 2. Encode every item once and observe drift for ALL of them (cache hits
-    #    included) so the drift monitor sees all batch traffic — consistent
-    #    with /predict, where only inference is cached, never observation.
+    # Cache hits are observed too: only inference is cached, never observation.
     encoded_all = [
         encode_feature_values(
             item,
@@ -877,7 +907,6 @@ def predict_batch(
     responses: list[PredictResponse | None] = [None] * len(req.items)
     rows_to_score: list[tuple[int, PredictRequest]] = []
 
-    # 3. Cache pass — return hits without touching the model.
     for idx, item in enumerate(req.items):
         cached = cache.get(item.model_dump())
         if cached is not None:
@@ -885,7 +914,7 @@ def predict_batch(
         else:
             rows_to_score.append((idx, item))
 
-    # 4. Single vectorised model call for the un-cached items.
+    # One vectorised call for everything the cache missed.
     if rows_to_score:
         batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
         preds_dollar = predict_quantiles_batch(state.model, batch_df, conformal_delta=state.conformal_delta)
@@ -916,12 +945,14 @@ def predict_batch(
             cache.set(item.model_dump(), resp.model_dump())
             responses[global_idx] = resp
 
-    return PredictBatchResponse(items=[r for r in responses if r is not None])
+    return PredictBatchResponse(items=_complete_batch(responses))
 
 
 @app.get("/drift", tags=["Monitoring"])
 @limiter.limit(RATE_LIMIT)
-async def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):
+# Sync, so Starlette runs it in the threadpool: check_drift reads the window over
+# the blocking Redis client and would otherwise stall the event loop.
+def drift_report(request: Request, _key: str | None = Depends(verify_api_key)):  # noqa: ARG001
     """Return feature drift report comparing recent predictions to training baseline.
 
     Carries the same key and budget as ``/predict``: the report aggregates the
@@ -932,9 +963,6 @@ async def drift_report(request: Request, _key: str | None = Depends(verify_api_k
     observation window is shared across all replicas — the report is
     cluster-wide. Without Redis, the report is per-pod.
     """
-    if state.drift_monitor is None:
-        return {
-            "status": "disabled",
-            "message": "No baseline_stats.json — run 'python -m scripts.train_quantile' to generate it",
-        }
+    if state.drift_monitor is None:  # pragma: no cover - startup refuses to serve without a verified baseline
+        raise RuntimeError("drift monitor not initialised")
     return state.drift_monitor.check_drift()

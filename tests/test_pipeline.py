@@ -33,13 +33,69 @@ def _require(condition: bool, reason: str) -> None:
     pytest.skip(reason)
 
 
+#: Calibration fields ``assert_calibration_bands`` reads.
+CALIBRATION_KEYS = (
+    "quantile_coverage_80",
+    "quantile_crossings",
+    "conformal_coverage_80",
+    "conformal_target_coverage",
+    "conformal_delta",
+)
+
+
+def assert_calibration_bands(metrics: dict) -> None:
+    """Hold the served quantile + conformal calibration inside its bands."""
+    missing = [key for key in CALIBRATION_KEYS if key not in metrics]
+    assert not missing, f"metrics file does not report {missing} — the bands below would not be checked"
+
+    coverage = metrics["quantile_coverage_80"]
+    crossings = metrics["quantile_crossings"]
+    # 80% PI should empirically cover ~80% of test targets (band [0.72, 0.88]).
+    assert 0.72 <= coverage <= 0.88, (
+        f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
+    )
+    assert crossings == 0, f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
+
+    # Cross-conformal calibration: the served (conformalized) interval must land
+    # near its nominal target and beat the raw interval's coverage.
+    conf_cov = metrics["conformal_coverage_80"]
+    target = metrics["conformal_target_coverage"]
+    assert metrics["conformal_delta"] > 0, "conformal margin must be positive to widen the interval"
+    assert abs(conf_cov - target) <= 0.03, (
+        f"Conformalized coverage {conf_cov:.3f} not within 0.03 of target {target:.2f}"
+    )
+    assert conf_cov >= coverage, (
+        f"Conformalized coverage {conf_cov:.3f} should not under-cover the raw interval {coverage:.3f}"
+    )
+
+
+class TestTheSplitPrimitive:
+    """Every caller derives the test rows from here, so nothing else pins it."""
+
+    @pytest.mark.parametrize(("n", "test_size", "seed"), [(500, 0.2, 42), (997, 0.35, 7), (50, 0.5, 0)])
+    def test_it_is_sklearns_split_at_the_seed_it_was_given(self, n, test_size, seed):
+        from sklearn.model_selection import train_test_split
+
+        from pipeline import train_test_positions
+
+        want_train, want_test = train_test_split(np.arange(n), test_size=test_size, random_state=seed)
+        got_train, got_test = train_test_positions(n, test_size=test_size, random_state=seed)
+        assert list(got_train) == list(want_train)
+        assert list(got_test) == list(want_test)
+
+    def test_a_different_seed_selects_different_rows(self):
+        """Otherwise the seed is decorative and every caller shares one split."""
+        from pipeline import train_test_positions
+
+        a = set(train_test_positions(500, test_size=0.2, random_state=1)[1])
+        b = set(train_test_positions(500, test_size=0.2, random_state=2)[1])
+        assert a != b
+
+
 # ── Config Tests ──────────────────────────────────────────────────────────────
 
 
 class TestConfig:
-    def test_config_loads(self, cfg):
-        assert cfg is not None
-
     def test_required_keys(self, cfg):
         for key in ("data", "thresholds", "model", "education_order", "regions"):
             assert key in cfg, f"Missing config key: {key}"
@@ -187,6 +243,11 @@ class TestPipelineConstants:
     def test_region_codes_cover_four_regions(self):
         assert set(REGION_CODES.keys()) == {"Midwest", "Northeast", "South", "West"}
 
+    def test_region_codes_are_the_alphabetical_rank_of_the_region_name(self):
+        """The shipped model was fitted on this encoding, and the notebook derived
+        it as ``pd.Categorical(...).codes``, which is that rank."""
+        assert REGION_CODES == {name: rank for rank, name in enumerate(sorted(REGION_CODES))}
+
     def test_region_codes_unique_integers(self):
         vals = list(REGION_CODES.values())
         assert len(vals) == len(set(vals)), "REGION_CODES values must be unique"
@@ -229,10 +290,10 @@ class TestModelPrediction:
 
     def test_prediction_plausible_range(self, production_model, df_engineered):
         """Back-transformed P50 predictions must be in a plausible dollar range."""
-        from pipeline import predict_quantiles
+        from pipeline import predict_quantiles_batch
 
         X = df_engineered[FEATURES_FULL].head(200)
-        p50_arr = np.asarray([predict_quantiles(production_model, X.iloc[[i]])[1] for i in range(len(X))])
+        p50_arr = predict_quantiles_batch(production_model, X)[:, 1]
         assert p50_arr.min() > 10_000, "Predictions unrealistically low"
         assert p50_arr.max() < 5_000_000, "Predictions unrealistically high"
 
@@ -273,6 +334,47 @@ class TestModelPrediction:
         with pytest.raises(FileNotFoundError):
             load_conformal_delta(str(tmp_path / "does_not_exist.json"))
 
+    def _shipped_metrics(self, cfg) -> dict:
+        from pathlib import Path
+
+        from pipeline import load_metrics
+
+        metrics = load_metrics(str(Path(__file__).parent.parent / cfg["model"]["metrics_path"]))
+        _require(bool(metrics), "metrics file unavailable")
+        return metrics
+
+    def test_the_bands_refuse_every_calibration_key_they_declare(self, cfg):
+        """Each key removed in turn must be refused by name, never skipped."""
+        metrics = self._shipped_metrics(cfg)
+        refused = set()
+        for key in sorted(metrics):
+            stripped = {k: v for k, v in metrics.items() if k != key}
+            try:
+                assert_calibration_bands(stripped)
+            except AssertionError:
+                refused.add(key)
+            except Exception as exc:
+                raise AssertionError(
+                    f"removing {key!r} raised {type(exc).__name__}, so the bands read a key they do not require"
+                ) from exc
+        unenforced = set(CALIBRATION_KEYS) - refused
+        assert not unenforced, f"the bands accept a metrics file with {sorted(unenforced)} missing"
+
+    @pytest.mark.parametrize(
+        ("key", "bad"),
+        [
+            ("quantile_coverage_80", 0.30),
+            ("quantile_crossings", 5),
+            ("conformal_coverage_80", 0.10),
+            ("conformal_delta", 0.0),
+        ],
+    )
+    def test_each_band_refuses_a_value_outside_it(self, cfg, key, bad):
+        """A band nobody can fail is a band that certifies nothing."""
+        metrics = {**self._shipped_metrics(cfg), key: bad}
+        with pytest.raises(AssertionError):
+            assert_calibration_bands(metrics)
+
     def test_saved_metrics_within_expected_range(self, cfg):
         """Saved model metrics must fall inside explicit regression windows.
 
@@ -300,31 +402,7 @@ class TestModelPrediction:
         assert 30_000 <= mae <= 90_000, f"P50 MAE ${mae:,.0f} outside expected band"
         assert 60_000 <= rmse <= 160_000, f"P50 RMSE ${rmse:,.0f} outside expected band"
 
-        # Quantile-specific guards (skip gracefully for legacy point models).
-        if "quantile_coverage_80" in metrics:
-            coverage = metrics["quantile_coverage_80"]
-            crossings = metrics.get("quantile_crossings", 0)
-            # 80% PI should empirically cover ~80% of test targets (band [0.72, 0.88]).
-            assert 0.72 <= coverage <= 0.88, (
-                f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
-            )
-            assert crossings == 0, (
-                f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
-            )
-
-        # Cross-conformal calibration: the served (conformalized) interval must
-        # land near its nominal target and beat the raw interval's coverage.
-        if "conformal_coverage_80" in metrics:
-            raw_cov = metrics["quantile_coverage_80"]
-            conf_cov = metrics["conformal_coverage_80"]
-            target = metrics["conformal_target_coverage"]
-            assert metrics["conformal_delta"] > 0, "conformal margin must be positive to widen the interval"
-            assert abs(conf_cov - target) <= 0.03, (
-                f"Conformalized coverage {conf_cov:.3f} not within 0.03 of target {target:.2f}"
-            )
-            assert conf_cov >= raw_cov, (
-                f"Conformalized coverage {conf_cov:.3f} should not under-cover the raw interval {raw_cov:.3f}"
-            )
+        assert_calibration_bands(metrics)
 
     def test_saved_cv_matches_test(self, cfg):
         """CV R² and Test R² must agree within ~0.15.
@@ -430,6 +508,13 @@ class TestEngineerFeaturesGuards:
         assert out["Education_Ord"].iloc[0] == 1
         assert out["Gender_Bin"].iloc[0] == 1
         assert out["Region_Code"].iloc[0] == REGION_CODES["West"]
+
+    def test_region_absent_from_region_codes_raises_naming_it(self):
+        # Renaming a region in config.yaml otherwise dies later as an opaque
+        # IntCastingNaNError from the Region_Code cast.
+        with pytest.raises(ValueError) as exc:
+            engineer_features(self._frame(), self.EDU, {"CA": "Pacific", "NY": "Northeast"})
+        assert "Pacific" in str(exc.value) and "REGION_CODES" in str(exc.value)
 
     def test_unmapped_education_raises_naming_the_label(self):
         with pytest.raises(ValueError) as exc:

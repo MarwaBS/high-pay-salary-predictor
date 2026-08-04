@@ -26,10 +26,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
         with:
-          # tests/test_private_names_absent.py sweeps every commit message on the
-          # default branch. The default depth-1 checkout has neither that history
-          # nor an origin/main ref, and a sweep of one commit passes for the wrong
-          # reason, so the test refuses to run against a shallow clone.
+          # tests/test_private_names_absent.py sweeps every commit message
+          # reachable from HEAD. The default depth-1 checkout carries one commit,
+          # and a sweep of one commit passes for the wrong reason, so the test
+          # refuses to run against a shallow clone.
           fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
@@ -119,8 +119,8 @@ jobs:
           pre-commit run --all-files debug-statements
 
       - name: Type-check with mypy
-        # streamlit_app.py is imported by nothing, so it is only checked when
-        # named; the pre-commit hook covers the rest via import-following.
+        # streamlit_app.py sits outside the pre-commit hook's file set and is
+        # imported only from a test module, so it is checked only when named.
         run: |
           # mypy is pinned in requirements.txt; only the stubs are added here.
           pip install pandas-stubs

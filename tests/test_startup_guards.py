@@ -7,10 +7,15 @@ one that is enforced. These drive the real lifespan so deleting any guard turns
 a test red.
 """
 
+import hashlib
+import json
+import math
+
 import pytest
 from fastapi.testclient import TestClient
 
 import api.main as m
+from api.drift import DriftMonitor
 from pipeline import load_metrics
 
 
@@ -48,7 +53,7 @@ class TestStartupRefusesToServe:
     def test_artifact_digest_mismatch_aborts_startup(self, monkeypatch):
         """Serving bytes that differ from the recorded digests is a hard stop."""
         monkeypatch.setattr(
-            m, "_artifact_mismatches", lambda _files, _recorded: ["model (x.ubj): loaded a != recorded b"]
+            m, "artifact_mismatches", lambda _files, _recorded: ["model (x.ubj): loaded a != recorded b"]
         )
         with pytest.raises(RuntimeError, match="Artifact integrity check failed"):
             with TestClient(m.app):
@@ -126,10 +131,17 @@ class TestEveryLoadedArtefactIsVerified:
 
         monkeypatch.setattr(m, "load_classifier", _absent)
         monkeypatch.setattr(m.state, "classifier", None)
+        recorded_classifier = m.load_metrics(str(m.ROOT / m.VALIDATED_CFG.model.metrics_path))["artifact_sha256"][
+            "classifier"
+        ]
         with TestClient(m.app) as client:
             digests = client.get("/health").json()["artifact_sha256"]
+            namespace = m.cache.version
         assert "classifier" not in digests
         assert "model" in digests
+        # A pod serving no classifier must not share a cache namespace with one
+        # that does, or it poisons a shared Redis with null probabilities.
+        assert recorded_classifier[:12] not in namespace
 
     @pytest.mark.parametrize("artefact", ARTEFACTS)
     def test_every_recorded_digest_is_compared_against_its_file(self, monkeypatch, artefact):
@@ -149,14 +161,23 @@ class TestCacheNamespaceBindsToTheServedModel:
     model's predictions for a full TTL.
     """
 
-    def test_namespace_includes_the_served_artefact_digest(self):
+    def test_namespace_binds_every_artefact_that_shapes_a_cached_response(self):
+        """A cached body carries the regressor's quantiles, the classifier's
+        probability and the conformal-widened interval, so a retrain of any one
+        of them alone must not reuse the previous namespace."""
         with TestClient(m.app):
-            model_digest = m.state.artifact_sha256["model"]
             assert m.state.model_version in m.cache.version
-            assert model_digest[:12] in m.cache.version, (
-                "cache namespace does not bind to the model bytes, so a "
-                "hyperparameter-only retrain would reuse the previous namespace"
-            )
+            for key in m._CACHE_KEYED_ARTEFACTS:
+                digest = m.state.artifact_sha256.get(key)
+                if digest is None:
+                    continue  # optional artefact this process did not load
+                assert digest[:12] in m.cache.version, f"namespace does not bind to the {key} bytes"
+
+    def test_the_keyed_set_names_every_response_shaping_artefact(self):
+        """Named literally on purpose. The test above iterates the constant, so
+        deriving this expectation from it too would let the constant shrink and
+        take both assertions with it."""
+        assert {"model", "classifier", "conformal"} <= set(m._CACHE_KEYED_ARTEFACTS)
 
 
 class TestClassifierHeadIsActuallyServed:
@@ -179,3 +200,124 @@ class TestClassifierHeadIsActuallyServed:
             payload = {**PAYLOAD, "occupation": m.state.occupations[0]}
             body = client.post("/predict/batch", json={"items": [payload]}).json()
             assert body["items"][0]["p_above_premium_threshold"] is not None
+
+
+class TestServedCoverageWiring:
+    """The coverage the API reports must come through the helper that treats a
+    recorded 0.0 as a real measurement, not as a missing value."""
+
+    def test_a_recorded_zero_coverage_survives_startup(self, monkeypatch):
+        real_load_metrics = m.load_metrics
+
+        def _zero_conformal(path):
+            metrics = dict(real_load_metrics(path))
+            metrics["conformal_coverage_80"] = 0.0
+            metrics["quantile_coverage_80"] = 0.8
+            return metrics
+
+        monkeypatch.setattr(m, "load_metrics", _zero_conformal)
+        with TestClient(m.app):
+            assert m.state.quantile_coverage_80 == 0.0
+
+    def test_the_helper_prefers_the_conformalized_number(self):
+        assert m._served_interval_coverage({"conformal_coverage_80": 0.0, "quantile_coverage_80": 0.8}) == 0.0
+        assert m._served_interval_coverage({"quantile_coverage_80": 0.8}) == 0.8
+
+
+class TestConfiguredArtefactPaths:
+    def test_the_api_reads_the_configured_baseline_path(self, monkeypatch):
+        """Renaming the artefact in config must move where startup looks, or the
+        key is decorative and the real path is hardcoded."""
+        renamed = m.VALIDATED_CFG.model.model_copy(update={"baseline_stats_path": "models/renamed_baseline.json"})
+        monkeypatch.setattr(m.VALIDATED_CFG, "model", renamed)
+        with pytest.raises(RuntimeError, match="renamed_baseline.json"):
+            with TestClient(m.app):
+                pass
+
+    def test_the_monitor_holds_the_artefact_whose_digest_startup_verified(self):
+        """The digest /health publishes and the stats the detector runs on are one file."""
+        declared = m.ROOT / m.VALIDATED_CFG.model.baseline_stats_path
+        digest = hashlib.sha256(declared.read_bytes()).hexdigest()
+        with TestClient(m.app) as client:
+            assert client.get("/health").status_code == 200
+            assert m.state.artifact_sha256["baseline_stats"] == digest
+            assert m.state.drift_monitor.baseline == json.loads(declared.read_text(encoding="utf-8"))
+
+
+class TestTheConfiguredDriftWindowReachesTheMonitor:
+    """``config.yaml::drift.window`` has to be what the served monitor runs on.
+
+    Startup is the only place the two meet, so a monitor built with anything
+    else — a literal, or a default re-added to ``DriftMonitor`` — leaves the
+    config key decorative while every other drift test still passes.
+    """
+
+    def test_the_served_monitor_runs_on_the_configured_window(self):
+        with TestClient(m.app):
+            assert m.state.drift_monitor.window == m.VALIDATED_CFG.drift.window
+
+    def test_changing_the_configured_window_moves_the_served_one(self, monkeypatch):
+        """Equality against the config alone would also hold for a hardcoded 500."""
+        moved = m.VALIDATED_CFG.drift.model_copy(update={"window": m.VALIDATED_CFG.drift.window + 137})
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", moved)
+        with TestClient(m.app):
+            assert m.state.drift_monitor.window == moved.window
+
+    def test_the_monitor_refuses_to_pick_a_window_for_its_caller(self):
+        """A default would let a caller that forgets the config still start."""
+        with pytest.raises(TypeError):
+            DriftMonitor(baseline_stats={"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}})
+
+    def test_a_window_under_the_handover_aborts_startup(self, monkeypatch):
+        """Serving it would advertise a sensitivity the window cannot deliver."""
+        monitor = m.DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
+        too_small = monitor.effect_floor_handover() - 1
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": too_small}))
+        with pytest.raises(RuntimeError, match="is below"):
+            with TestClient(m.app):
+                pass
+
+    def test_a_window_exactly_at_the_handover_is_accepted(self, monkeypatch):
+        """The handover is the first sufficient window, so the guard is ``<``."""
+        monitor = m.DriftMonitor({"Age": {"mean": 40.0, "std": 10.0, "min": 19.0, "max": 94.0}}, window=1)
+        exact = monitor.effect_floor_handover()
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": exact}))
+        with TestClient(m.app) as client:
+            assert client.get("/health").status_code == 200
+
+    @pytest.mark.parametrize("knob", ["min_effect_size", "alert_threshold"])
+    def test_retuning_either_knob_moves_the_window_the_guard_demands(self, monkeypatch, knob):
+        """The bound is a function of both; a literal in place of either would
+        keep demanding the window the shipped tuning happened to need.
+
+        Each tuning is derived from the configured window so that it is one the
+        window cannot satisfy — a fixed pair would also fail whenever someone
+        raised the window past it, which the config says they may.
+        """
+        configured = m.VALIDATED_CFG.drift.window
+        alert, effect = 2.0, 0.2
+        if knob == "min_effect_size":
+            effect = alert * math.sqrt(2.0 / configured) * 0.9
+        else:
+            alert = effect * math.sqrt(configured / 2.0) * 1.1
+        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (alert, effect, None))
+        with pytest.raises(RuntimeError, match="is below"):
+            with TestClient(m.app):
+                pass
+
+    def test_the_guard_reads_the_verdict_floor_rather_than_a_literal(self, monkeypatch):
+        """Moving the floor must move what the guard demands."""
+        monkeypatch.setattr("api.main.MIN_WINDOW_FOR_VERDICT", m.VALIDATED_CFG.drift.window + 1)
+        with pytest.raises(RuntimeError, match="is below"):
+            with TestClient(m.app):
+                pass
+
+    def test_a_window_under_the_verdict_floor_aborts_even_when_the_handover_is_lower(self, monkeypatch):
+        """A loose ``min_effect_size`` drops the handover under the verdict floor,
+        at which point the floor is the binding bound and the handover is not."""
+        monkeypatch.setattr(m.DriftMonitor.__init__, "__defaults__", (2.0, 1.0, None))
+        below = m.MIN_WINDOW_FOR_VERDICT - 1
+        monkeypatch.setattr(m.VALIDATED_CFG, "drift", m.VALIDATED_CFG.drift.model_copy(update={"window": below}))
+        with pytest.raises(RuntimeError, match="is below"):
+            with TestClient(m.app):
+                pass

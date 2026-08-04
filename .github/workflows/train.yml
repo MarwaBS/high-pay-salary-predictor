@@ -62,7 +62,7 @@ jobs:
           python -m pip install --upgrade pip
           # Train under the exact pinned set the release's reproducibility claim
           # rests on (recorded per release in model_metrics.json::library_versions),
-          # not the loose floors — so a re-run regenerates identical metrics.
+          # not the loose floors.
           pip install -r requirements-lock.txt
           pip install -e .
 
@@ -131,7 +131,9 @@ jobs:
           Trained under the pinned `requirements-lock.txt` ({libs}), the fixed
           seed (`config.yaml::model.random_state`), and the input CSV pinned by
           the `data_sha256` fragment of `model_version`. Installing that lock and
-          re-running the trainer regenerates identical metrics — the reproduction
+          re-running the trainer refits byte-identically on the same machine. Across
+          builds XGBoost's float reductions differ and the drift on these metrics is
+          unmeasured — the reproduction
           path is the pinned environment, not a bare `git checkout` (post-squash
           the training SHA is not a `main` ancestor; see MODEL_CARD).
 

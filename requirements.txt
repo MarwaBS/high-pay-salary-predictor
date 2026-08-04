@@ -1,15 +1,9 @@
 # ── Core Data Stack ────────────────────────────────────────────────────────────
 pandas>=1.5.0
 numpy>=1.21.0
-openpyxl>=3.0.0          # Excel I/O for BLS OEWS data
 
 # ── Visualization ──────────────────────────────────────────────────────────────
-matplotlib>=3.11.1
 plotly>=6.9.0            # Interactive charts in Streamlit
-
-# ── Geospatial ─────────────────────────────────────────────────────────────────
-geopandas>=0.12.0
-pyshp>=2.3.1
 
 # ── Machine Learning ───────────────────────────────────────────────────────────
 scikit-learn>=1.1.0

@@ -10,12 +10,15 @@ writing ``~0.782`` to three.
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
+
+from api.drift import DriftMonitor
 
 REPO_ROOT = Path(__file__).parent.parent
 METRICS = json.loads((REPO_ROOT / "models" / "model_metrics.json").read_text(encoding="utf-8"))
@@ -50,6 +53,7 @@ CLAIMS = [
     Claim("MODEL_CARD.md", "| P50 pinball loss", rf"~\${N}K", "p50_pinball", 1000),
     Claim("MODEL_CARD.md", "| P90 pinball loss", rf"~\${N}K", "p90_pinball", 1000),
     # ── Point-estimate fit ──────────────────────────────────────────────────
+    Claim("MODEL_CARD.md", "point estimator reaches R²", rf"R² ≈ {N}", "r2"),
     Claim("MODEL_CARD.md", "| Test R² (P50)", rf"\| ~{N} \|", "r2"),
     Claim("MODEL_CARD.md", "| CV R² (5-fold, train only", rf"~{N} ±", "cv_r2_mean"),
     Claim("MODEL_CARD.md", "| CV R² (5-fold, train only", rf"± {N}", "cv_r2_std"),
@@ -95,6 +99,19 @@ CLAIMS = [
     Claim("MODEL_CARD.md", "| Quantile crossings |", rf"\*\*{N}\*\*", "quantile_crossings"),
     # ── CHANGELOG ───────────────────────────────────────────────────────────
     Claim("CHANGELOG.md", "to the honest", rf"honest {N}", "cv_r2_mean"),
+    # ── DESIGN_DECISIONS ────────────────────────────────────────────────────
+    Claim("DESIGN_DECISIONS.md", "degenerate one: positive rate", rf"rate {N} train", "classifier_positive_rate_train"),
+    Claim("DESIGN_DECISIONS.md", "degenerate one: positive rate", rf"/ {N} test", "classifier_positive_rate_test"),
+    Claim("DESIGN_DECISIONS.md", "degenerate one: positive rate", rf"Brier {N} against", "classifier_brier"),
+    Claim("DESIGN_DECISIONS.md", "base rate of", rf"base rate of {N}", "classifier_brier_base_rate"),
+    Claim("DESIGN_DECISIONS.md", "against a majority-class", rf"accuracy {N} against", "classifier_accuracy"),
+    Claim(
+        "DESIGN_DECISIONS.md", "against a majority-class", rf"majority-class {N}", "classifier_baseline_majority_acc"
+    ),
+    Claim("DESIGN_DECISIONS.md", "not beat every reference", rf"ROC-AUC is {N}", "classifier_roc_auc"),
+    Claim("DESIGN_DECISIONS.md", "five-seed mean (", rf"\({N} ±", "stability_clf_roc_auc_mean"),
+    Claim("DESIGN_DECISIONS.md", "five-seed mean (", rf"± {N}\)", "stability_clf_roc_auc_std"),
+    Claim("DESIGN_DECISIONS.md", "classifier's baseline comparison", rf"ROC-AUC {N}", "classifier_roc_auc"),
 ]
 
 
@@ -195,3 +212,61 @@ def test_every_metric_row_is_pinned(doc):
     unpinned = [row for row in rows if not any(a in row for a in anchors) and not row.startswith(EXEMPT_ROW_PREFIXES)]
     detail = "\n".join(f"  {row[:100]}" for row in unpinned)
     assert not unpinned, f"unpinned metric rows in {doc}:\n{detail}"
+
+
+def _alarm_paragraph() -> str:
+    """The whole alarm bullet, continuation lines included.
+
+    A markdown bullet runs until the next one, so a figure added on a following
+    line is published in the same paragraph and has to be read as part of it.
+    """
+    lines = (REPO_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
+    starts = [i for i, line in enumerate(lines) if "Statistically controlled alarms" in line]
+    assert len(starts) == 1, f"the alarm bullet is anchored {len(starts)} times, expected 1"
+    end = next(
+        (i for i in range(starts[0] + 1, len(lines)) if lines[i].startswith(("-", "#")) or not lines[i].strip()),
+        len(lines),
+    )
+    return " ".join(lines[starts[0] : end])
+
+
+def _alarm_figures() -> dict[str, tuple[str, str]]:
+    """Each figure the bullet may print, keyed by the claim it stands for.
+
+    Recomputed from the detector's tuning and the baseline it monitors, and
+    paired with the wording that has to carry it — a number matching some other
+    claim in the same sentence would otherwise satisfy a check on the set alone.
+    """
+    baseline = json.loads((REPO_ROOT / "models" / "baseline_stats.json").read_text(encoding="utf-8"))
+    mon = DriftMonitor(baseline, window=1)
+    designed = math.erfc(mon.alert_threshold / math.sqrt(2.0))
+    return {
+        "familywise design level": (f"{designed:.1%}".rstrip("%"), r"rate holds at ≈([\d.]+)%"),
+        "uncorrected union": (f"{1 - (1 - designed) ** len(baseline):.0%}".rstrip("%"), r"instead of the ≈(\d+)%"),
+        "features monitored": (str(len(baseline)), r"union of ~(\d+) per-feature"),
+        "effect floor": (str(mon.min_effect_size), r"effect ≥ ([\d.]+) baseline"),
+        "ramp z-multiple": (str(round(mon.alert_threshold)), r"max\(0\.2, (\d+)·"),
+        "where the fixed floor starts to bind": (
+            str(round((mon.alert_threshold / mon.min_effect_size) ** 2)),
+            r"\(z/d\)² = (\d+)",
+        ),
+    }
+
+
+def test_every_figure_in_the_alarm_paragraph_is_one_the_code_decides():
+    """Membership, not a list of the figures someone happened to check: every
+    number the bullet prints is recomputed, and it may print nothing else."""
+    printed = set(re.findall(r"\d+(?:\.\d+)?", _alarm_paragraph()))
+    sourced = {value for value, _ in _alarm_figures().values()}
+    unaccounted = printed - sourced
+    assert not unaccounted, f"the bullet prints {sorted(unaccounted)}, which nothing in the code decides"
+
+
+@pytest.mark.parametrize("claim", sorted(_alarm_figures()))
+def test_each_alarm_figure_stands_where_its_claim_does(claim: str):
+    """Bound to the wording, so two sourced figures cannot swap roles and leave
+    the paragraph stating the opposite of what the code does."""
+    expected, pattern = _alarm_figures()[claim]
+    match = re.search(pattern, _alarm_paragraph())
+    assert match, f"the bullet no longer states the {claim}"
+    assert match.group(1) == expected, f"the bullet gives {match.group(1)} for the {claim}, code says {expected}"

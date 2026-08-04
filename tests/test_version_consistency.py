@@ -1,14 +1,7 @@
-"""
-Regression guard: the service version string must come
-from a single source of truth (``api.__version__``) and must match across:
+"""One service version, from ``api.__version__``.
 
-1. ``FastAPI(version=...)`` declared in ``api/main.py``
-2. The ``GET /`` root endpoint JSON body
-3. The default on ``HealthResponse.version`` in ``api/schemas.py``
-4. The ``[project].version`` field in ``pyproject.toml``
-
-A hardcoded version in any one of these while another is bumped is silent
-version skew across the same service; this locks them to one source.
+Compared across the FastAPI app, ``GET /``, ``HealthResponse``'s default and
+``pyproject.toml`` — a hardcoded value in any one of them is silent skew.
 """
 
 from __future__ import annotations

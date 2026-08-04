@@ -25,9 +25,9 @@ whether a Redis client is provided / available.
 
 Usage
 -----
-    monitor = DriftMonitor.from_baseline("models/baseline_stats.json")
+    monitor = DriftMonitor.from_baseline("models/baseline_stats.json", window=cfg.drift.window)
     monitor.observe({"Age": 42, "Education_Ord": 2, ...})
-    report = monitor.check_drift()  # {"features": {...}, "any_drifted": bool}
+    report = monitor.check_drift()  # {"features": {...}, "any_drifted": bool | None}
 """
 
 from __future__ import annotations
@@ -48,6 +48,11 @@ logger = logging.getLogger(__name__)
 #: writes to and reads from the same key.
 REDIS_DRIFT_KEY = "drift:observations"
 
+#: Smallest sample ``check_drift`` will rule on, applied to the window and to
+#: each feature's own observations. 30 is the conventional floor for placing a
+#: mean on a normal tail.
+MIN_WINDOW_FOR_VERDICT = 30
+
 
 class DriftMonitor:
     """Rolling-window drift detector using z-score deviation from baseline.
@@ -63,7 +68,7 @@ class DriftMonitor:
     def __init__(
         self,
         baseline_stats: dict[str, dict[str, float]],
-        window: int = 500,
+        window: int,
         alert_threshold: float = 2.0,
         min_effect_size: float = 0.2,
         redis_client: Any | None = None,
@@ -85,7 +90,7 @@ class DriftMonitor:
                          magnitude above the headline rate.
         min_effect_size: minimum |mean shift| in baseline-std units required ON
                          TOP OF statistical significance. Significance alone
-                         scales with n — at window=500 a ~0.09-std wobble
+                         scales with n — at n=500 a ~0.09-std wobble
                          clears it — so never-quite-i.i.d. production traffic
                          would alarm forever. Requiring a practical effect too
                          (Cohen's d small = 0.2) keeps an i.i.d. window silent
@@ -117,9 +122,15 @@ class DriftMonitor:
         else:
             logger.info("DriftMonitor using in-process deque (single-replica mode)")
 
-    # ------------------------------------------------------------------ #
-    # Backend discovery
-    # ------------------------------------------------------------------ #
+    def effect_floor_handover(self) -> int:
+        """Window size at which the fixed effect floor overtakes the ramped one.
+
+        Solves ``alert_threshold * sqrt(2/n) = min_effect_size`` from the floor
+        ``check_drift`` applies. Below it the ramp rules and a shift only just
+        over ``min_effect_size`` goes unreported, so a monitor run on a smaller
+        window cannot deliver the sensitivity it advertises.
+        """
+        return math.ceil(2 * (self.alert_threshold / self.min_effect_size) ** 2)
 
     @staticmethod
     def _discover_redis() -> Any | None:
@@ -144,10 +155,6 @@ class DriftMonitor:
         with open(path) as f:
             stats = json.load(f)
         return cls(baseline_stats=stats, **kwargs)
-
-    # ------------------------------------------------------------------ #
-    # Observation
-    # ------------------------------------------------------------------ #
 
     def observe(self, features: dict[str, float]) -> None:
         """Record a single observation (feature dict from one prediction)."""
@@ -176,10 +183,6 @@ class DriftMonitor:
 
         self.buffer.append(features)
         self._observation_count += 1
-
-    # ------------------------------------------------------------------ #
-    # Read side
-    # ------------------------------------------------------------------ #
 
     def _read_window(self) -> tuple[list[dict[str, float]], int, str, bool]:
         """Return (observations, total_count, backend_used, degraded).
@@ -218,12 +221,19 @@ class DriftMonitor:
                            capped at ``window`` — how many more must land before
                            the verdict resumes, not how many were lost
             features     : {feature: {z_score, effect_size, p_value, current_mean,
-                            baseline_mean, n_observed, drifted}}
+                            baseline_mean, n_observed, drifted}}. A feature
+                            observed fewer than ``MIN_WINDOW_FOR_VERDICT`` times
+                            carries ``drifted: None`` and no scores — the window
+                            may be long enough while that feature is not.
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
-                           the (ramp-scaled) practical effect-size floor; ``None``
-                           when ``degraded`` (verdict withheld — never a clean
-                           False from a window that is missing traffic)
+                           the (ramp-scaled) practical effect-size floor. ``None``
+                           whenever no verdict can be reached — a degraded
+                           window, fewer than ``MIN_WINDOW_FOR_VERDICT``
+                           observations, no observed feature matching the
+                           baseline, or no drift found while some feature was
+                           too sparse to rule on. Never a clean False from a
+                           window that could not be tested; ``message`` says which.
         """
         observations, total_count, backend, degraded = self._read_window()
         dropped = self._dropped_writes
@@ -242,23 +252,22 @@ class DriftMonitor:
                 "window_size": len(observations),
                 "backend": backend,
                 "degraded": True,
-                "status": "unavailable",
                 "features": {},
                 "any_drifted": None,
                 "dropped_observations": dropped,
                 "message": f"Drift window unavailable: {reason} — verdict withheld",
             }
 
-        if len(observations) < 30:
+        if len(observations) < MIN_WINDOW_FOR_VERDICT:
             return {
                 "observations": total_count,
                 "window_size": len(observations),
                 "backend": backend,
                 "degraded": False,
                 "features": {},
-                "any_drifted": False,
+                "any_drifted": None,
                 "dropped_observations": 0,
-                "message": f"Need at least 30 observations (have {len(observations)})",
+                "message": f"Need at least {MIN_WINDOW_FOR_VERDICT} observations (have {len(observations)})",
             }
 
         # Collect per-feature samples FIRST so the number of tests actually
@@ -271,7 +280,24 @@ class DriftMonitor:
             feat: [obs[feat] for obs in observations if feat in obs]
             for feat in self.baseline
         }
-        n_tested = sum(1 for vals in feature_values.values() if vals)
+        # Each p-value is a normal tail over one feature's own observations.
+        n_tested = sum(1 for vals in feature_values.values() if len(vals) >= MIN_WINDOW_FOR_VERDICT)
+
+        # Nothing testable: a renamed or absent feature set would otherwise score
+        # every feature n_observed=0, drifted=False and report a clean pass.
+        if not n_tested:
+            return {
+                "observations": total_count,
+                "window_size": len(observations),
+                "backend": backend,
+                "degraded": False,
+                "features": {},
+                "any_drifted": None,
+                "dropped_observations": 0,
+                "message": (
+                    f"No baseline feature was observed {MIN_WINDOW_FOR_VERDICT} times in this window — verdict withheld"
+                ),
+            }
 
         # ── Familywise error control (Sidak) ──────────────────────────────
         # ``any_drifted`` is the union of k per-feature tests (~10 in
@@ -290,7 +316,7 @@ class DriftMonitor:
         # (erfc(z/sqrt 2)) against alpha_k — equivalent to raising the
         # per-feature z cut to ~2.8 at k=10, without needing an inverse-CDF.
         alpha_family = math.erfc(self.alert_threshold / math.sqrt(2.0))
-        alpha_per_feature = 1.0 - (1.0 - alpha_family) ** (1.0 / n_tested) if n_tested else alpha_family
+        alpha_per_feature = 1.0 - (1.0 - alpha_family) ** (1.0 / n_tested)
 
         result: dict[str, dict] = {}
         for feat, stats in self.baseline.items():
@@ -299,16 +325,16 @@ class DriftMonitor:
             values = feature_values[feat]
             n = len(values)
 
-            if n == 0:
-                # Feature never observed in this window — can't assess drift.
+            if n < MIN_WINDOW_FOR_VERDICT:
+                # Too few to place this feature's mean on a normal tail.
                 result[feat] = {
-                    "z_score": 0.0,
-                    "effect_size": 0.0,
-                    "p_value": 1.0,
-                    "current_mean": None,
+                    "z_score": None,
+                    "effect_size": None,
+                    "p_value": None,
+                    "current_mean": round(float(np.mean(values)), 2) if n else None,
                     "baseline_mean": round(baseline_mean, 2),
-                    "n_observed": 0,
-                    "drifted": False,
+                    "n_observed": n,
+                    "drifted": None,
                 }
                 continue
 
@@ -332,7 +358,7 @@ class DriftMonitor:
             # Drift requires BOTH a statistically real mean shift (Sidak-
             # corrected p-value, see above) AND a practically meaningful one
             # (effect size). The significance test alone makes the alarm
-            # n-sensitive — at window=500 a ~0.09-std wobble clears it — so
+            # n-sensitive — at n=500 a ~0.09-std wobble clears it — so
             # always-noisy production traffic alarms forever. The effect-size
             # floor is the practical-significance gate.
             #
@@ -348,8 +374,8 @@ class DriftMonitor:
             # significance bound in z-units (2.0 -> 2.83 SE; per-feature tail
             # 0.47% vs 4.55%) for the whole ramp-up, decays as 1/sqrt(n), and
             # hands over to the fixed Cohen's-d floor continuously at
-            # n = 2*(alert_threshold/d)^2 = 200 (defaults) — so behaviour at
-            # the full window=500 operating point is unchanged.
+            # n = 2*(alert_threshold/d)^2 = 200 (defaults) — so a window past
+            # that handover behaves exactly as the fixed floor describes.
             p_value = math.erfc(z_score / math.sqrt(2.0))
             effect_floor = max(self.min_effect_size, self.alert_threshold * math.sqrt(2.0 / n))
             drifted = bool(p_value < alpha_per_feature and effect_size > effect_floor)
@@ -364,15 +390,29 @@ class DriftMonitor:
                 "drifted": drifted,
             }
 
-        return {
+        # An unruled feature leaves the union with an untested term, so it can
+        # withhold the verdict but not clear it.
+        unruled = sorted(feat for feat, v in result.items() if v["drifted"] is None)
+        if any(v["drifted"] for v in result.values()):
+            any_drifted: bool | None = True
+        elif unruled:
+            any_drifted = None
+        else:
+            any_drifted = False
+        report: dict[str, Any] = {
             "observations": total_count,
             "window_size": len(observations),
             "backend": backend,
             "degraded": False,
             "features": result,
-            "any_drifted": any(v["drifted"] for v in result.values()),
+            "any_drifted": any_drifted,
             "dropped_observations": 0,
         }
+        if unruled:
+            report["message"] = (
+                f"Observed fewer than {MIN_WINDOW_FOR_VERDICT} times, so left unruled: {', '.join(unruled)}"
+            )
+        return report
 
 
 def save_baseline_stats(
