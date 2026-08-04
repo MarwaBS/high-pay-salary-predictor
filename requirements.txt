@@ -35,7 +35,7 @@ pyyaml>=6.0              # config.yaml loading
 
 # ── Development & Testing ─────────────────────────────────────────────────────
 jupyter>=1.0.0
-pytest>=7.2.0
+pytest>=9.1.1
 pytest-cov>=4.0.0            # coverage reporting (make coverage)
 ruff==0.15.16                # fast linter + formatter (replaces flake8 + black + isort)
 mypy==2.1.0                  # static type checker (make type-check)
