@@ -105,7 +105,7 @@ project uses SemVer.
 - CI `schedule:` trigger (weekly, Mondays 05:00 UTC) re-running the full
   pipeline on `main` — including the Docker builds + Trivy scans — so
   newly published image CVEs are caught by time, not only by pushes.
-- Annotated tag `training/2.0.0` pinning training commit `1c5e9d896ee5`,
+- Annotated tag `training/2.0.0` pinning training commit `d361a769`,
   the code/data state the 2.0.0 model release was trained at, so
   provenance survives feature-branch cleanup. (The shipped
   `model_metrics.json` has since been regenerated — see Fixed below —

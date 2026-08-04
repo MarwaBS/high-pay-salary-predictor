@@ -199,11 +199,13 @@ Target: `Annual Income ≥ config.model.premium_threshold` (default
 `$150,000`).
 
 **No `scale_pos_weight`.** At the ~40/60 class balance the imbalance is
-mild, and reweighting bought a negligible ranking gain while degrading
-*probability calibration* — and the API serves this output to callers as
-a probability (`p_above_premium_threshold`). Honest probabilities matter
-more here than a fractional AUC bump, so the head is trained unweighted
-and the Brier score below proves the served numbers are calibrated.
+mild, and the API serves this output to callers as a probability
+(`p_above_premium_threshold`) rather than a ranking, so the head is trained
+unweighted. This is a design choice, not a measured one: the weighted
+variant was never run, so the trade-off is asserted from the class balance
+alone. The Brier score below beats the constant-base-rate predictor, which
+is skill — the repo computes no reliability curve, so it is not a
+calibration measurement.
 
 At HEAD, on the held-out test split:
 
@@ -213,7 +215,7 @@ At HEAD, on the held-out test split:
 | ROC-AUC | ~0.67 | Discrimination across the full threshold sweep. |
 | PR-AUC | ~0.55 | Precision-recall AUC — more informative than ROC on the ~40% positive rate. |
 | F1 @ 0.5 | ~0.50 | Balanced F1 at the default decision threshold. |
-| **Brier score** | **~0.218** vs **0.237** no-skill | Calibration of the served probability — lower is better; beats the constant-base-rate predictor. |
+| **Brier score** | **~0.218** vs **0.237** no-skill | Proper score on the served probability — lower is better; beats the constant-base-rate predictor. |
 | Subgroup ROC-AUC | 0.64–0.70 across Gender / Region (min 0.64, max 0.70) | No fairness collapse — all slices stay comfortably above 0.5. |
 
 **Baselines — does the GBM earn its place?** Recorded in

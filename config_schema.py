@@ -16,15 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class DataConfig(BaseModel):
-    resources_dir: str
-    data_dir: str
-    images_dir: str
-    models_dir: str
-    raw_bls: str
-    raw_census: str
     cleaned: str
-    bls_processed: str
-    census_processed: str
 
 
 class ThresholdsConfig(BaseModel):
@@ -60,7 +52,6 @@ class ModelConfig(BaseModel):
     subsample: float = Field(gt=0, le=1.0)
     colsample_bytree: float = Field(gt=0, le=1.0)
     reg_lambda: float = Field(ge=0)
-    log_transform_target: bool
     cv_folds: int = Field(ge=2, le=20)
     # Seeds the trainer refits under to report metric stability.
     stability_seeds: list[int] = Field(min_length=1)
@@ -90,12 +81,10 @@ class VisualizationColors(BaseModel):
     count_seq: str
     gender_male: str
     gender_female: str
-    accent: str
 
 
 class VisualizationConfig(BaseModel):
     dpi: int = Field(ge=72, le=600)
-    figure_size: list[int]
     colors: VisualizationColors
 
 

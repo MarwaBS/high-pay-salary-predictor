@@ -428,6 +428,19 @@ class TestFallbackMeansCounter:
         assert r.status_code == 200
         assert api_main.FALLBACK_MEANS_USED._value.get() == before
 
+    @pytest.mark.parametrize("route", ["/predict", "/predict/batch"], ids=["single", "batch"])
+    def test_the_served_prediction_moves_with_the_loaded_fallback(self, client, base_payload, monkeypatch, route):
+        """Entering the fallback branch is not enough — the loaded mean has to reach the model."""
+        monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
+
+        def served(fallback: float) -> float:
+            monkeypatch.setattr(api_main.state, "occ_fallback", fallback)
+            if route == "/predict":
+                return client.post(route, json=base_payload).json()["predicted_p50"]
+            return client.post(route, json={"items": [base_payload]}).json()["items"][0]["predicted_p50"]
+
+        assert served(90_000.0) != served(250_000.0), "the route ignores the loaded occupation fallback"
+
     def test_batch_counts_each_fallback_item(self, client, base_payload, monkeypatch):
         monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
         before = api_main.FALLBACK_MEANS_USED._value.get()

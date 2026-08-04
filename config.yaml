@@ -2,20 +2,11 @@
 # ============================================================
 # Project Configuration — High-Paying Jobs in the US
 # ============================================================
-# All thresholds, paths, and constants live here.
-# Never hardcode these values in notebooks or scripts.
+# Every key here is read by shipped code; nothing is kept for documentation.
 
 # ── Data Paths ─────────────────────────────────────────────
 data:
-  resources_dir: "Resources"
-  data_dir: "Data"
-  images_dir: "Images"
-  models_dir: "models"
-  raw_bls: "Resources/bls_state_data.xlsx"
-  raw_census: "Resources/census_data.csv"
   cleaned: "Data/cleaned_high_pay_data.csv"
-  bls_processed: "Data/bls_data.csv"
-  census_processed: "Data/census_data.csv"
 
 # ── Drift Monitor ──────────────────────────────────────────
 drift:
@@ -51,7 +42,6 @@ model:
   reg_lambda: 9.88      # L2 regularisation
   # Target transformation: model is trained on log1p(Annual Income).
   # Callers must expm1() the raw prediction to get dollar values.
-  log_transform_target: true
   # Cross-validation
   cv_folds: 5
   # Seeds the trainer refits under to report metric spread across resplits.
@@ -85,13 +75,11 @@ model:
 # ── Visualization ──────────────────────────────────────────
 visualization:
   dpi: 300
-  figure_size: [12, 6]
   colors:
     money_seq: "Blues"
     count_seq: "Greys"
     gender_male: "#2196F3"
     gender_female: "#E91E63"
-    accent: "#FF6F00"
 
 # ── Education Ordinal Mapping ──────────────────────────────
 # Used for both analysis and model feature encoding.

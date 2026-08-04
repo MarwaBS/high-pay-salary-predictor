@@ -296,11 +296,9 @@ def _train_premium_classifier(
     """Fit the premium-tier head with the ``classifier_*`` config hyper-parameters.
 
     No ``scale_pos_weight``: at the ~40/60 class balance of this cohort the
-    imbalance is mild, and reweighting trades *probability calibration* (which
-    the API serves to callers as ``p_above_premium_threshold``) for a
-    negligible ranking gain. Honest, well-calibrated probabilities are worth
-    more here than a fractional AUC bump — the Brier score in the metrics
-    proves the served numbers mean what they claim.
+    imbalance is mild, and the head is served as a probability
+    (``p_above_premium_threshold``) rather than a ranking. The weighted variant
+    was not run, so this follows from the class balance, not from a measurement.
     """
     clf = XGBClassifier(
         objective="binary:logistic",
