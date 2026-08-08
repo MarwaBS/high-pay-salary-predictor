@@ -130,8 +130,9 @@ shown in `models/model_metrics.json::train_date`.
 ### Provenance & reproducibility
 
 Each artefact carries a `model_version` of the form
-`{service_version}+{git_sha}.{data_sha256_prefix}` — currently
-`2.0.0+4aa98be6699e.e927845864e2`, recorded in `models/model_metrics.json`.
+`{service_version}+{git_sha}.{data_sha256_prefix}`, read from
+`models/model_metrics.json` rather than quoted here: the weekly retrain changes
+the git SHA, so any value written into this page is stale by the next Monday.
 The **git SHA is the exact commit the metrics file was generated at** — either
 a scheduled `train.yml` run on `main`, or a working-branch commit whose
 regenerated metrics land via PR. Because PRs land via **squash-merge** (which

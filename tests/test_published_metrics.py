@@ -79,9 +79,21 @@ CLAIMS = [
     # ── README summary ──────────────────────────────────────────────────────
     Claim("README.md", "); point-estimate R²", rf"≈ \${N}K", "conformal_width_median", 1000),
     Claim("README.md", "); point-estimate R²", rf"R² ≈ {N}", "r2"),
-    Claim("README.md", "> (AUC ", rf"AUC {N} vs", "classifier_roc_auc"),
-    Claim("README.md", "> (AUC ", rf"vs ≈ {N},", "classifier_baseline_logreg_roc_auc"),
-    Claim("README.md", "> (AUC ", rf"Brier ≈ {N}", "classifier_brier"),
+    Claim("README.md", "> baseline refit on the same five splits", rf"AUC {N} ±", "stability_clf_roc_auc_mean"),
+    Claim("README.md", "> baseline refit on the same five splits", rf"± {N} vs", "stability_clf_roc_auc_std"),
+    Claim(
+        "README.md",
+        "> baseline refit on the same five splits",
+        rf"vs {N} ±",
+        "stability_clf_baseline_logreg_roc_auc_mean",
+    ),
+    Claim(
+        "README.md",
+        "> baseline refit on the same five splits",
+        rf"± {N},",
+        "stability_clf_baseline_logreg_roc_auc_std",
+    ),
+    Claim("README.md", "> Brier ≈ ", rf"Brier ≈ {N}", "stability_clf_brier_mean"),
     Claim("README.md", "raw quantiles | ~", rf"\| ~{N} \|", "quantile_coverage_80"),
     Claim("README.md", "served (conformal)", rf"\*\*~{N}\*\*", "conformal_coverage_80"),
     Claim("README.md", "| Median PI width (served)", rf"~\${N}K", "conformal_width_median", 1000),
@@ -108,10 +120,22 @@ CLAIMS = [
     Claim(
         "DESIGN_DECISIONS.md", "against a majority-class", rf"majority-class {N}", "classifier_baseline_majority_acc"
     ),
-    Claim("DESIGN_DECISIONS.md", "not beat every reference", rf"ROC-AUC is {N}", "classifier_roc_auc"),
-    Claim("DESIGN_DECISIONS.md", "five-seed mean (", rf"\({N} ±", "stability_clf_roc_auc_mean"),
-    Claim("DESIGN_DECISIONS.md", "five-seed mean (", rf"± {N}\)", "stability_clf_roc_auc_std"),
-    Claim("DESIGN_DECISIONS.md", "classifier's baseline comparison", rf"ROC-AUC {N}", "classifier_roc_auc"),
+    Claim("DESIGN_DECISIONS.md", "not out-rank a linear model", rf"ROC-AUC is {N}", "classifier_roc_auc"),
+    Claim("DESIGN_DECISIONS.md", "and the reference", rf"^{N} ±", "stability_clf_roc_auc_mean"),
+    Claim("DESIGN_DECISIONS.md", "and the reference", rf"± {N} and", "stability_clf_roc_auc_std"),
+    Claim(
+        "DESIGN_DECISIONS.md",
+        "and the reference",
+        rf"reference {N} ±",
+        "stability_clf_baseline_logreg_roc_auc_mean",
+    ),
+    Claim(
+        "DESIGN_DECISIONS.md",
+        "and the reference",
+        rf"± {N},",
+        "stability_clf_baseline_logreg_roc_auc_std",
+    ),
+    Claim("DESIGN_DECISIONS.md", "the head averages ROC-AUC", rf"ROC-AUC {N} and", "stability_clf_roc_auc_mean"),
 ]
 
 

@@ -1,5 +1,5 @@
 {
-  "model_version": "2.0.0+4aa98be6699e.e927845864e2",
+  "model_version": "2.0.0+4536c7749d3b.e927845864e2",
   "service_version": "2.0.0",
   "artifact_sha256": {
     "model": "bb29c94c8af232c1d3c42aa51c241ff12bb74d619e82bc3fba4deada6d35eef4",
@@ -47,7 +47,7 @@
   "n_train": 8204,
   "n_test": 2051,
   "n_features": 10,
-  "train_date": "2026-07-25",
+  "train_date": "2026-08-08",
   "hyperparameters": {
     "n_estimators": 169,
     "max_depth": 3,
@@ -96,5 +96,7 @@
   "stability_clf_roc_auc_mean": 0.6958,
   "stability_clf_roc_auc_std": 0.0075,
   "stability_clf_brier_mean": 0.2128,
-  "stability_clf_brier_std": 0.0014
+  "stability_clf_brier_std": 0.0014,
+  "stability_clf_baseline_logreg_roc_auc_mean": 0.6901,
+  "stability_clf_baseline_logreg_roc_auc_std": 0.0071
 }
