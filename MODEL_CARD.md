@@ -85,9 +85,22 @@ Feature set is unchanged from v1.0.0 — only the training objective changed.
 | `Location Quotient` | float | BLS OEWS | |
 | `Jobs per 1000` | float | BLS OEWS | |
 | `Hourly Mean` | float | BLS OEWS | `Annual Mean Wage` dropped (VIF ≈ 2.3×10⁷, corr = 1.0000 to 4 dp) |
-| `Occ_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
-| `State_Mean_Income` | float | Derived from **training split only** | Fixed target encoding — no leakage |
+| `Occ_Mean_Income` | float | Derived from **training split only** | Target-derived salary prior, frozen after fit |
+| `State_Mean_Income` | float | Derived from **training split only** | Target-derived salary prior, frozen after fit |
 
+**The last two features are priors built from the target.** They are the mean
+income of the occupation and of the state, computed on training rows only and
+frozen into `models/group_means.json` for test and inference. That protocol is
+what keeps them out of train/test leakage, and
+`tests/test_integration.py::test_no_occ_mean_leakage` holds it.
+
+It is not only a leakage question. It sets what the model claims: at inference
+the caller supplies an occupation and a state, and the server injects the
+historical mean income for that pair. So the model answers "given that people in
+this occupation and state earned about X, what should this person earn?", not
+"what is this person worth from their own attributes alone". A pair absent from
+training falls back to the global mean of the group means, and performance on
+genuinely unseen occupations or states is **not measured** anywhere in this repo.
 ## Training Objective
 
 ```
@@ -142,9 +155,11 @@ still-fetchable object that is generally **not an ancestor of `main`**. Do not e
 does **not** depend on checking out that commit: it rests on the committed
 artefacts, the exact-version `requirements-lock.txt`, the fixed training seed
 (`config.yaml::model.random_state`), and the `data_sha256` prefix that pins the
-input CSV — same code + same data + same seed reproduce the same
-`model_version`. `tests/test_model_version.py` enforces the version *shape*;
-the `data_sha256` is what actually binds a metric set to its input.
+input CSV — same code + same data + same seed reproduce the same artefact bytes.
+They do not reproduce the same `model_version`, because it carries the git SHA of
+the commit that trained: the `data_sha256` binds a metric set to its input, the
+git SHA identifies the source revision. `tests/test_model_version.py` enforces
+the version *shape*.
 
 ### Point-estimate metrics (backward compat, P50 column)
 
@@ -217,7 +232,7 @@ At HEAD, on the held-out test split:
 | PR-AUC | ~0.55 | Precision-recall AUC — more informative than ROC on the ~40% positive rate. |
 | F1 @ 0.5 | ~0.50 | Balanced F1 at the default decision threshold. |
 | **Brier score** | **~0.218** vs **0.237** no-skill | Proper score on the served probability — lower is better; beats the constant-base-rate predictor. |
-| Subgroup ROC-AUC | 0.64–0.70 across Gender / Region (min 0.64, max 0.70) | No fairness collapse — all slices stay comfortably above 0.5. |
+| Subgroup ROC-AUC | 0.64–0.70 across Gender / Region (min 0.64, max 0.70) | No tracked slice fell to chance. Above 0.5 is a collapse check, not evidence of parity. |
 
 **Baselines — does the GBM earn its place?** Recorded in
 `model_metrics.json`, same split:

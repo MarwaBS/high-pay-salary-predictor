@@ -17,6 +17,11 @@ updates:
       # that always need rejection.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # Pinned to the versions models/tuning_study.json was scored under: a bump
+      # fails the provenance gate until the study is re-run. pip-audit still fires.
+      - dependency-name: "numpy"
+      - dependency-name: "scikit-learn"
+      - dependency-name: "xgboost"
 
   # GitHub Actions — keep action versions pinned and patched
   - package-ecosystem: "github-actions"
