@@ -528,7 +528,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 653 tests, including regression guards for the documented fixes
+├── tests/                                     # ★ 653 tests — every fix is a locked regression guard
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
