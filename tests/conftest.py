@@ -8,6 +8,12 @@ import os
 os.environ.setdefault("RATE_LIMIT", "1000000/minute")
 os.environ.setdefault("BATCH_RATE_LIMIT", "1000000/minute")
 
+# Every child a test spawns, bounded. Measured: git calls 0.0s, the assemble
+# script 1.2s, pytest --collect-only 2.9s, the real tuning run 7.0s. 900 keeps a
+# slower runner comfortable and still turns a hung child into a failure instead
+# of a job that runs to its six-hour ceiling.
+SUBPROCESS_TIMEOUT_S = 900
+
 from pathlib import Path  # noqa: E402
 
 import pandas as pd  # noqa: E402

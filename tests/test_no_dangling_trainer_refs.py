@@ -11,6 +11,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from tests.conftest import SUBPROCESS_TIMEOUT_S
+
 REPO_ROOT = Path(__file__).parent.parent
 
 # Both guard files name the legacy trainer on purpose, inside their own assertions.
@@ -37,7 +39,9 @@ _SCAN_SUFFIXES = {
 
 def _eligible_tracked_count() -> int:
     """How many tracked files the sweep must reach, counted without its filters."""
-    out = subprocess.run(["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True).stdout
+    out = subprocess.run(
+        ["git", "ls-files"], cwd=REPO_ROOT, capture_output=True, text=True, check=True, timeout=SUBPROCESS_TIMEOUT_S
+    ).stdout
     names = [Path(n) for n in out.splitlines() if n.strip()]
     eligible = [rel for rel in names if rel.suffix in _SCAN_SUFFIXES and rel not in _EXCLUDED_FILES]
     assert eligible, "no eligible tracked files found — this counter is stale"
@@ -47,7 +51,12 @@ def _eligible_tracked_count() -> int:
 def _iter_tracked_files():
     """Yield every tracked file eligible for the scan — only tracked files ship."""
     listed = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout.split("\0")
     for name in filter(None, listed):
         rel = Path(name)
@@ -86,3 +95,32 @@ def test_no_dangling_train_model_references():
         "at ``scripts/train_quantile.py`` (or delete the stale line "
         "entirely):\n  " + "\n  ".join(offenders)
     )
+
+
+def test_every_subprocess_call_is_bounded_by_a_timeout() -> None:
+    """A child with no deadline hangs the job to its six-hour ceiling.
+
+    All twelve call sites here were unbounded, one of them in the training
+    script rather than a test, so this is a fix and a floor at once. Read from
+    the parse tree, because the spawn can be spelled `run`, `check_output` or
+    `Popen`.
+    """
+    import ast
+
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "*.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
+    )
+    spawns = {"subprocess.run", "subprocess.check_output", "subprocess.Popen"}
+    unbounded = []
+    for name in [n for n in listed.stdout.split("\0") if n]:
+        tree = ast.parse((REPO_ROOT / name).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and ast.unparse(node.func) in spawns:
+                if not any(word.arg == "timeout" for word in node.keywords):
+                    unbounded.append(f"{name}:{node.lineno}")
+    assert not unbounded, unbounded

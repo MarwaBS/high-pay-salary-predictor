@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import SUBPROCESS_TIMEOUT_S
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 HF_DIR = REPO_ROOT / "deploy" / "huggingface"
 
@@ -46,6 +48,7 @@ def test_assembled_snapshot_satisfies_every_dockerfile_copy(tmp_path: Path) -> N
         ["bash", str(HF_DIR / "assemble.sh"), str(REPO_ROOT), str(space)],
         capture_output=True,
         text=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, f"assemble.sh failed:\n{result.stderr}"
 

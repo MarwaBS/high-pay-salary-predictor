@@ -16,6 +16,8 @@ from pathlib import Path, PurePosixPath
 import pytest
 import yaml
 
+from tests.conftest import SUBPROCESS_TIMEOUT_S
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 # The directory a serving stage's relative COPY destinations resolve against,
@@ -204,7 +206,12 @@ def _shipped_modules() -> list[str]:
     """Every shipped module, from what git tracks — a directory list misses
     nested packages that packaging still ships."""
     listed = subprocess.run(
-        ["git", "ls-files", "-z", "*.py"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        ["git", "ls-files", "-z", "*.py"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout.split("\0")
     found = sorted(name for name in filter(None, listed) if not name.startswith("tests/"))
     assert found, "no shipped modules discovered — the enumeration rotted"

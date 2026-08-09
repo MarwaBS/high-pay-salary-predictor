@@ -140,7 +140,7 @@ class DriftMonitor:
         if not redis_url:
             return None
         try:
-            import redis  # type: ignore
+            import redis
 
             client = redis.from_url(redis_url, decode_responses=True)
             client.ping()
