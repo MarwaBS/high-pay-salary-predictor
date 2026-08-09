@@ -340,13 +340,23 @@ def _headline_metrics_for_seed(
     coverage = float(((y_test.to_numpy() >= preds[:, 0]) & (y_test.to_numpy() <= preds[:, 2])).mean())
 
     y_test_clf = (y_test >= premium_threshold).astype(int)
-    clf = _train_premium_classifier(X_train, (y_train >= premium_threshold).astype(int), params=clf_params, seed=seed)
+    y_train_clf = (y_train >= premium_threshold).astype(int)
+    clf = _train_premium_classifier(X_train, y_train_clf, params=clf_params, seed=seed)
     proba = clf.predict_proba(X_test)[:, 1]
+
+    # The logistic reference refits on this seed's split too. Scoring it once on
+    # the shipped split while the head carries a mean over five would compare a
+    # point estimate against a distribution, which cannot settle which ranks better.
+    logreg = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000, random_state=seed))
+    logreg.fit(X_train, y_train_clf)
+    baseline_proba = logreg.predict_proba(X_test)[:, 1]
+
     return {
         "p50_r2": float(r2_score(y_test, preds[:, 1])),
         "coverage_80": coverage,
         "clf_roc_auc": float(roc_auc_score(y_test_clf, proba)),
         "clf_brier": float(brier_score_loss(y_test_clf, proba)),
+        "clf_baseline_logreg_roc_auc": float(roc_auc_score(y_test_clf, baseline_proba)),
     }
 
 
@@ -600,12 +610,13 @@ def main() -> None:
         for s in stability_seeds
     ]
     stability_metrics: dict[str, float] = {}
-    for key in ("p50_r2", "coverage_80", "clf_roc_auc", "clf_brier"):
+    for key in ("p50_r2", "coverage_80", "clf_roc_auc", "clf_brier", "clf_baseline_logreg_roc_auc"):
         vals = [run[key] for run in stab_runs]
         stability_metrics[f"stability_{key}_mean"] = round(float(np.mean(vals)), 4)
         stability_metrics[f"stability_{key}_std"] = round(float(np.std(vals)), 4)
     logger.info(
-        "Stability: P50 R²=%.4f±%.4f  cov80=%.4f±%.4f  clf AUC=%.4f±%.4f  Brier=%.4f±%.4f",
+        "Stability: P50 R²=%.4f±%.4f  cov80=%.4f±%.4f  clf AUC=%.4f±%.4f  Brier=%.4f±%.4f"
+        "  | logreg AUC=%.4f±%.4f over the same splits",
         stability_metrics["stability_p50_r2_mean"],
         stability_metrics["stability_p50_r2_std"],
         stability_metrics["stability_coverage_80_mean"],
@@ -614,6 +625,8 @@ def main() -> None:
         stability_metrics["stability_clf_roc_auc_std"],
         stability_metrics["stability_clf_brier_mean"],
         stability_metrics["stability_clf_brier_std"],
+        stability_metrics["stability_clf_baseline_logreg_roc_auc_mean"],
+        stability_metrics["stability_clf_baseline_logreg_roc_auc_std"],
     )
 
     # ── Save artefacts ───────────────────────────────────────────────────────

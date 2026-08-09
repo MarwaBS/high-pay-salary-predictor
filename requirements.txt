@@ -1,13 +1,16 @@
 # ── Core Data Stack ────────────────────────────────────────────────────────────
 pandas>=1.5.0
-numpy>=1.21.0
+# Pinned, not floored: models/tuning_study.json records the version it was
+# scored under, and tests/test_hyperparameter_provenance.py re-derives that
+# score. A resolver free to pick a newer build makes the study unreproducible.
+numpy==2.4.6
 
 # ── Visualization ──────────────────────────────────────────────────────────────
 plotly>=6.9.0            # Interactive charts in Streamlit
 
 # ── Machine Learning ───────────────────────────────────────────────────────────
-scikit-learn>=1.1.0
-xgboost>=1.7.0
+scikit-learn==1.9.0
+xgboost==3.2.0
 
 # ── Statistical Analysis ───────────────────────────────────────────────────────
 scipy>=1.9.0

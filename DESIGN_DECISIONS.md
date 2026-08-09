@@ -122,12 +122,11 @@ record. See D-001.
 **Measured:** the narrow label is a usable task on the shipped data, not a
 degenerate one: positive rate 0.3974 train / 0.3852 test, Brier 0.2177 against a
 base rate of 0.2368, accuracy 0.6543 against a majority-class 0.6148. **It does
-not beat every reference:** ROC-AUC is 0.6735 against a logistic baseline of
-0.68 — on the shipped split the head is calibrated better than the base rate but
-does not out-rank a linear model on the same features. That comparison is one
-split: the baseline is fitted once, while the head's own five-seed mean is
-0.6958 ± 0.0075, so the shipped draw sits below its own mean and the gap is
-inside seed noise. XGBoost is kept for the serving constraint stated in
+not out-rank a linear model:** on the shipped split ROC-AUC is 0.6735 against a
+logistic baseline of 0.68. Refit across the same five splits, the head averages
+0.6958 ± 0.0075 and the reference 0.6901 ± 0.0071, a gap smaller than either
+spread, so the shipped draw sits below its own mean and neither model is
+established as the better ranker on this data. XGBoost is kept for the serving constraint stated in
 MODEL_CARD — the repo ships zero pickle, and an sklearn head would introduce a
 joblib artefact — not for a ranking win. The regressor is scored separately on
 quantile coverage and crossings, which a single head could not report.
@@ -151,15 +150,13 @@ Carried deliberately, not overlooked. Each states why it is open and what would
 close it, so a reader does not have to infer the difference between a decision
 and an omission.
 
-- **The classifier's baseline comparison rests on one split.** ROC-AUC 0.6735
-  against `classifier_baseline_logreg_roc_auc` 0.68, both in
-  `models/model_metrics.json`. `scripts/train_quantile.py:551` fits the logistic
-  reference once, outside `_headline_metrics_for_seed`, so the head carries a
-  five-seed mean (0.6958 ± 0.0075) and the baseline carries none — the two are
-  not measured on comparable footing, and the shipped gap is smaller than the
-  head's own seed spread. `tests/test_classifier.py` enforces the no-skill floor
-  and the base-rate Brier, so nothing fails on this. Closing it means recording
-  the baseline per seed alongside the head.
+- **The classifier and its baseline are close enough that neither wins.** Across
+  the same five splits the head averages ROC-AUC 0.6958 and the logistic
+  reference 0.6901, a gap smaller than either spread
+  (`stability_clf_roc_auc_*` and `stability_clf_baseline_logreg_roc_auc_*` in
+  `models/model_metrics.json`), so the ranking claim is unresolved in both
+  directions on this data. The single-split pair recorded under D-002 is one draw
+  from that distribution.
 - **`premium_threshold: 150000` has no producer.** `config.yaml` sets it and
   `config_schema.py` bounds it at `ge=100_000`; no script emits it and no
   measurement selects it. It is a product definition — where "premium" is drawn

@@ -21,6 +21,7 @@ import yaml
 
 import scripts.tune as tune
 from pipeline import train_test_positions
+from scripts.train_quantile import _library_versions
 from scripts.tune import SEARCH_SPACE, TUNED_KEYS, _sample, cv_pinball, training_frame
 
 REPO_ROOT = Path(__file__).parent.parent
@@ -360,4 +361,20 @@ def test_the_recorded_best_score_re_derives(study, tune_inputs):
     assert recomputed == pytest.approx(study["best"]["cv_pinball"], rel=REPRODUCTION_TOLERANCE), (
         f"study records {study['best']['cv_pinball']} for trial {study['best']['trial']}, "
         f"re-running its parameters gives {recomputed}"
+    )
+
+
+def test_the_study_re_derives_under_the_versions_it_recorded(study):
+    """The two tests above compare a float against a score produced by a specific
+    build. Without this the environment can drift and they fail on the number
+    rather than on the cause: xgboost 3.2.0 to 3.4.0 moved the incumbent 2.19%,
+    twenty times the 0.11% build spread the tolerance was measured against.
+    """
+    running = _library_versions()
+    recorded = study["library_versions"]
+    drifted = {k: (v, running.get(k)) for k, v in recorded.items() if running.get(k) != v}
+    assert not drifted, (
+        f"tuning_study.json was scored under {recorded}, this environment has {running}; "
+        f"differs on {sorted(drifted)}. Re-run scripts/tune.py and commit the study, "
+        f"or restore the pins in requirements.txt — the recorded score describes the old build."
     )
