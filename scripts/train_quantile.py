@@ -105,10 +105,7 @@ def _resolve_git_sha() -> str:
         return env_sha[:12]
     try:
         out = subprocess.check_output(
-            ["git", "rev-parse", "--short=12", "HEAD"],
-            cwd=ROOT,
-            stderr=subprocess.DEVNULL,
-            text=True,
+            ["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL, text=True, timeout=30
         )
         return out.strip() or "unknown"
     except (FileNotFoundError, subprocess.CalledProcessError):

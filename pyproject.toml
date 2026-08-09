@@ -53,6 +53,10 @@ indent-style = "space"
 python_version      = "3.12"
 warn_return_any     = true
 warn_unused_configs = true
+# A `type: ignore` that stopped suppressing anything still reads as a live
+# waiver and hides the next real error on that line. redis ships its own types,
+# so the one on its import had already gone stale.
+warn_unused_ignores = true
 exclude             = [".venv", "build"]
 
 # Third-party packages without bundled stubs — ignore missing imports only for

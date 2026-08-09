@@ -12,6 +12,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+from tests.conftest import SUBPROCESS_TIMEOUT_S
+
 REPO_ROOT = Path(__file__).parent.parent
 
 # Paths that must stay ignored: private notes at the root, an allowlisted name
@@ -39,6 +41,7 @@ def _is_ignored(rel_path: str) -> bool:
         ["git", "check-ignore", "-q", "--no-index", rel_path],
         cwd=REPO_ROOT,
         capture_output=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     return result.returncode == 0
 
@@ -51,6 +54,7 @@ def test_every_tracked_markdown_file_stays_committable():
         capture_output=True,
         text=True,
         check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout.splitlines()
     assert tracked, "expected the repo to track markdown files"
 

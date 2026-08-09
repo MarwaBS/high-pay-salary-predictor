@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import SUBPROCESS_TIMEOUT_S
+
 REPO_ROOT = Path(__file__).parent.parent
 HASH_FILE = REPO_ROOT / ".private-name-hashes"
 EXPECTED_DIGESTS = 2  # narrowing the list is itself a regression; see the count test
@@ -57,7 +59,12 @@ def _offending(text: str, banned: set[str]) -> set[str]:
 
 def _tracked_text_files() -> list[Path]:
     listed = subprocess.run(
-        ["git", "ls-files", "-z"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        ["git", "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout.split("\0")
     paths = []
     for name in filter(None, listed):
@@ -106,7 +113,7 @@ def test_tracked_file_names_no_private_repository(path):
 
 
 def _git(*args: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
+    return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True, timeout=SUBPROCESS_TIMEOUT_S)
 
 
 def _commit_messages() -> list[tuple[str, str]]:

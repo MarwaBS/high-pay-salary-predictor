@@ -18,6 +18,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.conftest import SUBPROCESS_TIMEOUT_S
+
 REPO_ROOT = Path(__file__).parent.parent
 README = REPO_ROOT / "README.md"
 
@@ -35,6 +37,7 @@ def collected_count() -> int:
         capture_output=True,
         text=True,
         check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     match = re.search(r"([0-9]+) tests collected", result.stdout)
     assert match, f"could not read a collection count from:\n{result.stdout[-500:]}"

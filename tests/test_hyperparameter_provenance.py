@@ -23,6 +23,7 @@ import scripts.tune as tune
 from pipeline import train_test_positions
 from scripts.train_quantile import _library_versions
 from scripts.tune import SEARCH_SPACE, TUNED_KEYS, _sample, cv_pinball, training_frame
+from tests.conftest import SUBPROCESS_TIMEOUT_S
 
 REPO_ROOT = Path(__file__).parent.parent
 STUDY_PATH = REPO_ROOT / "models" / "tuning_study.json"
@@ -74,6 +75,7 @@ def _doc_surface() -> list[Path]:
         text=True,
         encoding="utf-8",
         check=True,
+        timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout
     paths = [REPO_ROOT / name for name in listed.split("\0") if name]
     assert len(paths) >= 10, f"only {len(paths)} tracked docs found — this scan is looking at nothing"
@@ -299,6 +301,7 @@ def test_a_real_run_records_the_argmin_as_best(tmp_path):
         capture_output=True,
         text=True,
         env={**os.environ, "CI": "true"},
+        timeout=SUBPROCESS_TIMEOUT_S,
     )
     assert result.returncode == 0, result.stderr[-2000:]
 
