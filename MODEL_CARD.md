@@ -254,10 +254,12 @@ cohort) is where real separability gain lives.
 ## Subgroup Performance
 
 Per-group empirical 80% coverage is tracked in
-`models/model_metrics.json::subgroup_coverage_80` and locked in by
-`tests/test_pipeline.py::test_subgroup_coverage_within_band`. At HEAD
-the spread is 0.73–0.80 across `Gender` and `Region` — narrower than
-the v1 point-estimator R² gap.
+`models/model_metrics.json::subgroup_coverage_80`.
+`tests/test_pipeline.py::test_subgroup_coverage_within_band` holds every slice
+inside **[0.60, 0.95]**. That band is a collapse guard, not a guarantee of equal
+coverage: a slice could fall from 0.77 to 0.61 and still pass. At HEAD the spread
+is 0.73–0.80 across `Gender` and `Region` — narrower than the v1
+point-estimator R² gap.
 
 The quantile reframe does not directly close the subgroup gap in this
 dataset because the data-prep truncation affects both subgroups. The
