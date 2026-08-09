@@ -240,7 +240,7 @@ At HEAD, on the held-out test split:
 | Baseline | Value | Verdict |
 |---|---|---|
 | Majority-class accuracy | ~0.61 | XGBoost accuracy (~0.65) beats it, but only modestly. |
-| Logistic-regression ROC-AUC | ~0.68 | **The XGBoost head slightly trails a scaled logistic regression (0.674 vs ~0.68).** |
+| Logistic-regression ROC-AUC | ~0.68 | **On the shipped split the head trails (0.674 vs ~0.68). Refit across the same five splits the two are ~0.696 and ~0.690, a gap smaller than either spread, so neither ranks better.** |
 
 The honest conclusion: on this feature set the gradient-booster buys
 nothing over linear logistic regression — the signal ceiling is the
