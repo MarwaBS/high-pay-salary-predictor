@@ -68,6 +68,19 @@ CLAIMS = [
     Claim("MODEL_CARD.md", "| Classifier Brier | ~", rf"± {N}", "stability_clf_brier_std"),
     # ── Classifier head ─────────────────────────────────────────────────────
     Claim("MODEL_CARD.md", "| ROC-AUC | ~", rf"\| ~{N} \|", "classifier_roc_auc"),
+    Claim("MODEL_CARD.md", "| Logistic-regression ROC-AUC", rf"\({N} vs", "classifier_roc_auc"),
+    Claim(
+        "MODEL_CARD.md",
+        "| Logistic-regression ROC-AUC",
+        rf"are ~{N} and",
+        "stability_clf_roc_auc_mean",
+    ),
+    Claim(
+        "MODEL_CARD.md",
+        "| Logistic-regression ROC-AUC",
+        rf"and ~{N}, a gap",
+        "stability_clf_baseline_logreg_roc_auc_mean",
+    ),
     Claim("MODEL_CARD.md", "| PR-AUC | ~", rf"\| ~{N} \|", "classifier_pr_auc"),
     Claim("MODEL_CARD.md", "| F1 @ 0.5 | ~", rf"\| ~{N} \|", "classifier_f1"),
     Claim("MODEL_CARD.md", "| **Brier score**", rf"\*\*~{N}\*\* vs", "classifier_brier"),

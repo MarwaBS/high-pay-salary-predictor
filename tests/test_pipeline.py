@@ -34,6 +34,10 @@ def _require(condition: bool, reason: str) -> None:
 
 
 #: Calibration fields ``assert_calibration_bands`` reads.
+#: Collapse guard on per-subgroup 80% coverage, not a parity guarantee. MODEL_CARD
+#: quotes it, and test_model_card_states_the_subgroup_band_it_actually_enforces holds them together.
+SUBGROUP_COVERAGE_BAND = (0.60, 0.95)
+
 CALIBRATION_KEYS = (
     "quantile_coverage_80",
     "quantile_crossings",
@@ -436,13 +440,12 @@ class TestModelPrediction:
         )
 
     def test_subgroup_coverage_within_band(self, cfg):
-        """Every per-gender / per-region subgroup must stay within a
-        calibration band around the cohort-wide target of 0.80.
+        """Every per-gender / per-region subgroup must stay inside
+        SUBGROUP_COVERAGE_BAND.
 
-        The floor at 0.60 is generous but catches a catastrophic
-        subgroup collapse — e.g. the female cohort dropping from
-        ~0.77 to 0.50 — that would indicate the quantile model has
-        stopped being calibrated for that population.
+        The floor is generous by design: it catches a catastrophic subgroup
+        collapse — the female cohort dropping from ~0.77 to 0.50 — and does not
+        certify equal coverage. MODEL_CARD states the same band.
         """
         from pathlib import Path
 
@@ -459,10 +462,22 @@ class TestModelPrediction:
             "Re-run `python -m scripts.train_quantile` to regenerate metrics.",
         )
 
-        bad = {k: v for k, v in subgroup_coverage.items() if not (0.60 <= v <= 0.95)}
+        low, high = SUBGROUP_COVERAGE_BAND
+        bad = {k: v for k, v in subgroup_coverage.items() if not (low <= v <= high)}
         assert not bad, (
-            f"Subgroup coverage outside [0.60, 0.95]: {bad}. "
+            f"Subgroup coverage outside [{low}, {high}]: {bad}. "
             f"Quantile model calibration has drifted for these subgroups."
+        )
+
+    def test_model_card_states_the_subgroup_band_it_actually_enforces(self):
+        """The card called this band "locked in" for 80% coverage while the floor
+        sits at 0.60, so a slice could halve toward the floor and still pass."""
+        from pathlib import Path
+
+        low, high = SUBGROUP_COVERAGE_BAND
+        card = (Path(__file__).parent.parent / "MODEL_CARD.md").read_text(encoding="utf-8")
+        assert f"[{low:.2f}, {high:.2f}]" in card, (
+            f"MODEL_CARD does not state the enforced band [{low:.2f}, {high:.2f}]"
         )
 
     def test_feature_count_matches(self, production_model):
