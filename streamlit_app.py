@@ -8,7 +8,6 @@ Run: streamlit run streamlit_app.py
 from __future__ import annotations
 
 import os
-import warnings
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +29,6 @@ from pipeline import (
     training_age_support,
     typical_training_age,
 )
-
-warnings.filterwarnings("ignore")
 
 # ── Config ────────────────────────────────────────────────────────────────────
 st.set_page_config(

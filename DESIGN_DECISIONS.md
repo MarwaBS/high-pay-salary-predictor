@@ -142,8 +142,6 @@ ranking gap against the logistic baseline is already recorded under Known gaps.
 
 ---
 
----
-
 ## Known gaps
 
 Carried deliberately, not overlooked. Each states why it is open and what would
@@ -155,7 +153,7 @@ and an omission.
   reference 0.6901, a gap smaller than either spread
   (`stability_clf_roc_auc_*` and `stability_clf_baseline_logreg_roc_auc_*` in
   `models/model_metrics.json`), so the ranking claim is unresolved in both
-  directions on this data. The single-split pair recorded under D-002 is one draw
+  directions on this data. The single-split pair recorded under D-004 is one draw
   from that distribution.
 - **`premium_threshold: 150000` has no producer.** `config.yaml` sets it and
   `config_schema.py` bounds it at `ge=100_000`; no script emits it and no
@@ -206,12 +204,6 @@ and an omission.
   exercised end-to-end by `tests/test_hyperparameter_provenance.py`, but through
   a subprocess, which coverage cannot instrument. The behaviour is tested; the
   lines are not counted. Closing it means calling `main()` in-process.
-
-- **`requirements-lock.txt` still pins the notebook-only packages.** The split in
-  `requirements.txt` does not extend to the lock, because the lock is the
-  reproducibility contract the trainer installs. Regenerating it is a deliberate
-  act that has to be followed by a retrain and a comparison of the published
-  metrics, not a side effect of a dependency tidy-up.
 
 - **Private repository names: closed, and guarded.** A sweep of `.gitignore`,
   `.trivyignore` and every published commit message on `main` returns no hit, by

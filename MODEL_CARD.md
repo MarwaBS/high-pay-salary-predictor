@@ -92,7 +92,7 @@ Feature set is unchanged from v1.0.0 — only the training objective changed.
 income of the occupation and of the state, computed on training rows only and
 frozen into `models/group_means.json` for test and inference. That protocol is
 what keeps them out of train/test leakage, and
-`tests/test_integration.py::test_no_occ_mean_leakage` holds it.
+`tests/test_integration.py::TestSplitThenEngineer::test_no_occ_mean_leakage` holds it.
 
 It is not only a leakage question. It sets what the model claims: at inference
 the caller supplies an occupation and a state, and the server injects the
@@ -174,7 +174,7 @@ the version *shape*.
 
 CV is computed **only on the training set**, in **dollar space**, using
 a fresh fold model — exactly the same space as the test metric above.
-This is enforced by `tests/test_pipeline.py::test_saved_cv_matches_test`.
+This is enforced by `tests/test_pipeline.py::TestModelPrediction::test_saved_cv_matches_test`.
 
 ### Stability across seeds
 
@@ -255,7 +255,7 @@ cohort) is where real separability gain lives.
 
 Per-group empirical 80% coverage is tracked in
 `models/model_metrics.json::subgroup_coverage_80`.
-`tests/test_pipeline.py::test_subgroup_coverage_within_band` holds every slice
+`tests/test_pipeline.py::TestModelPrediction::test_subgroup_coverage_within_band` holds every slice
 inside **[0.60, 0.95]**. That band is a collapse guard, not a guarantee of equal
 coverage: a slice could fall from 0.77 to 0.61 and still pass. At HEAD the spread
 is 0.73–0.80 across `Gender` and `Region` — narrower than the v1
@@ -326,7 +326,7 @@ corrected.
    intervals. The model does not correct for historical discrimination
    embedded in wages. Per-subgroup calibration is computed at train time
    (`model_metrics.json::subgroup_coverage_80`) and gated by
-   `tests/test_pipeline.py::test_subgroup_coverage_within_band`, so a
+   `tests/test_pipeline.py::TestModelPrediction::test_subgroup_coverage_within_band`, so a
    fairness collapse in any tracked slice fails the build.
 
 ## How to Retrain
@@ -339,5 +339,5 @@ python -m scripts.train_quantile
 Writes artefacts to `models/` and metrics to `models/model_metrics.json`.
 The test suite picks up changes automatically — if the quantile coverage
 drifts outside `[0.72, 0.88]` or any crossings appear,
-`tests/test_pipeline.py::test_saved_metrics_within_expected_range` will
+`tests/test_pipeline.py::TestModelPrediction::test_saved_metrics_within_expected_range` will
 fail loudly.

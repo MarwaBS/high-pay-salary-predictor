@@ -124,7 +124,7 @@ class TestProductionModelEndToEnd:
         P50 under the quantile objective is the median-minimiser, not the
         mean-minimiser, so R² is a weak fit-statistic for this model. The
         real SLO lives in
-        ``tests/test_pipeline.py::test_saved_metrics_within_expected_range``
+        ``tests/test_pipeline.py::TestModelPrediction::test_saved_metrics_within_expected_range``
         (coverage + crossings). This test only guards against a catastrophic
         regression where predictions become uncorrelated with the target.
         """

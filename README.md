@@ -242,7 +242,7 @@ Grouped by the engineering discipline they demonstrate.
 
 - **Multi-quantile XGBoost.** `reg:quantileerror` with α=[0.10, 0.50, 0.90] in a single model. API returns `predicted_p10 / p50 / p90` directly. Honest uncertainty beats a rationalised point estimate — see [MODEL_CARD.md](MODEL_CARD.md) for the rationale.
 - **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, **no `scale_pos_weight`** — the cohort's class balance is a mild ~40/60 and the head is served as a probability rather than a ranking, so it is trained unweighted; the weighted variant was not run, see [MODEL_CARD.md](MODEL_CARD.md)). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** — a true unfiltered `≥ $100K` membership classifier — is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
-- **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::test_no_occ_mean_leakage`) locks this in.
+- **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::TestSplitThenEngineer::test_no_occ_mean_leakage`) locks this in.
 - **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF ≈ 2.3×10⁷ against the other features). 10 features total.
 - **CV = Test space, leakage-free.** 5-fold CV runs on the training set only; each fold recomputes its own target-encoding means from its train rows (`np.expm1` back to dollars, then `r2_score`), so a validation row is never encoded with a mean that saw its own target and `cv_r2_mean` is directly comparable to test `r2`.
 
@@ -286,8 +286,8 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Tests
 
-- **658 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
-- **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and — crucially — on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
+- **661 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
 ---
@@ -434,7 +434,7 @@ MD, VA and WA show LQ > 1.5 (the dataset covers the 50 states and not DC), meani
 
 **Dominant education level by state**
 ![Dominant Education by State](./Images/Dominant_education_by_state_Viz.png)
-Bachelor's degree dominates most of the contiguous US for $100K+ earners. Master's is modal in select Midwest states; Professional degrees lead in ND. This geographic clustering reflects industry mix (oil & gas, agriculture, manufacturing) rather than education ROI differences.
+Bachelor's degree dominates most of the contiguous US for $100K+ earners. Master's is modal in select Midwest states; Professional degrees lead in ND. Industry mix (oil & gas, agriculture, manufacturing) is a plausible driver of this geographic clustering, but this dataset carries no industry column, so it separates neither that nor education ROI.
 
 **Education–income premium by state**
 ![Education Premium by State](./Images/Education_Income_Premiums_by_State_Viz.png)
@@ -528,7 +528,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 658 tests, including regression guards for the documented fixes
+├── tests/                                     # ★ 661 tests, including regression guards for the documented fixes
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
@@ -587,7 +587,7 @@ high-pay-salary-predictor/
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
 - **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **658 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **661 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
 - **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold — the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
 - **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)

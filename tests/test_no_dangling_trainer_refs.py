@@ -8,6 +8,7 @@ both sets say beside themselves what they leave out.
 
 from __future__ import annotations
 
+import ast
 import subprocess
 from pathlib import Path
 
@@ -97,16 +98,62 @@ def test_no_dangling_train_model_references():
     )
 
 
+def _spellings(tree: ast.Module, exported: set[str]) -> set[str]:
+    """How this file can name those members. Read from its own imports, so an
+    aliased module or a bare `from subprocess import run` is not missed."""
+    modules: set[str] = {"subprocess"}
+    bare: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(a.asname or a.name for a in node.names if a.name == "subprocess")
+        elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+            bare.update(a.asname or a.name for a in node.names if a.name in exported)
+    return {f"{m}.{n}" for m in modules for n in exported} | bare
+
+
+def _has_deadline(call: ast.Call) -> bool:
+    """`timeout=None` restores the unbounded default and `timeout=0` is a
+    deadline no child can meet, so neither is a real bound and the
+    keyword's presence is not the property wanted.
+
+    A `**kwargs` splat carries no `arg`, so a spawn is flagged even when
+    the mapping holds a timeout; write the deadline at the call site."""
+    for word in call.keywords:
+        if word.arg == "timeout":
+            return not (isinstance(word.value, ast.Constant) and not word.value.value)
+    return False
+
+
+def _names_bound_to(tree: ast.Module, spawns: set[str]) -> set[str]:
+    """Local names holding a spawn, from a parameter default or an assignment.
+
+    One hop, and simple targets only. A tuple-unpacked target, a name bound
+    from another name or a lambda default is not followed.
+    """
+    held = (ast.Attribute, ast.Name)
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            taking = node.args.posonlyargs + node.args.args
+            given = node.args.defaults
+            pairs = list(zip(taking[len(taking) - len(given) :], given, strict=True))
+            pairs += [(a, d) for a, d in zip(node.args.kwonlyargs, node.args.kw_defaults, strict=True) if d is not None]
+            names.update(a.arg for a, d in pairs if isinstance(d, held) and ast.unparse(d) in spawns)
+        elif isinstance(node, ast.Assign | ast.AnnAssign):
+            bound = node.targets if isinstance(node, ast.Assign) else [node.target]
+            if isinstance(node.value, held) and ast.unparse(node.value) in spawns:
+                names.update(t.id for t in bound if isinstance(t, ast.Name))
+    return names
+
+
 def test_every_subprocess_call_is_bounded_by_a_timeout() -> None:
     """A child with no deadline hangs the job to its six-hour ceiling.
 
-    All twelve call sites here were unbounded, one of them in the training
-    script rather than a test, so this is a fix and a floor at once. Read from
-    the parse tree, because the spawn can be spelled `run`, `check_output` or
-    `Popen`.
+    Of the seven spawns `subprocess` exports, `getoutput`, `getstatusoutput`
+    and `Popen` accept no `timeout`, so they are refused rather than waved
+    through by a rule they cannot satisfy. A spawn reaching its call site as a
+    value is read through the name it is bound to.
     """
-    import ast
-
     listed = subprocess.run(
         ["git", "ls-files", "-z", "*.py"],
         cwd=REPO_ROOT,
@@ -115,12 +162,22 @@ def test_every_subprocess_call_is_bounded_by_a_timeout() -> None:
         check=True,
         timeout=SUBPROCESS_TIMEOUT_S,
     )
-    spawns = {"subprocess.run", "subprocess.check_output", "subprocess.Popen"}
-    unbounded = []
+    takes_timeout = {"run", "call", "check_call", "check_output"}
+    takes_none = {"getoutput", "getstatusoutput", "Popen"}
+    unbounded: list[str] = []
+    refused: list[str] = []
     for name in [n for n in listed.stdout.split("\0") if n]:
         tree = ast.parse((REPO_ROOT / name).read_text(encoding="utf-8"))
+        bounded = _spellings(tree, takes_timeout)
+        unboundable = _spellings(tree, takes_none)
+        aliases = _names_bound_to(tree, bounded)
         for node in ast.walk(tree):
-            if isinstance(node, ast.Call) and ast.unparse(node.func) in spawns:
-                if not any(word.arg == "timeout" for word in node.keywords):
-                    unbounded.append(f"{name}:{node.lineno}")
+            if isinstance(node, ast.Call):
+                callee = ast.unparse(node.func)
+                if (callee in bounded or callee in aliases) and not _has_deadline(node):
+                    unbounded.append(f"{name}:{node.lineno} {callee}")
+            elif isinstance(node, ast.Name | ast.Attribute):
+                if ast.unparse(node) in unboundable:
+                    refused.append(f"{name}:{node.lineno} {ast.unparse(node)}")
     assert not unbounded, unbounded
+    assert not refused, refused

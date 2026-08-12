@@ -51,7 +51,7 @@ pre-commit install    # installs git hooks (ruff, nbstripout, file hygiene)
 
 - Update `FEATURES_FULL` in `pipeline.py` if the model feature set changes.
 - Retrain the model with `make model` (quantile trainer) and verify tests still pass.
-- The regression guard is `tests/test_pipeline.py::test_saved_metrics_within_expected_range`. If quantile coverage, crossings, or P50 R² drift, update the bands there deliberately and explain why in the commit message.
+- The regression guard is `tests/test_pipeline.py::TestModelPrediction::test_saved_metrics_within_expected_range`. If quantile coverage, crossings, or P50 R² drift, update the bands there deliberately and explain why in the commit message.
 
 ## Adding tests
 
