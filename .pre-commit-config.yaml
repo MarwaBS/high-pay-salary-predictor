@@ -26,6 +26,8 @@ repos:
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
+        # Appending a newline stales the digests the trainer recorded.
+        exclude: ^models/
       - id: check-yaml
       - id: check-toml
       - id: check-merge-conflict
@@ -42,12 +44,18 @@ repos:
       - id: detect-private-key  # block accidental secret commits
 
   # ── Mypy static type checker ─────────────────────────────────────────────────
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.1.0
+  # Project interpreter, not an isolated env: without fastapi, pydantic and
+  # xgboost, typed returns degrade to Any and it reports errors CI does not.
+  # `mypy` must be on PATH, so commit from the activated venv.
+  - repo: local
     hooks:
       - id: mypy
-        files: ^(pipeline\.py|api/|scripts/)
-        additional_dependencies: [pandas-stubs, types-PyYAML]
+        name: mypy
+        entry: mypy
+        language: system
+        pass_filenames: false
+        files: \.py$
+        args: [api, pipeline.py, scripts, config_schema.py, streamlit_app.py]
 
   # ── Notebook cleanliness (strip output before committing) ───────────────────
   - repo: https://github.com/kynan/nbstripout

@@ -282,13 +282,16 @@ class HealthResponse(BaseModel):
     artifact_sha256: dict[str, str] = Field(
         default_factory=dict,
         description=(
-            "SHA-256 digest of each served artefact (model, classifier, "
-            "conformal, features, group_means, baseline_stats), recorded by "
-            "the trainer in ``models/model_metrics.json``. Each one present on "
-            "disk is re-hashed at startup and a mismatch crashes the process. "
-            "An absent artefact is skipped but still listed: the classifier, "
-            "feature list and drift baseline are optional, and the feature list "
-            "is content-addressed rather than loaded."
+            "SHA-256 digest of each artefact verified at startup (model, "
+            "classifier, conformal, features, group_means, baseline_stats), "
+            "recorded by the trainer in ``models/model_metrics.json``. Each "
+            "is re-hashed against the file on disk and a mismatch crashes the "
+            "process; the feature list is content-addressed rather than "
+            "loaded. The classifier is the one optional head: absent, it "
+            "drops out of this map and ``p_above_premium_threshold`` is "
+            "``None`` on every response. Every other artefact is required, "
+            "including the conformal margin once ``conformal_path`` is "
+            "configured, and its absence fails startup."
         ),
     )
 

@@ -1,5 +1,0 @@
-# pip-audit ignore list
-# ---------------------
-# pip-audit does not read this file: the CI gate passes no --ignore-vuln flag,
-# so an ID added here suppresses nothing. Suppressing a finding means adding an
-# explicit --ignore-vuln to .github/workflows/ci.yml with inline rationale.

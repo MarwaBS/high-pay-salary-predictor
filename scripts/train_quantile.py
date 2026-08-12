@@ -104,11 +104,21 @@ def _resolve_git_sha() -> str:
     if env_sha:
         return env_sha[:12]
     try:
+        # TimeoutExpired is a sibling of CalledProcessError, not a subclass, so
+        # it escapes the fallback unless named. 30s against a measured 0.0s.
         out = subprocess.check_output(
-            ["git", "rev-parse", "--short=12", "HEAD"], cwd=ROOT, stderr=subprocess.DEVNULL, text=True, timeout=30
+            ["git", "rev-parse", "--short=12", "HEAD"],
+            cwd=ROOT,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            timeout=30,
         )
         return out.strip() or "unknown"
-    except (FileNotFoundError, subprocess.CalledProcessError):
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
         return "unknown"
 
 

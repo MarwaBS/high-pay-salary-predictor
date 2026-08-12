@@ -15,6 +15,7 @@ are structurally sane — locking the trainer's contract, not just its coverage.
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -31,6 +32,15 @@ from config_schema import ProjectConfig
 from pipeline import FEATURES_FULL, compute_group_means, engineer_features
 
 REPO_ROOT = Path(tq.__file__).resolve().parent.parent
+
+
+def _raise(exc):
+    """A ``check_output`` stand-in that always fails with ``exc``."""
+
+    def _fail(*_args, **_kwargs):
+        raise exc
+
+    return _fail
 
 
 #: Parameters each trainer was actually called with during ``trained_in_tmp``.
@@ -416,3 +426,30 @@ def test_the_subgroup_gates_read_the_constant_rather_than_a_literal(tmp_path, mo
     published = json.loads((tmp_path / "models" / "model_metrics.json").read_text())
     assert set(published["subgroup_coverage_80"]) == expected
     assert set(published["classifier_subgroup_roc_auc"]) == {n for n in expected if two_class[n]}
+
+
+@pytest.mark.parametrize(
+    "raised",
+    [
+        FileNotFoundError("no git"),
+        subprocess.CalledProcessError(1, ["git"]),
+        subprocess.TimeoutExpired(["git"], 30),
+    ],
+)
+def test_git_sha_falls_back_instead_of_killing_the_run(monkeypatch, raised):
+    """The docstring promises the trainer never crashes on a bare tarball.
+    TimeoutExpired is a sibling of CalledProcessError, so a bounded call
+    reopened that path until it was named."""
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    monkeypatch.delenv("GIT_SHA", raising=False)
+    monkeypatch.setattr(subprocess, "check_output", _raise(raised))
+    assert tq._resolve_git_sha() == "unknown"
+
+
+def test_git_sha_still_propagates_what_it_does_not_handle(monkeypatch):
+    """The control: a blanket handler would swallow this too."""
+    monkeypatch.delenv("GITHUB_SHA", raising=False)
+    monkeypatch.delenv("GIT_SHA", raising=False)
+    monkeypatch.setattr(subprocess, "check_output", _raise(PermissionError("denied")))
+    with pytest.raises(PermissionError):
+        tq._resolve_git_sha()
