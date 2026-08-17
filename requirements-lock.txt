@@ -33,7 +33,7 @@ mypy_extensions==1.1.0
 narwhals==2.22.1
 numpy==2.4.6
 packageurl-python==0.17.6
-packaging==26.2
+packaging==26.3
 pandas-stubs==3.0.3.260530
 pandas==3.0.3
 pathspec==1.1.1
