@@ -13,6 +13,12 @@ on:
     # tests, Docker build + Trivy scan on both images) on main.
     - cron: "0 5 * * 1"
 
+# Least privilege for every job that does not set its own block. deploy and
+# docker-build declare theirs, and a job block replaces this one rather than
+# adding to it, so both keep the scopes they already ask for.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Lint & Test (Python ${{ matrix.python-version }})
@@ -84,7 +90,7 @@ jobs:
             --output=sbom-api.cyclonedx.json
       - name: Upload SBOM artifact
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: sbom-api-cyclonedx-${{ github.run_number }}
           path: sbom-api.cyclonedx.json
