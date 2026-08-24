@@ -42,7 +42,7 @@ pytest>=9.1.1
 pytest-cov>=4.0.0            # coverage reporting (make coverage)
 ruff==0.15.16                # fast linter + formatter (replaces flake8 + black + isort)
 mypy==2.1.0                  # static type checker (make type-check)
-pandas-stubs>=2.0.0          # pandas type stubs so mypy resolves DataFrame/Series
+pandas-stubs>=3.0.5.260730          # pandas type stubs so mypy resolves DataFrame/Series
 pre-commit>=3.6.0            # git pre-commit hooks (pre-commit install)
 
 # ── API-only runtime pins ─────────────────────────────────────────────────────
