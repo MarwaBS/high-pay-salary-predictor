@@ -4,7 +4,7 @@
 # streamlit / shap / lightgbm / statsmodels / geopandas here. Keeping the
 # API image lean also makes pip-audit scans faster and reduces the CVE
 # surface.
-FROM python:3.12-slim-bookworm AS api-builder
+FROM python:3.14-slim-bookworm AS api-builder
 
 WORKDIR /build
 
@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements-api.txt
 # ── Stage 1b: Dashboard dependency builder ──────────────────────────────────
 # Separate builder for Streamlit + viz stack so the api image does not pull
 # streamlit/plotly/matplotlib it never uses.
-FROM python:3.12-slim-bookworm AS dashboard-builder
+FROM python:3.14-slim-bookworm AS dashboard-builder
 
 WORKDIR /build
 
@@ -40,7 +40,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements-dashboard.txt
 
 
 # ── Stage 2: Streamlit dashboard ──────────────────────────────────────────────
-FROM python:3.12-slim-bookworm AS dashboard
+FROM python:3.14-slim-bookworm AS dashboard
 
 WORKDIR /app
 
@@ -79,7 +79,7 @@ ENTRYPOINT ["streamlit", "run", "streamlit_app.py", \
 
 
 # ── Stage 3: FastAPI salary predictor ────────────────────────────────────────
-FROM python:3.12-slim-bookworm AS api
+FROM python:3.14-slim-bookworm AS api
 
 WORKDIR /app
 
