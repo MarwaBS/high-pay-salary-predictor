@@ -273,7 +273,7 @@ def tab_geographic(df: pd.DataFrame) -> None:
             x="avg_income",
             y="State Abbreviation",
             orientation="h",
-            title="Top 20 States — Avg Income",
+            title="Top 20 States - Avg Income",
             color="avg_income",
             color_continuous_scale="Blues",
             text_auto=".2s",
@@ -293,7 +293,7 @@ def tab_geographic(df: pd.DataFrame) -> None:
             x="Region",
             y="Mean",
             error_y="Std Dev",
-            title="Regional Income — Mean ± Std Dev",
+            title="Regional Income - Mean ± Std Dev",
             color="Mean",
             color_continuous_scale="Blues",
             text_auto=".2s",
@@ -351,7 +351,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
         "Enter a profile and the dashboard will call the FastAPI "
         f"`/predict` endpoint at `{API_BASE_URL}` to score it. The API "
         "handles caching, rate limiting, drift tracking, and benchmark "
-        "lookups — one source of truth."
+        "lookups - one source of truth."
     )
 
     col1, col2 = st.columns(2)
@@ -410,7 +410,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
 
         st.success(f"Median estimate (P50): **${p50:,.0f}**")
         st.info(
-            f"**80% prediction interval**: ${p10:,.0f} — ${p90:,.0f}  \n"
+            f"**80% prediction interval**: ${p10:,.0f} - ${p90:,.0f}  \n"
             "_Interval comes from a multi-quantile XGBoost model, widened by a "
             "cross-conformal margin so it reaches ~80% empirical coverage on the "
             "held-out test set, and served by the FastAPI `/predict` endpoint. "
@@ -467,7 +467,7 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
         "**Note on R²**  \n"
         "P50 under a multi-quantile objective is the median-minimiser, not "
         "the mean-minimiser, so R² is a weak fit-statistic for this model. "
-        "The real SLO is empirical quantile coverage — see MODEL_CARD.md."
+        "The real SLO is empirical quantile coverage - see MODEL_CARD.md."
     )
 
     # ── 80% prediction interval info (served = conformal-widened) ────────────
@@ -475,11 +475,11 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
     pi_cov = metrics.get("conformal_coverage_80", metrics.get("quantile_coverage_80", 0))
     raw_cov = metrics.get("quantile_coverage_80", 0)
     st.markdown(
-        f"**80% prediction interval (as served)** — median width **${pi_w:,.0f}**, "
+        f"**80% prediction interval (as served)** - median width **${pi_w:,.0f}**, "
         f"empirical coverage **{pi_cov * 100:.1f}%** on the held-out test set.  \n"
         f"_The API widens the model's raw P10/P90 band (raw coverage "
         f"{raw_cov * 100:.1f}%) by a cross-conformal margin so the served "
-        "interval reaches the 80% target — the same interval the Predictor tab shows._"
+        "interval reaches the 80% target - the same interval the Predictor tab shows._"
     )
 
     st.markdown("---")
@@ -532,7 +532,7 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
         )
         fig.add_hline(y=0, line_dash="dash", line_color="red")
         fig.update_layout(
-            title="Residual Plot — Dollar Space (Predicted vs Residual)",
+            title="Residual Plot - Dollar Space (Predicted vs Residual)",
             xaxis_title="Predicted Annual Income ($)",
             yaxis_title="Residual ($)",
         )
