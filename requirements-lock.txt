@@ -21,7 +21,7 @@ httptools==0.8.0
 httpx==0.28.1
 idna==3.18
 iniconfig==2.3.0
-joblib==1.5.3
+joblib==1.6.0
 librt==0.11.0
 license-expression==30.4.4
 limits==5.8.0
