@@ -52,3 +52,7 @@ updates:
       # dedicated branch after reading the changelog.
       - dependency-name: "*"
         update-types: ["version-update:semver-major"]
+      # 3.12 → 3.14 is a CPython minor. pandas has no usable 3.14 wheel in this
+      # image (metadata-generation-failed). Serving pin stays 3.12.
+      - dependency-name: "python"
+        versions: [">=3.13"]
