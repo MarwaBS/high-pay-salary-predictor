@@ -34,7 +34,7 @@ narwhals==2.22.1
 numpy==2.4.6
 packageurl-python==0.17.6
 packaging==26.3
-pandas-stubs==3.0.3.260530
+pandas-stubs==3.0.5.260730
 pandas==3.0.3
 pathspec==1.1.1
 pip-api==0.0.34
