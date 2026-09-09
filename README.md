@@ -1,4 +1,4 @@
-# High-Paying Jobs in the US — Salary Quantile Predictor
+# High-Paying Jobs in the US - Salary Quantile Predictor
 
 [![Live Demo](https://img.shields.io/badge/%F0%9F%A4%97%20Live%20Demo-on%20Hugging%20Face-yellow)](https://huggingface.co/spaces/MarwaBS/high-pay-salary-predictor)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-blue?logo=python&logoColor=white)](https://www.python.org/)
@@ -26,7 +26,7 @@
 > uncertainty range, not a precise dollar estimate. See
 > [MODEL_CARD.md](MODEL_CARD.md) for the full framing, limitations, and
 > fairness discussion. The model is scored on calibrated quantile
-> coverage, not on R² — point-estimate R² is a weak fit-statistic under
+> coverage, not on R² - point-estimate R² is a weak fit-statistic under
 > a quantile loss.
 >
 > **The honest numbers** (full detail + baselines in
@@ -36,7 +36,7 @@
 > (≈ $115K); point-estimate R² ≈ 0.03. The
 > premium-tier classifier is *indistinguishable from* a logistic-regression
 > baseline refit on the same five splits (AUC 0.6958 ± 0.0075 vs 0.6901 ± 0.0071,
-> Brier ≈ 0.21) — the signal ceiling is the **features**, not the
+> Brier ≈ 0.21) - the signal ceiling is the **features**, not the
 > model. None of that is hidden. The project's real subject is the
 > production-ML *engineering* around an honestly-hard problem: a
 > leakage-safe, calibrated, observable serving path that holds its
@@ -50,7 +50,7 @@
 | **Age is the strongest single signal** | Of the 10 model features, Age has the strongest rank correlation with income (Spearman ρ = +0.25; next is `Occ_Mean_Income` at +0.20) and the largest share of model gain (30.4% of total gain, vs 21.3%). Median income climbs from $120K at 18–29 to $167K at 65+. |
 | **Education premium** | Bachelor's degree → Doctoral degree is a ~$13.6K median jump, and that is not the largest step: Bachelor's degree → Professional degree is ~$16.1K. |
 | **Regional disparity** | West workers earn the most (EDA mean $171.8K, ahead of $168.7K in the Midwest); the model's served interval band is narrowest in the Northeast. |
-| **Data-prep ceiling** | The cleaning notebook double-filters the cohort (`INCTOT ≥ 100K` × `A_MEAN ≥ 100K`), a restriction of range that depresses what a point estimator can achieve — by how much is not measured. The quantile reframe addresses the right question for the available data. |
+| **Data-prep ceiling** | The cleaning notebook double-filters the cohort (`INCTOT ≥ 100K` × `A_MEAN ≥ 100K`), a restriction of range that depresses what a point estimator can achieve - by how much is not measured. The quantile reframe addresses the right question for the available data. |
 
 ---
 
@@ -73,7 +73,7 @@ An end-to-end data science pipeline analysing high-paying jobs (≥ $100K/yr) ac
 │                            │  [Top 15 Occupations bar chart]            │
 │                            │  [Avg Income by Education bar chart]       │
 │                            │  [Gender distribution violin plot]         │
-│                            │  [US choropleth — income / LQ / count]     │
+│                            │  [US choropleth - income / LQ / count]     │
 │                            │  [Salary predictor form → live estimate]   │
 │                            │  [Predicted vs actual + residuals plots]   │
 └─────────────────────────────────────────────────────────────────────────┘
@@ -135,7 +135,7 @@ graph LR
     Docker --> CI
 ```
 
-**Core design principle:** `pipeline.py` is the single source of truth — all feature definitions, engineering logic, and model I/O are shared across the API, dashboard, training script, and tests. No duplication.
+**Core design principle:** `pipeline.py` is the single source of truth - all feature definitions, engineering logic, and model I/O are shared across the API, dashboard, training script, and tests. No duplication.
 
 ---
 
@@ -154,7 +154,7 @@ All figures are saved automatically to `Images/` at 300 DPI.
 
 ---
 
-## Quickstart — one command
+## Quickstart - one command
 
 ```bash
 make install      # create .venv and install all dependencies
@@ -197,26 +197,26 @@ pre-commit install                 # install git quality hooks
 
 ---
 
-## Model performance (v2.0.0 — quantile reframe)
+## Model performance (v2.0.0 - quantile reframe)
 
 The primary SLO is **calibrated quantile coverage**, not R². See
 [MODEL_CARD.md](MODEL_CARD.md) for the full rationale.
 
 | Metric | Value | Notes |
 |--------|-------|-------|
-| 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
-| 80% coverage — **served (conformal)** | **~0.79** | The API widens `[P10, P90]` by a cross-conformal margin, closing most of the shortfall against the 0.80 target. |
+| 80% coverage - raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
+| 80% coverage - **served (conformal)** | **~0.79** | The API widens `[P10, P90]` by a cross-conformal margin, closing most of the shortfall against the 0.80 target. |
 | Median PI width (served) | ~$115K | ~3% wider than raw after the conformal margin; the price of closing the coverage gap. |
-| Quantile crossings | **0** | P10 > P50 or P50 > P90 — must stay zero. |
-| P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** — P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
-| CV R² (5-fold, train-only, dollar) | ~0.02 ± 0.02 | Leakage-free per-fold target encoding; same space as test R² — no overfitting, no space mismatch. |
+| Quantile crossings | **0** | P10 > P50 or P50 > P90 - must stay zero. |
+| P50 R² (backward-compat point view) | ~0.03 | **Expected to be low** - P50 under quantile loss is the median minimiser, not the mean minimiser. R² is a weak fit-statistic for this objective. |
+| CV R² (5-fold, train-only, dollar) | ~0.02 ± 0.02 | Leakage-free per-fold target encoding; same space as test R² - no overfitting, no space mismatch. |
 | Train / test | 8,204 / 2,051 | `random_state=42` |
 
 > **Why is the point-estimate R² so low?** Two reasons:
-> 1. The training cohort is double-filtered (Census `INCTOT ≥ 100K` × BLS `A_MEAN ≥ 100K`), pre-removing most of the occupation-wage signal — see [MODEL_CARD.md § Data-prep caveat](MODEL_CARD.md).
+> 1. The training cohort is double-filtered (Census `INCTOT ≥ 100K` × BLS `A_MEAN ≥ 100K`), pre-removing most of the occupation-wage signal - see [MODEL_CARD.md § Data-prep caveat](MODEL_CARD.md).
 > 2. Under a quantile objective, P50 minimises absolute error, not squared error, so R² (which rewards mean-minimisers) is the wrong scoring rule.
 >
-> The v1.0.0 value of R² = 0.077 (with MLflow + Optuna HPO) was not higher because of better modelling — it was higher because it was trained with squared-error loss and scored with a squared-error metric. That's a tautology, not progress.
+> The v1.0.0 value of R² = 0.077 (with MLflow + Optuna HPO) was not higher because of better modelling - it was higher because it was trained with squared-error loss and scored with a squared-error metric. That's a tautology, not progress.
 
 **Prediction intervals** come from the multi-quantile XGBoost model, widened by a cross-conformal margin (estimated from train-only folds, so the shipped model's bytes are unchanged) so the served `[P10, P90]` reaches its nominal 80% coverage rather than the raw quantiles' ~77%. The API response includes explicit `predicted_p10`, `predicted_p50`, `predicted_p90` fields; `predicted_salary` is kept as an alias for `predicted_p50` for backward compatibility with v1 clients.
 
@@ -229,7 +229,7 @@ millisecond figures are not committed: they describe whichever machine ran them,
 and nothing in this repo reproduces them.
 
 **Enforced SLO:** `/predict` p99 < 200ms over 100 sequential in-process calls,
-and 50 predictions inside 5s — absolute wall-clock bounds, so what they enforce
+and 50 predictions inside 5s - absolute wall-clock bounds, so what they enforce
 depends on the machine CI runs them on. Both in `tests/test_performance.py`.
 
 ---
@@ -240,8 +240,8 @@ Grouped by the engineering discipline they demonstrate.
 
 ### Modelling
 
-- **Multi-quantile XGBoost.** `reg:quantileerror` with α=[0.10, 0.50, 0.90] in a single model. API returns `predicted_p10 / p50 / p90` directly. Honest uncertainty beats a rationalised point estimate — see [MODEL_CARD.md](MODEL_CARD.md) for the rationale.
-- **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, **no `scale_pos_weight`** — the cohort's class balance is a mild ~40/60 and the head is served as a probability rather than a ranking, so it is trained unweighted; the weighted variant was not run, see [MODEL_CARD.md](MODEL_CARD.md)). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** — a true unfiltered `≥ $100K` membership classifier — is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
+- **Multi-quantile XGBoost.** `reg:quantileerror` with α=[0.10, 0.50, 0.90] in a single model. API returns `predicted_p10 / p50 / p90` directly. Honest uncertainty beats a rationalised point estimate - see [MODEL_CARD.md](MODEL_CARD.md) for the rationale.
+- **Premium-tier classifier head (Gap 1 Phase 1).** A separate XGBoost binary classifier trained alongside the regressor by the same `scripts/train_quantile.py` pass, predicts `P(Annual Income ≥ $150K)` on the same engineered feature matrix (`binary:logistic`, **no `scale_pos_weight`** - the cohort's class balance is a mild ~40/60 and the head is served as a probability rather than a ranking, so it is trained unweighted; the weighted variant was not run, see [MODEL_CARD.md](MODEL_CARD.md)). The API surfaces it as `p_above_premium_threshold` on every `/predict` response and answers a different product question than the quantile interval: *how likely is this profile to clear the premium bar at all?* Metrics (ROC-AUC, PR-AUC, precision, recall, F1) plus subgroup ROC-AUC (Gender / Region) are persisted to `models/model_metrics.json` and guarded by `tests/test_classifier.py`. **Phase 2** - a true unfiltered `≥ $100K` membership classifier - is explicitly deferred: it would require the raw IPUMS Census microdata (a separate API-key fetch), not just a file in `Data/`. Phase 1 is the supportable layered task on the data that exists.
 - **Target-encoding leakage eliminated.** `Occ_Mean_Income` and `State_Mean_Income` are computed from the training split only, saved to `models/group_means.json`, and loaded at API startup. A dedicated integration test (`tests/test_integration.py::TestSplitThenEngineer::test_no_occ_mean_leakage`) locks this in.
 - **Collinearity removal.** `Annual Mean Wage` was dropped after VIF analysis (VIF ≈ 2.3×10⁷ against the other features). 10 features total.
 - **CV = Test space, leakage-free.** 5-fold CV runs on the training set only; each fold recomputes its own target-encoding means from its train rows (`np.expm1` back to dollars, then `r2_score`), so a validation row is never encoded with a mean that saw its own target and `cv_r2_mean` is directly comparable to test `r2`.
@@ -249,44 +249,44 @@ Grouped by the engineering discipline they demonstrate.
 ### API
 
 - **FastAPI + Pydantic v2** with `/health`, `/meta`, `/predict`, `/metrics`, `/drift`, `/docs`. Routes are thin: domain validation → cache lookup → encode → infer → build response. Business logic lives in `api/inference.py`, not the route handler.
-- **Redis-backed prediction cache.** `api/cache.py` is wired into `/predict` via `api.main.cache` with graceful no-op when `REDIS_URL` is unset. Tested with `MagicMock` — no live Redis required for CI.
+- **Redis-backed prediction cache.** `api/cache.py` is wired into `/predict` via `api.main.cache` with graceful no-op when `REDIS_URL` is unset. Tested with `MagicMock` - no live Redis required for CI.
 - **O(log n) benchmark lookup.** `(state, education)` benchmark stats are precomputed at startup into a dict of sorted arrays; `/predict` does a dict get + `np.searchsorted` instead of a per-request DataFrame mask.
 - **X-Forwarded-For-aware rate limiting.** `slowapi` key function reads the trusted-hop-adjusted client IP from `X-Forwarded-For`, configurable via `TRUSTED_PROXY_HOPS`. Without this, every caller behind an ingress shares one bucket.
-- **Explicit CORS header list** (`Content-Type`, `X-API-Key`, `X-Request-ID`) — no meaningless wildcard+explicit mix.
+- **Explicit CORS header list** (`Content-Type`, `X-API-Key`, `X-Request-ID`) - no meaningless wildcard+explicit mix.
 - **API key auth** (optional via `API_KEY` env var), closed-by-default CORS origins, structured JSON logging with `X-Request-ID` correlation.
 
 ### Observability
 
 - **Prometheus metrics** via `prometheus-fastapi-instrumentator`, exposed at `/metrics`.
 - **Distributed drift monitor.** `api/drift.DriftMonitor` uses a shared Redis list for the rolling window, so multi-replica Deployments aggregate cluster-wide. Falls back to an in-process deque when Redis is absent. Tested with a fake Redis shared between two monitor instances.
-- **Statistically controlled alarms.** A feature flags drift only when its mean shift is **both** statistically significant (standard-error z-test, **Šidák-corrected** across the monitored features, so the *familywise* false-alarm rate holds at ≈4.6% instead of the ≈37% an uncorrected union of ~10 per-feature tests reaches) **and** practically meaningful (effect ≥ 0.2 baseline σ, **ramp-scaled** to `max(0.2, 2·√(2/n))` while the window fills, since below n = (z/d)² = 100 the fixed floor is implied by significance alone and gates nothing). `tests/test_drift.py` measures that rate on stationary windows and gates it against the design level plus two binomial standard deviations — a bound, not a published rate — and holds a real shift detectable mid-ramp.
+- **Statistically controlled alarms.** A feature flags drift only when its mean shift is **both** statistically significant (standard-error z-test, **Šidák-corrected** across the monitored features, so the *familywise* false-alarm rate holds at ≈4.6% instead of the ≈37% an uncorrected union of ~10 per-feature tests reaches) **and** practically meaningful (effect ≥ 0.2 baseline σ, **ramp-scaled** to `max(0.2, 2·√(2/n))` while the window fills, since below n = (z/d)² = 100 the fixed floor is implied by significance alone and gates nothing). `tests/test_drift.py` measures that rate on stationary windows and gates it against the design level plus two binomial standard deviations - a bound, not a published rate - and holds a real shift detectable mid-ramp.
 - **Request tracing.** Every request carries an `X-Request-ID` (inbound or generated) through the logs.
 
 ### Security & Reproducibility
 
-- **Blocking `pip-audit` CVE gate** in CI, run against all five production requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. `requirements-notebooks.txt` is deliberately outside the gate: it is exploratory-only, never installed in an image, and its packages have no importer in the serving path. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale — `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
+- **Blocking `pip-audit` CVE gate** in CI, run against all five production requirement files (`requirements.txt`, the pinned `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`, and the Space's), with **no current suppressions**. `requirements-notebooks.txt` is deliberately outside the gate: it is exploratory-only, never installed in an image, and its packages have no importer in the serving path. Suppressing a finding means adding an explicit `--ignore-vuln` to the CI step with inline rationale - `pip-audit` reads no ignore file, so listing an ID in one would suppress nothing.
 - **Pinned Docker builds.** `requirements-api.txt` (API runtime) and `requirements-dashboard.txt` (Streamlit/viz stack) hold exact versions, and both are covered by the CI `pip-audit` gate. The `api` and `dashboard` Docker stages use separate builders so the API image does not pull the Streamlit/viz stack (`streamlit` / `plotly` / `matplotlib`) it never uses.
 - **No pickle.** Model stored as XGBoost native `.ubj`; all other artefacts as plain JSON.
-- **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time — typos or invalid values fail the liveness probe before traffic hits the pod.
+- **Pydantic config validation.** `api/main.py` loads config through `ProjectConfig.from_yaml(...)` at import time - typos or invalid values fail the liveness probe before traffic hits the pod.
 
 ### Deployment
 
-- **Kubernetes manifests.** `k8s/api-deployment.yaml` uses a SHA-pinned image tag placeholder (`IMAGE_TAG_PLACEHOLDER`), an `initContainer` that pulls the model + dataset from the GitHub release assets into an `emptyDir` (no RWX PVC dependency — works on EBS / GCE PD / Azure Disk), pod-level `securityContext` enforcing non-root, a `preStop` 15s graceful-drain hook, and a `PodDisruptionBudget` guaranteeing 1 pod Ready during voluntary disruptions. `hpa.yaml` autoscales 2–10 pods on CPU/memory.
+- **Kubernetes manifests.** `k8s/api-deployment.yaml` uses a SHA-pinned image tag placeholder (`IMAGE_TAG_PLACEHOLDER`), an `initContainer` that pulls the model + dataset from the GitHub release assets into an `emptyDir` (no RWX PVC dependency - works on EBS / GCE PD / Azure Disk), pod-level `securityContext` enforcing non-root, a `preStop` 15s graceful-drain hook, and a `PodDisruptionBudget` guaranteeing 1 pod Ready during voluntary disruptions. `hpa.yaml` autoscales 2–10 pods on CPU/memory.
 - **Multi-stage Dockerfile.** Non-root user, HEALTHCHECK, separate builders for API vs dashboard.
 - **Docker Compose** includes a Redis service with a healthcheck gate so `api` only starts when Redis is responsive.
 
 ### Model registry & versioning
 
-- **Composite provenance string.** Each training run records one `model_version = {service_version}+{git_sha}.{data_sha256}` in `models/model_metrics.json`, alongside the SHA-256 of every artefact it produced; the artefact files themselves carry no version field — e.g. `2.0.0+<git-sha12>.<data-sha12>`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0) pins `1c5e9d896ee5`, the commit the 2.0.0 model release was trained at; when the metrics file is later regenerated (for example, the leakage-free CV recompute), `model_version` records the commit of that regeneration instead — the SHA inside `models/model_metrics.json` is always the authoritative one, and [MODEL_CARD.md](MODEL_CARD.md) explains why it stays fetchable without being a `main` ancestor.
-- **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` — `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
-- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`, `conformal_delta.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file — coverage, pinball losses, subgroup calibration, and reproduction instructions.
-- **Rollback path.** Historical model artefacts are published per release on the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases). Note the rollback horizon: `conformal_delta.json` and `cleaned_high_pay_data.csv` joined the publish list in `train.yml` partway through, so only the releases from `2026-07-27` onward carry them. The initContainer fetches both under `set -eu`, so a redeploy from `releases/latest` starts, but a rollback to any of the seven older releases does not. `tests/test_model_registry.py` gates the publish list against the artefacts the app reads. Reproducibility rests on the pinned environment, not on a bare checkout: install `requirements-lock.txt` (the exact library set the release was trained under — recorded per release in `model_metrics.json::library_versions`), then `python -m scripts.train_quantile` against the same input CSV (pinned by `data_sha256`) and the unchanged `config.yaml` — including its fixed `random_state` and `n_jobs: 1` — refits the quantile regressor byte-identically twice in one process (`tests/test_training_determinism.py` — a same-machine check, not a re-run of the trainer). Across machines it does not: XGBoost's float reductions differ by build, and nothing here retrains and diffs `model_metrics.json`, so how far the published metrics move is unmeasured. The nearest thing measured is the tuning study's CV score, which re-derives to within 1% across three builds — 17524.88, 17541.41 and 17544.54 for one fixed seed and parameter set (`tests/test_hyperparameter_provenance.py`). `train_date` and the git-sha fragment of `model_version` change by construction. CI does not retrain to diff; it content-addresses every shipped artefact and fails if its bytes drift from the SHA-256 recorded in `model_metrics.json`. See [MODEL_CARD.md](MODEL_CARD.md) for why a post-squash `git checkout <sha>` is not the reproduction path.
+- **Composite provenance string.** Each training run records one `model_version = {service_version}+{git_sha}.{data_sha256}` in `models/model_metrics.json`, alongside the SHA-256 of every artefact it produced; the artefact files themselves carry no version field - e.g. `2.0.0+<git-sha12>.<data-sha12>`. `scripts/train_quantile.py` builds it from the `api.__version__` constant, the current git SHA (honouring `GITHUB_SHA` in CI), and the SHA-256 of `Data/cleaned_high_pay_data.csv`. Any operator looking at a live artefact can recover the exact training state from the three fragments. The annotated tag [`training/2.0.0`](https://github.com/MarwaBS/high-pay-salary-predictor/releases/tag/training%2F2.0.0) pins `1c5e9d896ee5`, the commit the 2.0.0 model release was trained at; when the metrics file is later regenerated (for example, the leakage-free CV recompute), `model_version` records the commit of that regeneration instead - the SHA inside `models/model_metrics.json` is always the authoritative one, and [MODEL_CARD.md](MODEL_CARD.md) explains why it stays fetchable without being a `main` ancestor.
+- **Surfaced on `/health`.** The API loads `model_version` from `model_metrics.json` at startup and returns it in the `HealthResponse` - `curl .../health | jq .model_version` is the fastest way to answer "what model is live right now?".
+- **Scheduled retraining pipeline.** `.github/workflows/train.yml` runs weekly (Mondays 03:00 UTC) and on-demand via `workflow_dispatch`, re-trains the quantile model, and publishes the artefacts (`xgb_salary_model.ubj`, `xgb_premium_classifier.ubj`, `model_metrics.json`, `feature_names.json`, `group_means.json`, `baseline_stats.json`, `conformal_delta.json`) as a GitHub Release named `model-{MODEL_VERSION}`. Release notes are auto-generated from the metrics file - coverage, pinball losses, subgroup calibration, and reproduction instructions.
+- **Rollback path.** Historical model artefacts are published per release on the [releases page](https://github.com/MarwaBS/high-pay-salary-predictor/releases). Note the rollback horizon: `conformal_delta.json` and `cleaned_high_pay_data.csv` joined the publish list in `train.yml` partway through, so only the releases from `2026-07-27` onward carry them. The initContainer fetches both under `set -eu`, so a redeploy from `releases/latest` starts, but a rollback to any of the seven older releases does not. `tests/test_model_registry.py` gates the publish list against the artefacts the app reads. Reproducibility rests on the pinned environment, not on a bare checkout: install `requirements-lock.txt` (the exact library set the release was trained under - recorded per release in `model_metrics.json::library_versions`), then `python -m scripts.train_quantile` against the same input CSV (pinned by `data_sha256`) and the unchanged `config.yaml` - including its fixed `random_state` and `n_jobs: 1` - refits the quantile regressor byte-identically twice in one process (`tests/test_training_determinism.py` - a same-machine check, not a re-run of the trainer). Across machines it does not: XGBoost's float reductions differ by build, and nothing here retrains and diffs `model_metrics.json`, so how far the published metrics move is unmeasured. The nearest thing measured is the tuning study's CV score, which re-derives to within 1% across three builds - 17524.88, 17541.41 and 17544.54 for one fixed seed and parameter set (`tests/test_hyperparameter_provenance.py`). `train_date` and the git-sha fragment of `model_version` change by construction. CI does not retrain to diff; it content-addresses every shipped artefact and fails if its bytes drift from the SHA-256 recorded in `model_metrics.json`. See [MODEL_CARD.md](MODEL_CARD.md) for why a post-squash `git checkout <sha>` is not the reproduction path.
 - **Why not MLflow Model Registry?** Free, versioned, rollback-able, and one fewer service to operate. A real production system would graduate to MLflow or SageMaker Model Registry; for a portfolio-scale project, GitHub Releases is the pragmatic choice and the trade-off is documented here on purpose.
-- **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote — so the provenance contract cannot silently regress.
+- **Regression test.** `tests/test_model_version.py` asserts the field is present, matches the expected shape, and that `/health` surfaces the same value the trainer wrote - so the provenance contract cannot silently regress.
 
 ### Tests
 
-- **661 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
+- **662 tests.** Unit (config, data schema, feature engineering, `api/inference.py` helpers), integration (leakage proof, round-trip group-means persistence, end-to-end P50 sanity), drift (detection, rolling window, zero-std edge, Redis shared-backend aggregation, familywise ramp-up false-alarm bounds + mid-window deaf-check), cache (miss/hit/normalised-key/default-noop), performance (in-process latency, throughput), Docker image sanity (guards every top-level import in `api/main.py` is COPY'd into the API stage **and** asserts scikit-learn is pinned in `requirements-api.txt` so the xgboost sklearn wrapper can actually instantiate at container startup), single-trainer + version consistency + model-version provenance + **premium-tier classifier + API exposure** + **dangling legacy-trainer references** regression guards.
 - **Regression guards against the metrics file.** `test_saved_metrics_within_expected_range` reads `model_metrics.json` and enforces bands on P50 R² / MAE / RMSE and on quantile coverage (`0.72 ≤ cov ≤ 0.88`) and crossings (`== 0`). A regression fails the build loudly.
 - **Quantile-output sanity tests.** Ensure `predict_quantiles` produces `p10 ≤ p50 ≤ p90`, ordering-crossings are clamped in `build_response`, and the API surfaces the quantile fields.
 
@@ -296,12 +296,12 @@ Grouped by the engineering discipline they demonstrate.
 
 **Sources:**
 - U.S. Bureau of Labor Statistics (BLS): state-level Occupational Employment and Wage Statistics (OEWS)
-- U.S. Census Bureau: microdata — demographics, education, occupation
+- U.S. Census Bureau: microdata - demographics, education, occupation
 
-**Cleaned dataset:** `Data/cleaned_high_pay_data.csv` — 10,255 rows × 15 columns
+**Cleaned dataset:** `Data/cleaned_high_pay_data.csv` - 10,255 rows × 15 columns
 
 **Key fields:** Occupation, Annual Income, Education Level, Gender, State Abbreviation, Hourly Mean, Location Quotient, Employment, Jobs per 1000.
-(`Annual Mean Wage` is in the raw dataset but was dropped from model features — VIF ≈ 2.3×10⁷ collinearity with `Hourly Mean`.)
+(`Annual Mean Wage` is in the raw dataset but was dropped from model features - VIF ≈ 2.3×10⁷ collinearity with `Hourly Mean`.)
 
 Data are used for educational and analytical purposes only. Consult each provider's terms for reuse.
 
@@ -369,12 +369,12 @@ uvicorn api.main:app --reload --port 8000
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/health` | Liveness probe — model loaded, dataset rows |
+| `GET` | `/health` | Liveness probe - model loaded, dataset rows |
 | `GET` | `/meta` | Valid states, occupations, education levels |
 | `POST` | `/predict` | Salary prediction + percentile + group benchmarks (auth + rate limited) |
 | `POST` | `/predict/batch` | Up to 1,000 predictions in one call (auth; own 10/minute budget) |
-| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) — auth |
-| `GET` | `/drift` | Feature drift report (Šidák-corrected SE z-test + effect floor vs training baseline) — auth + rate limited |
+| `GET` | `/metrics` | Prometheus metrics (request counts, latency histograms) - auth |
+| `GET` | `/drift` | Feature drift report (Šidák-corrected SE z-test + effect floor vs training baseline) - auth + rate limited |
 | `GET` | `/docs` | Auto-generated Swagger UI |
 
 **Example request:**
@@ -390,23 +390,23 @@ curl -X POST http://localhost:8000/predict \
 
 **Top occupations by average income**
 ![Top 10 Occupations by Average Income](./Images/Top_Occupations_Avg_Income.png)
-Among occupations with at least 30 records, securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Without that floor the top slot goes to a 4-record occupation, which is noise. Occupation is the strongest *aggregate* signal — `Occ_Mean_Income` ranks second of the ten model features — but Age edges it on both rank correlation and model gain (see below).
+Among occupations with at least 30 records, securities and financial-services sales agents lead at ~$304K mean (n=75), ahead of personal financial advisors (~$243K) and producers and directors (~$240K). Without that floor the top slot goes to a 4-record occupation, which is noise. Occupation is the strongest *aggregate* signal - `Occ_Mean_Income` ranks second of the ten model features - but Age edges it on both rank correlation and model gain (see below).
 
 **Average income by education level**
 ![Average Income by Education Level](./Images/Average_Income_by_Education_Level.png)
-The steps are modest and not monotone: Bachelor's degree → Doctoral degree is ~$13.6K in medians, but Professional degree out-earns Doctoral degree by ~$2.5K, so the last ordinal step is negative. However, within-tier variance is high — a Bachelor's-degree Software Engineer often out-earns a Doctoral-degree academic, confirming that education alone is insufficient and occupation context is necessary.
+The steps are modest and not monotone: Bachelor's degree → Doctoral degree is ~$13.6K in medians, but Professional degree out-earns Doctoral degree by ~$2.5K, so the last ordinal step is negative. However, within-tier variance is high - a Bachelor's-degree Software Engineer often out-earns a Doctoral-degree academic, confirming that education alone is insufficient and occupation context is necessary.
 
 **Salary distributions for top occupations**
 ![Salary Distribution for Top Occupations](./Images/Top_10_Salary_Distribution.png)
-Right-skewed distributions with long upper tails in every role — the primary justification for the `log1p` target transform. Financial-services sales agents show the widest spread (std ~$226K), driven by commission and bonus components the dataset records only as annual totals.
+Right-skewed distributions with long upper tails in every role - the primary justification for the `log1p` target transform. Financial-services sales agents show the widest spread (std ~$226K), driven by commission and bonus components the dataset records only as annual totals.
 
 **Correlation among numeric features**
 ![Correlation Heatmap](./Images/Correlation_Annual_Income.png)
-`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r = 0.99999998, which is 1.0000 to 4 dp). Both cannot coexist in a model — regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
+`Hourly Mean` and `Annual Mean Wage` show near-perfect correlation (r = 0.99999998, which is 1.0000 to 4 dp). Both cannot coexist in a model - regressing `Annual Mean Wage` on the ten model features gives R² = 0.99999996, a VIF of ~2.3×10⁷. `Annual Mean Wage` was removed; `Hourly Mean` was retained. Annual Income shows weak correlation with BLS headcount metrics, confirming that individual income is driven by within-occupation factors not captured at the aggregate BLS level.
 
 **Age vs annual income**
 ![Age vs Income](./Images/Age_Annual_Income.png)
-Age carries the **strongest rank correlation with income** of the 10 model features, above `Occ_Mean_Income` and the BLS wage signals. Median income climbs across every age bucket, from $120K at 18–29 to $167K at 65+. Age acts as a proxy for seniority, negotiating experience, and accumulated tenure — unobserved variables that the model captures indirectly.
+Age carries the **strongest rank correlation with income** of the 10 model features, above `Occ_Mean_Income` and the BLS wage signals. Median income climbs across every age bucket, from $120K at 18–29 to $167K at 65+. Age acts as a proxy for seniority, negotiating experience, and accumulated tenure - unobserved variables that the model captures indirectly.
 
 **Gender distribution across top occupations**
 ![Gender by Occupation](./Images/Gender_Distribution_Occupations.png)
@@ -426,11 +426,11 @@ CA (2,405), NY (1,029) and TX (667) lead in absolute headcount; NJ, VA and MA fo
 
 **Average income by state (bar)**
 ![Average Income by State](./Images/Average_Highest_Income_state_Viz.png)
-The West leads on mean income (~$171.8K), ahead of the Midwest (~$168.7K), the Northeast (~$168.4K) and the South (~$163.2K); no Northeast state appears in the top ten by mean. The spread across regions is narrow — under $9K separates first from last — which is why `Region_Code` ranks seventh of the ten model features by rank correlation.
+The West leads on mean income (~$171.8K), ahead of the Midwest (~$168.7K), the Northeast (~$168.4K) and the South (~$163.2K); no Northeast state appears in the top ten by mean. The spread across regions is narrow - under $9K separates first from last - which is why `Region_Code` ranks seventh of the ten model features by rank correlation.
 
 **Location Quotient by state**
 ![LQ by State](./Images/High_Paying_Jobs_LQ_Distribution_Viz.png)
-MD, VA and WA show LQ > 1.5 (the dataset covers the 50 states and not DC), meaning high-paying jobs are over-represented relative to national employment share. These states, not the largest by population, are the densest clusters of premium roles — an insight job seekers optimizing for salary should weight over absolute headcount.
+MD, VA and WA show LQ > 1.5 (the dataset covers the 50 states and not DC), meaning high-paying jobs are over-represented relative to national employment share. These states, not the largest by population, are the densest clusters of premium roles - an insight job seekers optimizing for salary should weight over absolute headcount.
 
 **Dominant education level by state**
 ![Dominant Education by State](./Images/Dominant_education_by_state_Viz.png)
@@ -438,7 +438,7 @@ Bachelor's degree dominates most of the contiguous US for $100K+ earners. Master
 
 **Education–income premium by state**
 ![Education Premium by State](./Images/Education_Income_Premiums_by_State_Viz.png)
-The education premium spans −$36K to +$91K across the 47 states carrying both tiers, around a median of $11K — so in some states an advanced degree tracks *lower* mean income among $100K+ earners. The two high-LQ tech states do not behave alike: Washington sits 8th at $34K, California 27th at $7K. What separates them is not measured here, and it is not market size (see below).
+The education premium spans −$36K to +$91K across the 47 states carrying both tiers, around a median of $11K - so in some states an advanced degree tracks *lower* mean income among $100K+ earners. The two high-LQ tech states do not behave alike: Washington sits 8th at $34K, California 27th at $7K. What separates them is not measured here, and it is not market size (see below).
 
 **Market size vs education premium**
 ![Market Size vs Premium](./Images/Market_Size_Income_Premium_Analysis_Viz.png)
@@ -446,7 +446,7 @@ Market size and education premium are **uncorrelated** across the 47 states with
 
 **Average income by US Census region**
 ![Regional Patterns](./Images/Regional_Patterns_Analysis_Viz.png)
-The Northeast carries the widest spread and the South the narrowest — the mean ordering is above. Raw dispersion is not model uncertainty, so the served interval being narrowest in the Northeast is not in tension with that. (Any regional R² figures are exploratory, from the analysis notebook; the committed, artifact-backed subgroup metric is the classifier's per-region ROC-AUC in `models/model_metrics.json`.)
+The Northeast carries the widest spread and the South the narrowest - the mean ordering is above. Raw dispersion is not model uncertainty, so the served interval being narrowest in the Northeast is not in tension with that. (Any regional R² figures are exploratory, from the analysis notebook; the committed, artifact-backed subgroup metric is the classifier's per-region ROC-AUC in `models/model_metrics.json`.)
 
 ## Map gallery (choropleths)
 
@@ -470,11 +470,11 @@ Gender share overlays (map)
 
 ## Case interpretation and results
 
-- **Geographic:** Large economies (CA, NY, TX) lead in absolute headcount. Concentration (LQ) peaks in MD, VA, WA — specialized clusters drive premium roles.
+- **Geographic:** Large economies (CA, NY, TX) lead in absolute headcount. Concentration (LQ) peaks in MD, VA, WA - specialized clusters drive premium roles.
 - **Education ROI:** Bachelor's degrees dominate most states for $100K+ roles. Master's is dominant in SD, MT, NE, MO, WV; Professional in ND.
 - **Demographic:** Gender participation is uneven across occupations and states. Age–income patterns plateau later in career.
 - **Market dynamics:** Market size does not predict the education premium (see above); industry composition is the likelier driver, but this dataset does not measure it.
-- **Correlations:** Employment and jobs-per-1000 move together. Annual income shows weak correlation with headcount — reinforcing the primacy of occupation and geography.
+- **Correlations:** Employment and jobs-per-1000 move together. Annual income shows weak correlation with headcount - reinforcing the primacy of occupation and geography.
 
 ### Recommendations
 
@@ -528,7 +528,7 @@ high-pay-salary-predictor/
 ├── scripts/
 │   └── train_quantile.py                      # ★ THE single trainer: multi-quantile regressor + premium-tier classifier head
 │
-├── tests/                                     # ★ 661 tests, including regression guards for the documented fixes
+├── tests/                                     # ★ 662 tests, including regression guards for the documented fixes
 │   ├── conftest.py                            #   Shared session-scope fixtures
 │   ├── test_pipeline.py                       #   Config, schema, feature engineering, quantile model
 │   ├── test_inference.py                      #   Pure-function helpers in api/inference.py
@@ -586,9 +586,9 @@ high-pay-salary-predictor/
 ## Reproducibility
 
 - **Single source of truth:** all notebooks and services consume `Data/cleaned_high_pay_data.csv` and `pipeline.py`.
-- **Config-driven:** thresholds, paths, and palette live in `config.yaml` — never hardcoded.
-- **661 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
-- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold — the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface — `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
+- **Config-driven:** thresholds, paths, and palette live in `config.yaml` - never hardcoded.
+- **662 tests:** unit (config, data schema, feature engineering, model prediction, config schema validation) + integration (leakage proof, group-means round-trip, end-to-end R²) + API security (auth, CORS, rate limiting) + drift detection + performance (latency SLOs, throughput benchmarks) + an end-to-end trainer test.
+- **CI/CD:** GitHub Actions runs lint + tests on every push (Python 3.11 and 3.12). `pip-audit` runs as a **blocking** CVE gate, and pytest runs under an enforced ≥88% coverage threshold - the floor is the claim; the run's own number is printed by the job. Coverage is measured over the serving + training surface - `api/`, `pipeline.py`, `scripts/` (see `[tool.coverage.run] source` in `pyproject.toml`); the Streamlit UI layer (`streamlit_app.py`) and `config_schema.py` are outside that denominator. On merge to main: Docker images auto-built, pushed to GHCR, and smoke-tested; a weekly scheduled run repeats the build + Trivy scan so newly published image CVEs are caught by time, not only by pushes.
 - **Dependabot:** weekly automated dependency and GitHub Actions version updates.
-- **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** — the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe — those are not in the audited runtime.)
+- **Exact lock file:** `requirements-lock.txt` (a `pip freeze` of the CI environment) pins the exact transitive closure of the **API runtime + CI/security tooling** - the surface `pip-audit` scans as a blocking gate. The dashboard image is pinned separately in `requirements-dashboard.txt`, the API Docker image exactly in `requirements-api.txt`; the notebook/analysis extras in `requirements.txt` are intentionally loose floors. (It does not pin the Streamlit/Jupyter/geospatial universe - those are not in the audited runtime.)
 - **Pre-commit hooks:** ruff linting/formatting and nbstripout run automatically on every commit.
