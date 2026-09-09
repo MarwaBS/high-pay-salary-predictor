@@ -5,7 +5,7 @@ ast_serialize==0.5.0
 bandit==1.9.4
 boolean.py==5.0
 CacheControl==0.14.4
-certifi==2026.5.20
+certifi==2026.7.22
 charset-normalizer==3.4.7
 click==8.4.2
 colorama==0.4.6
