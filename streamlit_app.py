@@ -1,5 +1,5 @@
 """
-High-Paying Jobs in the US — Interactive Dashboard
+High-Paying Jobs in the US - Interactive Dashboard
 ===================================================
 Streamlit app: EDA explorer + ML salary predictor.
 Run: streamlit run streamlit_app.py
@@ -42,7 +42,7 @@ _CFG_PATH = Path(__file__).parent / "config.yaml"
 with open(_CFG_PATH) as f:
     CFG = yaml.safe_load(f)
 
-ROOT = Path(__file__).parent  # project root — resolve all paths relative to here
+ROOT = Path(__file__).parent  # project root - resolve all paths relative to here
 
 EDU_ORDER = CFG["education_order"]
 REGION_MAP = {state: region for region, states in CFG["regions"].items() for state in states}
@@ -134,7 +134,7 @@ def tab_overview(df: pd.DataFrame) -> None:
     col2.metric("Avg Annual Income", f"${df['Annual Income'].mean():,.0f}")
     col3.metric(
         "Top State (Volume)",
-        df.groupby("State Abbreviation").size().idxmax(),
+        str(df.groupby("State Abbreviation").size().idxmax()),
     )
     col4.metric(
         "Top Occupation (Volume)",
@@ -341,7 +341,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
 
     Delegates inference to the FastAPI ``/predict`` endpoint via ``httpx``
     rather than calling the in-process model. This keeps the dashboard
-    and API on a single prediction path — cache hits, rate limiting,
+    and API on a single prediction path - cache hits, rate limiting,
     drift monitoring, and benchmark lookups all flow through one code
     path, so API changes never silently diverge from dashboard
     behaviour.
@@ -386,7 +386,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
             "gender": gender,
             "age": age,
         }
-        # Only include BLS context fields if the user supplied them —
+        # Only include BLS context fields if the user supplied them -
         # otherwise let the API fill them from its precomputed defaults.
         if show_adv:
             payload.update(
@@ -429,7 +429,7 @@ def tab_predictor(df: pd.DataFrame) -> None:
             )
 
         # ── Premium-tier probability (classifier head) ────
-        # The classifier is optional on the API side — older deployments
+        # The classifier is optional on the API side - older deployments
         # return ``None`` and the dashboard silently skips the tile.
         p_premium = result.get("p_above_premium_threshold")
         premium_threshold_resp = result.get("premium_threshold")
@@ -507,7 +507,7 @@ def tab_model(df: pd.DataFrame, model: XGBRegressor, metrics: dict[str, Any]) ->
         X = df[FEATURES_FULL]
         y = df["Annual Income"]
         # Use the trainer's split (shared primitive) so the residual plot scores
-        # the SAME held-out rows the model was evaluated on — not an independently
+        # the SAME held-out rows the model was evaluated on - not an independently
         # re-derived split that would silently diverge if the trainer's changed.
         _, test_pos = train_test_positions(
             len(df),

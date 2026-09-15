@@ -61,7 +61,7 @@ class DriftMonitor:
     -----------------
     If a redis client is supplied (or ``REDIS_URL`` resolves at init time)
     the monitor stores observations in a shared Redis list. Otherwise it
-    falls back to an in-process deque — correct for single-replica
+    falls back to an in-process deque - correct for single-replica
     deployments, non-deterministic for multi-replica.
     """
 
@@ -86,12 +86,12 @@ class DriftMonitor:
                          per report, so the per-feature cut is Sidak-adjusted
                          from this familywise alpha (see ``check_drift``).
                          Testing each feature at the raw cut instead lets the
-                         union of k tests alarm at 1-(1-alpha)^k — an order of
+                         union of k tests alarm at 1-(1-alpha)^k - an order of
                          magnitude above the headline rate.
         min_effect_size: minimum |mean shift| in baseline-std units required ON
                          TOP OF statistical significance. Significance alone
-                         scales with n — at n=500 a ~0.09-std wobble
-                         clears it — so never-quite-i.i.d. production traffic
+                         scales with n - at n=500 a ~0.09-std wobble
+                         clears it - so never-quite-i.i.d. production traffic
                          would alarm forever. Requiring a practical effect too
                          (Cohen's d small = 0.2) keeps an i.i.d. window silent
                          while a consistent >=0.2-std shift still fires. The
@@ -146,7 +146,7 @@ class DriftMonitor:
             client.ping()
             return client
         except Exception as exc:
-            logger.warning("DriftMonitor: Redis unreachable at %s (%s) — falling back to in-memory", redis_url, exc)
+            logger.warning("DriftMonitor: Redis unreachable at %s (%s) - falling back to in-memory", redis_url, exc)
             return None
 
     @classmethod
@@ -178,7 +178,7 @@ class DriftMonitor:
                 # would only mislead a later read failure. Capped at the window
                 # size, past which no pre-outage data can remain.
                 self._dropped_writes = min(self._dropped_writes + 1, self.window)
-                logger.warning("DriftMonitor Redis write failed (%s) — observation dropped", exc)
+                logger.warning("DriftMonitor Redis write failed (%s) - observation dropped", exc)
                 return
 
         self.buffer.append(features)
@@ -191,7 +191,7 @@ class DriftMonitor:
         one configured. ``degraded`` is True only when a configured Redis
         backend was unreachable: the shared window lives in Redis, so the local
         deque is empty on a Redis deployment and the returned window is NOT
-        authoritative — the caller must withhold any drift verdict.
+        authoritative - the caller must withhold any drift verdict.
         """
         if self._redis is not None:
             try:
@@ -200,7 +200,7 @@ class DriftMonitor:
                 count_raw = self._redis.get(f"{REDIS_DRIFT_KEY}:count") or "0"
                 return observations, int(count_raw), "redis", False
             except Exception as exc:
-                logger.warning("DriftMonitor Redis read failed (%s) — window unavailable", exc)
+                logger.warning("DriftMonitor Redis read failed (%s) - window unavailable", exc)
                 return list(self.buffer), self._observation_count, "memory", True
 
         return list(self.buffer), self._observation_count, "memory", False
@@ -213,22 +213,22 @@ class DriftMonitor:
         dict with keys:
             observations : total observations recorded (cluster-wide in Redis mode)
             window_size  : current buffer length
-            backend      : "redis" | "memory" — the path that actually served
+            backend      : "redis" | "memory" - the path that actually served
                            this read, not merely the configured backend
             degraded     : True if a configured Redis window could not be loaded,
                            or observations were dropped before reaching it
             dropped_observations : outstanding backlog of dropped observations,
-                           capped at ``window`` — how many more must land before
+                           capped at ``window`` - how many more must land before
                            the verdict resumes, not how many were lost
             features     : {feature: {z_score, effect_size, p_value, current_mean,
                             baseline_mean, n_observed, drifted}}. A feature
                             observed fewer than ``MIN_WINDOW_FOR_VERDICT`` times
-                            carries ``drifted: None`` and no scores — the window
+                            carries ``drifted: None`` and no scores - the window
                             may be long enough while that feature is not.
             any_drifted  : True if any feature is BOTH statistically significant
                            (Sidak-corrected across all tested features) AND above
                            the (ramp-scaled) practical effect-size floor. ``None``
-                           whenever no verdict can be reached — a degraded
+                           whenever no verdict can be reached - a degraded
                            window, fewer than ``MIN_WINDOW_FOR_VERDICT``
                            observations, no observed feature matching the
                            baseline, or no drift found while some feature was
@@ -255,7 +255,7 @@ class DriftMonitor:
                 "features": {},
                 "any_drifted": None,
                 "dropped_observations": dropped,
-                "message": f"Drift window unavailable: {reason} — verdict withheld",
+                "message": f"Drift window unavailable: {reason} - verdict withheld",
             }
 
         if len(observations) < MIN_WINDOW_FOR_VERDICT:
@@ -271,7 +271,7 @@ class DriftMonitor:
             }
 
         # Collect per-feature samples FIRST so the number of tests actually
-        # performed (k) is known before any drift decision is made — the
+        # performed (k) is known before any drift decision is made - the
         # familywise correction below needs it.
         feature_values = {
             # Count only observations that carry the feature; folding in absent
@@ -295,7 +295,7 @@ class DriftMonitor:
                 "any_drifted": None,
                 "dropped_observations": 0,
                 "message": (
-                    f"No baseline feature was observed {MIN_WINDOW_FOR_VERDICT} times in this window — verdict withheld"
+                    f"No baseline feature was observed {MIN_WINDOW_FOR_VERDICT} times in this window - verdict withheld"
                 ),
             }
 
@@ -313,7 +313,7 @@ class DriftMonitor:
         # bound. ``alert_threshold`` keeps its z-score interface but now sets
         # the FAMILYWISE level: alpha_family = erfc(threshold/sqrt 2) (~4.6%
         # at the default 2.0). Decisions compare two-sided p-values
-        # (erfc(z/sqrt 2)) against alpha_k — equivalent to raising the
+        # (erfc(z/sqrt 2)) against alpha_k - equivalent to raising the
         # per-feature z cut to ~2.8 at k=10, without needing an inverse-CDF.
         alpha_family = math.erfc(self.alert_threshold / math.sqrt(2.0))
         alpha_per_feature = 1.0 - (1.0 - alpha_family) ** (1.0 / n_tested)
@@ -344,7 +344,7 @@ class DriftMonitor:
             # baseline mean: the correct yardstick is the standard error of
             # the mean (σ/√n), not the population σ. Dividing by the population
             # σ alone would require a full multi-σ shift in the raw feature to
-            # alert — statistically near-deaf. With the
+            # alert - statistically near-deaf. With the
             # standard error, ``alert_threshold`` is in standard-error units
             # (default 2.0 ≈ a 95% confidence bound on the mean).
             if baseline_std > 0:
@@ -358,23 +358,23 @@ class DriftMonitor:
             # Drift requires BOTH a statistically real mean shift (Sidak-
             # corrected p-value, see above) AND a practically meaningful one
             # (effect size). The significance test alone makes the alarm
-            # n-sensitive — at n=500 a ~0.09-std wobble clears it — so
+            # n-sensitive - at n=500 a ~0.09-std wobble clears it - so
             # always-noisy production traffic alarms forever. The effect-size
             # floor is the practical-significance gate.
             #
             # ── Ramp-scaled effect floor ──────────────────────────────────
             # The fixed floor d = min_effect_size only binds once it exceeds
             # the shift implied by significance alone (z_crit/sqrt(n)), i.e.
-            # for n > (z_crit/d)^2 — with z_crit ~ 2 and d = 0.2 that is
+            # for n > (z_crit/d)^2 - with z_crit ~ 2 and d = 0.2 that is
             # n > 100. Below that, "significant" implies "above the floor",
             # the floor adds nothing, and every feature runs at its full
-            # per-test alpha — the ~37% union-bound regime above. Scaling the floor as
+            # per-test alpha - the ~37% union-bound regime above. Scaling the floor as
             #     floor_n = max(d, alert_threshold * sqrt(2/n))
             # keeps the practical gate a factor sqrt(2) ABOVE the base
             # significance bound in z-units (2.0 -> 2.83 SE; per-feature tail
             # 0.47% vs 4.55%) for the whole ramp-up, decays as 1/sqrt(n), and
             # hands over to the fixed Cohen's-d floor continuously at
-            # n = 2*(alert_threshold/d)^2 = 200 (defaults) — so a window past
+            # n = 2*(alert_threshold/d)^2 = 200 (defaults) - so a window past
             # that handover behaves exactly as the fixed floor describes.
             p_value = math.erfc(z_score / math.sqrt(2.0))
             effect_floor = max(self.min_effect_size, self.alert_threshold * math.sqrt(2.0 / n))

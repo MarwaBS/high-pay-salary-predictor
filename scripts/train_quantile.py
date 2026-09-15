@@ -69,7 +69,7 @@ logger = logging.getLogger(__name__)
 # downstream consumers.
 QUANTILE_ALPHAS: list[float] = [0.10, 0.50, 0.90]
 
-# Smallest slice that gets its own published fairness metric — subgroup
+# Smallest slice that gets its own published fairness metric - subgroup
 # coverage below, classifier AUC further down. At n=30 a coverage rate near 0.8
 # already carries a 95% sampling interval of ±0.14, so thinner slices would
 # publish their own sampling noise as unfairness.
@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def pinball_loss(y_true: np.ndarray, y_pred: np.ndarray, alpha: float) -> float:
-    """Mean pinball (quantile) loss — the scoring rule for quantile models.
+    """Mean pinball (quantile) loss - the scoring rule for quantile models.
 
     Lower is better. At alpha=0.5 this reduces to ``0.5 * mean(|error|)``.
     """
@@ -145,7 +145,7 @@ def build_model_version(data_path: Path) -> str:
     ``+`` separator keeps this a valid semver build-metadata suffix so
     tooling that parses semver strings (release automation, dependency
     managers) continues to work. The two prefixed fragments are each
-    12 hex chars — enough to disambiguate without bloating logs.
+    12 hex chars - enough to disambiguate without bloating logs.
 
     Examples::
 
@@ -161,7 +161,7 @@ def _library_versions() -> dict[str, str]:
     """Versions of the libraries that determine the trained artifact bytes.
 
     Stamped into the metrics file so it states the environment its numbers were
-    produced under — the reproducibility claim rests on the lock, and this
+    produced under - the reproducibility claim rests on the lock, and this
     records what the lock actually resolved to at train time.
     """
     import sklearn
@@ -247,14 +247,14 @@ def _cross_conformal_delta(
     """Cross-conformal (CQR) interval margin in log1p space.
 
     Each fold trains the quantile model on the fold's TRAIN rows (per-fold
-    target-encoding means, leakage-free — same protocol as :func:`_cross_val_r2`)
+    target-encoding means, leakage-free - same protocol as :func:`_cross_val_r2`)
     and scores the held-out rows with the CQR conformity score
     ``max(q_lo - y, y - q_hi)``. The margin is the 0.80 empirical quantile of
     the pooled scores (with the standard ``(n+1)`` small-sample lift); because
     the fold models differ from the served full-data model the coverage is
     approximate, validated at ~0.80 on the held-out test set. The shipped model still trains on
     ALL of train, so its bytes are unchanged; this only estimates how far to
-    widen its raw P10/P90 interval — which under-covers by a couple of points —
+    widen its raw P10/P90 interval - which under-covers by a couple of points -
     to reach the nominal coverage. Returns (delta, n_scores).
     """
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
@@ -333,7 +333,7 @@ def _headline_metrics_for_seed(
     """Train both heads on one seed's split and return the headline metrics.
 
     The stability loop calls this across several seeds so the reported
-    numbers carry a mean±std, not a single-split point estimate — the
+    numbers carry a mean±std, not a single-split point estimate - the
     difference between "R²=0.82" and "R²=0.82±0.01 over 5 seeds".
     """
     df_train, df_test, _, _ = _prepare_split(
@@ -439,7 +439,7 @@ def main() -> None:
     coverage_80 = float(((y_test.values >= p10_dollar) & (y_test.values <= p90_dollar)).mean())
     interval_width_median = float(np.median(p90_dollar - p10_dollar))
 
-    # Quantile crossing check — preds should satisfy p10 <= p50 <= p90
+    # Quantile crossing check - preds should satisfy p10 <= p50 <= p90
     crossings = int(((p10_dollar > p50_dollar) | (p50_dollar > p90_dollar) | (p10_dollar > p90_dollar)).sum())
 
     logger.info(
@@ -470,7 +470,7 @@ def main() -> None:
             logger.info("  subgroup coverage_80 %-20s n=%4d cov=%.3f", f"{col}={val}", int(mask.sum()), cov)
 
     # ── 5-fold CV on training set only, dollar-space P50 R² ─────────────────
-    # Per-fold target-encoding means (leakage-free) — see _cross_val_r2. CV and
+    # Per-fold target-encoding means (leakage-free) - see _cross_val_r2. CV and
     # test R² are computed in the same dollar space so the numbers compare.
     cv_r2_mean, cv_r2_std = _cross_val_r2(
         df_train_raw,
@@ -559,7 +559,7 @@ def main() -> None:
 
     # ── Baseline comparisons + calibration (Brier) ──────────────────────────
     # Majority-class accuracy and a scaled logistic-regression ROC-AUC make the
-    # XGB head's lift — or shortfall — explicit rather than assumed. Brier
+    # XGB head's lift - or shortfall - explicit rather than assumed. Brier
     # (lower=better) scores the served probabilities against the base-rate
     # constant predictor.
     baseline_majority_acc = float(max(pos_rate_test, 1.0 - pos_rate_test))
@@ -576,7 +576,7 @@ def main() -> None:
         baseline_brier,
     )
 
-    # Subgroup ROC-AUC — fairness guardrail on the classifier head.
+    # Subgroup ROC-AUC - fairness guardrail on the classifier head.
     # A collapse in one subgroup's AUC (relative to the global AUC)
     # is the drift signal the fairness test locks in.
     clf_subgroup_roc_auc: dict[str, float] = {}
@@ -588,7 +588,7 @@ def main() -> None:
             if mask.sum() < MIN_SUBGROUP_SIZE:
                 continue
             y_sub = y_test_clf.values[mask]
-            # Skip degenerate slices (all pos or all neg) — AUC is undefined
+            # Skip degenerate slices (all pos or all neg) - AUC is undefined
             if len(np.unique(y_sub)) < 2:
                 continue
             sub_auc = float(roc_auc_score(y_sub, clf_proba_test[mask]))
@@ -671,7 +671,7 @@ def main() -> None:
     logger.info("Model version: %s", model_version)
 
     # Content-address every served artefact. The API re-hashes on load and
-    # crashes on mismatch, and CI verifies committed bytes against these — so a
+    # crashes on mismatch, and CI verifies committed bytes against these - so a
     # corrupt or desynced artefact cannot ship under green.
     artifact_sha256 = {
         "model": sha256_file(primary_model_path),
@@ -749,7 +749,7 @@ def main() -> None:
     logger.info("  Metrics     : %s", ROOT / cfg["model"]["metrics_path"])
     logger.info("  Drift base  : %s", baseline_path)
     logger.info(
-        "Done — Test P50 R²=%.4f  coverage_80=%.1f%%  clf ROC-AUC=%.4f",
+        "Done - Test P50 R²=%.4f  coverage_80=%.1f%%  clf ROC-AUC=%.4f",
         r2,
         coverage_80 * 100,
         roc_auc,

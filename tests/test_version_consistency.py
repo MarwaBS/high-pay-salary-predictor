@@ -1,7 +1,7 @@
 """One service version, from ``api.__version__``.
 
 Compared across the FastAPI app, ``GET /``, ``HealthResponse``'s default and
-``pyproject.toml`` — a hardcoded value in any one of them is silent skew.
+``pyproject.toml`` - a hardcoded value in any one of them is silent skew.
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ def test_pyproject_version_matches_constant():
             in_project = line == "[project]"
             continue
         if in_project and line.startswith("version"):
-            # ``version         = "2.0.0"`` — take the quoted value.
+            # ``version         = "2.0.0"`` - take the quoted value.
             match = re.search(r'"([^"]+)"', line)
             if match:
                 found_version = match.group(1)

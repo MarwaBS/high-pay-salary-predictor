@@ -44,7 +44,7 @@ pre-commit install    # installs git hooks (ruff, nbstripout, file hygiene)
 | **Formatter** | `ruff format` (Black-compatible, run with `make format`) |
 | **Imports** | `ruff check --select I` sorts them automatically |
 | **Type hints** | Required for all new public functions |
-| **Shared code** | Feature constants and `engineer_features` live in `pipeline.py` — do not duplicate them |
+| **Shared code** | Feature constants and `engineer_features` live in `pipeline.py` - do not duplicate them |
 | **Config** | All thresholds and paths belong in `config.yaml`, never hardcoded |
 
 ## Adding or changing features
@@ -76,11 +76,11 @@ pre-commit install    # installs git hooks (ruff, nbstripout, file hygiene)
 > `us_state/us_state.shp` (~15 MB) were committed before the 5 MB pre-commit
 > gate was added, so they still live in git history and inflate `.git` to
 > ~100 MB. A `git filter-repo` rewrite is tracked as a future follow-up.
-> Do not add new large binaries — use object storage instead.
+> Do not add new large binaries - use object storage instead.
 
 ## Notebooks
 
-- Notebook outputs are stripped automatically by `nbstripout` on commit — regenerate them locally.
+- Notebook outputs are stripped automatically by `nbstripout` on commit - regenerate them locally.
 - Keep the four-notebook structure (`cleaning → EDA → mapping → ML`).
 - If you add a new notebook, prefix it numerically (`05_...`) and add it to the pipeline table in the README.
 

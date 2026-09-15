@@ -1,16 +1,16 @@
 """
-High-Paying Jobs US — Salary Prediction API
+High-Paying Jobs US - Salary Prediction API
 ============================================
 FastAPI service wrapping the trained XGBoost model.
 
 Endpoints:
-  GET  /            — API info
-  GET  /health      — liveness probe
-  GET  /meta        — valid states, occupations, education levels
-  GET  /metrics     — Prometheus metrics (auto-instrumented; keyed)
-  POST /predict     — salary prediction with contextual benchmarks and PI
-  POST /predict/batch — up to 1000 predictions scored in one vectorised call
-  GET  /drift       — feature drift report (cluster-wide with Redis; keyed)
+  GET  /            - API info
+  GET  /health      - liveness probe
+  GET  /meta        - valid states, occupations, education levels
+  GET  /metrics     - Prometheus metrics (auto-instrumented; keyed)
+  POST /predict     - salary prediction with contextual benchmarks and PI
+  POST /predict/batch - up to 1000 predictions scored in one vectorised call
+  GET  /drift       - feature drift report (cluster-wide with Redis; keyed)
 
 Run locally:
   uvicorn api.main:app --reload --port 8000
@@ -32,7 +32,7 @@ Environment variables:
   TRUSTED_PROXY_HOPS    Number of reverse proxies in front of the API. The
                         rate limiter and logging read the Nth-from-last
                         entry of X-Forwarded-For. Default: 0 (bind to the
-                        direct client.host — dev / no proxy).
+                        direct client.host - dev / no proxy).
   AUTH_FAILURE_LIMIT    Failed X-API-Key attempts allowed per IP within the
                         window before 429. Default: 10.
   AUTH_FAILURE_WINDOW_S Sliding window for that budget, in seconds.
@@ -149,7 +149,7 @@ logger = logging.getLogger(__name__)
 
 API_KEY = os.getenv("API_KEY", "")
 # Clients disagree on non-ASCII, a leading space is stripped in transit, and
-# control characters draw a 400 — so the correct key would 401 forever.
+# control characters draw a 400 - so the correct key would 401 forever.
 # Internal spaces and tabs work; they are refused as a quoting accident.
 if API_KEY and not all("\x21" <= ch <= "\x7e" for ch in API_KEY):
     raise RuntimeError(
@@ -161,7 +161,7 @@ _api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 # Per-IP throttle for FAILED auth attempts. The main rate limiter runs inside the
 # route function, after dependency resolution, so a 401 raised by verify_api_key
-# never reaches it — leaving X-API-Key guessing unthrottled. This caps failures
+# never reaches it - leaving X-API-Key guessing unthrottled. This caps failures
 # per IP independently (in-process per replica; defence-in-depth, not a substitute
 # for a high-entropy key).
 AUTH_FAILURE_LIMIT = int(os.getenv("AUTH_FAILURE_LIMIT", "10"))
@@ -181,7 +181,7 @@ class _AuthFailureThrottle:
     def _sweep_stale(self, cutoff: float) -> None:
         """Drop IPs whose most-recent failure has aged out. Called at most once
         per window so the map can't grow without bound as attackers rotate source
-        IPs — a per-IP deque is never emptied in place (the just-appended hit keeps
+        IPs - a per-IP deque is never emptied in place (the just-appended hit keeps
         it non-empty), so eviction has to happen here, across keys."""
         stale = [ip for ip, dq in self._hits.items() if not dq or dq[-1] < cutoff]
         for ip in stale:
@@ -214,7 +214,7 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
     # is the codec starlette decoded the header with, so it recovers the bytes
     # the client actually sent.
     if key is None or not secrets.compare_digest(key.encode("latin-1"), API_KEY.encode("ascii")):
-        # Throttle brute-force key guessing per IP — the route-level limiter
+        # Throttle brute-force key guessing per IP - the route-level limiter
         # never sees this request because the 401 short-circuits before it.
         within_budget = _auth_throttle.record_failure(_client_ip(request), time.monotonic())
         if not within_budget:
@@ -226,7 +226,7 @@ async def verify_api_key(request: Request, key: str | None = Security(_api_key_h
 # ── Rate Limiting (proxy-aware) ──────────────────────────────────────────────
 #
 # ``slowapi.util.get_remote_address`` reads ``request.client.host`` which is
-# the IP of whatever spoke directly to uvicorn — behind any ingress, that
+# the IP of whatever spoke directly to uvicorn - behind any ingress, that
 # is a single internal IP, collapsing every caller onto one bucket. We
 # read ``X-Forwarded-For`` instead and peel off ``TRUSTED_PROXY_HOPS`` entries
 # from the right (right-most entries are the ones added by trusted hops).
@@ -244,7 +244,7 @@ def _client_ip(request: Request) -> str:
     Security-critical. Each of our own ``TRUSTED_PROXY_HOPS`` reverse proxies
     appends exactly one entry to the *right* end of ``X-Forwarded-For``, so the
     right-most ``TRUSTED_PROXY_HOPS`` entries are the trustworthy ones and the
-    real client is the left-most of those — index ``-TRUSTED_PROXY_HOPS``
+    real client is the left-most of those - index ``-TRUSTED_PROXY_HOPS``
     (werkzeug ``ProxyFix`` semantics). Every entry further left is
     client-supplied and therefore spoofable: reading it would let an attacker
     forge ``X-Forwarded-For`` to mint a fresh rate-limit bucket on every
@@ -351,7 +351,7 @@ def _served_interval_coverage(metrics: dict[str, Any]) -> float:
     """Coverage of the interval the API actually serves.
 
     With a conformal margin applied that is the conformalized coverage, not the
-    raw quantile coverage — surfacing the raw number would understate the served
+    raw quantile coverage - surfacing the raw number would understate the served
     interval. A recorded 0.0 is a real measurement, not a missing one.
     """
     coverage = metrics.get("conformal_coverage_80")
@@ -411,7 +411,7 @@ async def lifespan(_app: FastAPI):
     # The config always declares one, so only a missing artefact degrades:
     # ``p_above_premium_threshold`` becomes ``None`` on every response and the
     # rest of the pipeline is unaffected. Any *other* exception is a real fault
-    # and should crash the probe — do not silently swallow it.
+    # and should crash the probe - do not silently swallow it.
     classifier_cfg_path = VALIDATED_CFG.model.classifier_path
     try:
         state.classifier = load_classifier(str(ROOT / classifier_cfg_path))
@@ -422,7 +422,7 @@ async def lifespan(_app: FastAPI):
         )
     except FileNotFoundError:
         logger.warning(
-            "No classifier artefact at %s — premium-tier probability will be None",
+            "No classifier artefact at %s - premium-tier probability will be None",
             classifier_cfg_path,
         )
 
@@ -438,7 +438,7 @@ async def lifespan(_app: FastAPI):
     state.bls_defaults_lookup = build_bls_defaults_lookup(df_eng)
     logger.info("BLS defaults lookup built with %d (state, occupation) cells", len(state.bls_defaults_lookup))
 
-    # Load model metrics — only the quantile coverage is surfaced at startup
+    # Load model metrics - only the quantile coverage is surfaced at startup
     # for a quick operator sanity check; intervals come from the model's
     # quantile output directly.
     metrics = load_metrics(str(ROOT / VALIDATED_CFG.model.metrics_path))
@@ -465,7 +465,7 @@ async def lifespan(_app: FastAPI):
     mismatches = artifact_mismatches(artefact_files, state.artifact_sha256)
     if mismatches:
         raise RuntimeError(
-            "Artifact integrity check failed at startup — served files could not be "
+            "Artifact integrity check failed at startup - served files could not be "
             f"verified against models/model_metrics.json: {'; '.join(mismatches)}. "
             "Refusing to serve a mislabeled model; re-deploy the audited artefacts "
             "or retrain."
@@ -486,7 +486,7 @@ async def lifespan(_app: FastAPI):
     # the old label distribution, and every ``/predict`` response
     # would advertise a ``premium_threshold`` that does not match the
     # boundary the classifier actually learned. That is a silent
-    # correctness bug, so we crash the liveness probe on mismatch —
+    # correctness bug, so we crash the liveness probe on mismatch -
     # the operator sees the failure immediately and either rolls back
     # the config edit or retrains.
     if state.classifier is not None:
@@ -522,7 +522,7 @@ async def lifespan(_app: FastAPI):
     logger.info("Drift monitor loaded from %s", baseline_path)
 
     logger.info(
-        "Ready — dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f, model_version: %s",
+        "Ready - dataset rows: %d, occupations: %d, model features: %d, quantile 80%% coverage: %.3f, model_version: %s",
         len(df_eng),
         len(state.occupations),
         state.model.n_features_in_,
@@ -542,7 +542,7 @@ async def lifespan(_app: FastAPI):
 _raw_origins = os.getenv("CORS_ORIGINS", "")
 CORS_ORIGINS = [o.strip() for o in _raw_origins.split(",") if o.strip()] if _raw_origins else []
 if not CORS_ORIGINS:
-    logger.warning("CORS_ORIGINS not set — cross-origin requests will be rejected")
+    logger.warning("CORS_ORIGINS not set - cross-origin requests will be rejected")
 
 app = FastAPI(
     title="US High-Pay Salary Predictor",
@@ -639,7 +639,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
     allow_methods=["GET", "POST"],
-    # Explicit header list — mixing "*" with explicit values would be
+    # Explicit header list - mixing "*" with explicit values would be
     # meaningless because "*" already matches everything.
     allow_headers=["Content-Type", "X-API-Key", "X-Request-ID"],
 )
@@ -696,7 +696,7 @@ QUANTILE_CROSSINGS = Counter(
 
 # Counts requests whose occupation or state carried no training-set group mean,
 # so the dataset-wide fallback mean was injected instead. A rising rate means
-# traffic is drifting off the training support — surfaced, not absorbed.
+# traffic is drifting off the training support - surfaced, not absorbed.
 FALLBACK_MEANS_USED = Counter(
     "salary_fallback_means_used_total",
     "Predictions encoded with the dataset-wide fallback occupation/state mean.",
@@ -746,7 +746,7 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse, tags=["Meta"])
 async def health():
-    """Liveness probe — returns model load status and dataset size."""
+    """Liveness probe - returns model load status and dataset size."""
     return HealthResponse(
         status="ok",
         model_loaded=state.model is not None,
@@ -790,7 +790,7 @@ def predict(request: Request, req: PredictRequest, _key: str | None = Depends(ve
     _validate_domain(req)
 
     # ── Feature encoding + drift observation (BEFORE the cache) ──────────────
-    # Encode and observe drift for every request, including cache hits — the
+    # Encode and observe drift for every request, including cache hits - the
     # drift monitor must see all production traffic. If observation happened
     # after the cache short-circuit, repeated (cached) queries would be
     # invisible to drift detection. Only the expensive model inference below
@@ -919,7 +919,7 @@ def predict_batch(
         batch_df = build_feature_frame([encoded_all[idx] for idx, _ in rows_to_score])
         preds_dollar = predict_quantiles_batch(state.model, batch_df, conformal_delta=state.conformal_delta)
 
-        # Batched classifier call — one predict_proba for the whole batch
+        # Batched classifier call - one predict_proba for the whole batch
         # keeps overhead amortised. ``None`` when the classifier isn't
         # loaded, same graceful-degradation contract as /predict.
         if state.classifier is not None:
@@ -960,7 +960,7 @@ def drift_report(request: Request, _key: str | None = Depends(verify_api_key)): 
 
     Requires ``models/baseline_stats.json`` (generated by
     ``scripts/train_quantile.py``). With ``REDIS_URL`` set, the
-    observation window is shared across all replicas — the report is
+    observation window is shared across all replicas - the report is
     cluster-wide. Without Redis, the report is per-pod.
     """
     if state.drift_monitor is None:  # pragma: no cover - startup refuses to serve without a verified baseline

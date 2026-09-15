@@ -1,6 +1,6 @@
 # ── Stage 1a: API dependency builder (lean, pinned) ─────────────────────────
 # Installs from requirements-api.txt with exact == pins for reproducible
-# builds. Includes ONLY what api/ needs — do NOT add jupyter / pytest /
+# builds. Includes ONLY what api/ needs - do NOT add jupyter / pytest /
 # streamlit / shap / lightgbm / statsmodels / geopandas here. Keeping the
 # API image lean also makes pip-audit scans faster and reduces the CVE
 # surface.
@@ -44,7 +44,7 @@ FROM python:3.12-slim-bookworm AS dashboard
 
 WORKDIR /app
 
-# Install curl for HEALTHCHECK — not present in slim by default
+# Install curl for HEALTHCHECK - not present in slim by default
 RUN apt-get update \
     && apt-get upgrade -y \
     && apt-get install -y --no-install-recommends curl \
@@ -55,7 +55,7 @@ COPY --from=dashboard-builder /install /usr/local
 COPY config.yaml      ./config.yaml
 COPY streamlit_app.py ./streamlit_app.py
 COPY pipeline.py      ./pipeline.py
-# Data/ is NOT baked into the image — mount ./Data as a read-only volume
+# Data/ is NOT baked into the image - mount ./Data as a read-only volume
 # in docker-compose.yml so the image stays lean and dataset changes don't
 # require a rebuild.
 
@@ -95,7 +95,7 @@ COPY config.yaml       ./config.yaml
 COPY config_schema.py  ./config_schema.py
 COPY pipeline.py       ./pipeline.py
 COPY api/              ./api/
-# Data/ is NOT baked into the image — mounted as a read-only volume.
+# Data/ is NOT baked into the image - mounted as a read-only volume.
 
 RUN mkdir -p models Data
 

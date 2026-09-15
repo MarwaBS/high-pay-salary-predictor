@@ -10,7 +10,7 @@ license: mit
 short_description: Quantile XGBoost salary predictor (P10/P50/P90)
 ---
 
-# High-Paying Jobs in the US — Salary Quantile Predictor
+# High-Paying Jobs in the US - Salary Quantile Predictor
 
 [![GitHub](https://img.shields.io/badge/GitHub-MarwaBS/high--pay--salary--predictor-181717?logo=github)](https://github.com/MarwaBS/high-pay-salary-predictor)
 [![XGBoost](https://img.shields.io/badge/ML-XGBoost_quantile-orange)](https://github.com/MarwaBS/high-pay-salary-predictor/blob/main/MODEL_CARD.md)
@@ -21,11 +21,11 @@ Live demo of an end-to-end ML service analysing high-paying US jobs
 income predictions for a given demographic and occupational profile.
 
 **The container runs two processes**:
-- **FastAPI** on `localhost:8000` — the prediction service, with Redis-
+- **FastAPI** on `localhost:8000` - the prediction service, with Redis-
   backed deterministic caching (no-op on the free tier), proxy-aware
   rate limiting, distributed drift monitoring, and precomputed O(log n)
   benchmark lookups.
-- **Streamlit** on `:7860` — the dashboard you see above. The Predictor
+- **Streamlit** on `:7860` - the dashboard you see above. The Predictor
   tab calls `POST /predict` on the local API so both surfaces share one
   prediction path.
 
@@ -39,7 +39,7 @@ income predictions for a given demographic and occupational profile.
 
 | Tab | What it shows |
 |---|---|
-| **Overview** | EDA explorer — top occupations, education distribution, gender gap within the cohort |
+| **Overview** | EDA explorer - top occupations, education distribution, gender gap within the cohort |
 | **Geographic** | Choropleth of average income / location quotient / record count by state |
 | **Predictor** | Enter a profile → the dashboard POSTs to the FastAPI `/predict` endpoint and renders the P10/P50/P90 quantile trio with the percentile rank inside the comparable group |
 | **Model Insights** | Headline metrics incl. the served 80% interval, XGBoost feature importance (gain), residual plot, actual-vs-predicted scatter |
@@ -59,7 +59,7 @@ income predictions for a given demographic and occupational profile.
    `predicted_p90`, and the percentile in the comparable cohort.
 
 This architecture means the API is the single source of truth for
-predictions — the dashboard never loads the model in-process for
+predictions - the dashboard never loads the model in-process for
 scoring, so rate limiting, drift monitoring, and cache semantics all
 apply uniformly to any future consumer.
 
@@ -73,5 +73,5 @@ apply uniformly to any future consumer.
 
 - **This Space is deployed automatically from `main`** by the repo's Deploy workflow, and a weekly drift guard fails CI if the Space ever stops matching `main` (code **or** model artefacts).
 - First load may take ~10 seconds while both uvicorn and Streamlit come up.
-- There is **no Redis cache** on the free tier — every prediction hits the model. The API falls back to a graceful no-op cache.
-- There is **no persistent storage** — state is lost on container restart.
+- There is **no Redis cache** on the free tier - every prediction hits the model. The API falls back to a graceful no-op cache.
+- There is **no persistent storage** - state is lost on container restart.

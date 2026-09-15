@@ -55,14 +55,14 @@ def tune_inputs() -> dict:
 
 @pytest.fixture(scope="module")
 def tiny_train() -> pd.DataFrame:
-    """A deterministic slice — the search mechanics do not need the full frame."""
+    """A deterministic slice - the search mechanics do not need the full frame."""
     raw = pd.read_csv(REPO_ROOT / "Data" / "cleaned_high_pay_data.csv")
     return raw.sample(n=600, random_state=42).reset_index(drop=True)
 
 
 @pytest.fixture(scope="module")
 def study() -> dict:
-    assert STUDY_PATH.exists(), "no tuning study committed — the shipped values have no producer"
+    assert STUDY_PATH.exists(), "no tuning study committed - the shipped values have no producer"
     return json.loads(STUDY_PATH.read_text(encoding="utf-8"))
 
 
@@ -78,7 +78,7 @@ def _doc_surface() -> list[Path]:
         timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout
     paths = [REPO_ROOT / name for name in listed.split("\0") if name]
-    assert len(paths) >= 10, f"only {len(paths)} tracked docs found — this scan is looking at nothing"
+    assert len(paths) >= 10, f"only {len(paths)} tracked docs found - this scan is looking at nothing"
     return paths
 
 
@@ -159,7 +159,7 @@ def test_the_search_actually_discriminated(study):
     any incumbent at all.
     """
     losses = [trial["cv_pinball"] for trial in study["all_trials"]]
-    assert len(losses) >= 30, f"only {len(losses)} trials — too few to conclude anything"
+    assert len(losses) >= 30, f"only {len(losses)} trials - too few to conclude anything"
     assert max(losses) - min(losses) > 100, "search space produced no meaningful spread in loss"
 
 
@@ -323,7 +323,7 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
     The tolerance is relative, not exact. XGBoost's float reductions differ by
     build: the same parameters and seed give 17524.88 on the machine that
     recorded the study, 17541.41 under Linux/CPython 3.11 and 17544.54 under
-    3.12 — a 0.11% spread. Asserting equality would be asserting a portability
+    3.12 - a 0.11% spread. Asserting equality would be asserting a portability
     the repo does not have; 1% still separates a real run from a fabricated one
     by orders of magnitude.
     """
@@ -338,7 +338,7 @@ def test_the_recorded_incumbent_score_re_derives(study, tune_inputs):
         **tune_inputs,
     )
     assert recomputed == pytest.approx(study["incumbent"]["cv_pinball"], rel=REPRODUCTION_TOLERANCE), (
-        f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} — "
+        f"study records {study['incumbent']['cv_pinball']}, re-running gives {recomputed} - "
         "further apart than build-to-build float variation explains"
     )
 
@@ -379,5 +379,5 @@ def test_the_study_re_derives_under_the_versions_it_recorded(study):
     assert not drifted, (
         f"tuning_study.json was scored under {recorded}, this environment has {running}; "
         f"differs on {sorted(drifted)}. Re-run scripts/tune.py and commit the study, "
-        f"or restore the pins in requirements.txt — the recorded score describes the old build."
+        f"or restore the pins in requirements.txt - the recorded score describes the old build."
     )

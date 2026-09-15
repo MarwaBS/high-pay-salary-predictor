@@ -36,7 +36,7 @@ def _writes_model_artifact(module: Path) -> bool:
 def test_exactly_one_trainer_module_exists():
     """Only ``scripts/train_quantile.py`` may WRITE the production model artefact.
 
-    The footgun is two *trainers* clobbering the same output path — not two
+    The footgun is two *trainers* clobbering the same output path - not two
     files under ``scripts/``. Non-trainer utilities are allowed; a new trainer
     must come with an explicit update to this test.
     """
@@ -80,10 +80,10 @@ def test_no_mlflow_or_optuna_imports_in_scripts():
                 for alias in node.names:
                     root = alias.name.split(".")[0]
                     assert root not in forbidden, (
-                        f"{module.name} imports '{root}' — scripts/ must not depend on an experiment-tracking stack."
+                        f"{module.name} imports '{root}' - scripts/ must not depend on an experiment-tracking stack."
                     )
             elif isinstance(node, ast.ImportFrom) and node.module:
                 root = node.module.split(".")[0]
                 assert root not in forbidden, (
-                    f"{module.name} imports from '{root}' — scripts/ must not depend on an experiment-tracking stack."
+                    f"{module.name} imports from '{root}' - scripts/ must not depend on an experiment-tracking stack."
                 )

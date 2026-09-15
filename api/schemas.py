@@ -12,7 +12,7 @@ class PredictRequest(BaseModel):
 
     Required fields map to the demographic and geographic inputs a user
     would realistically know. BLS context fields (employment, lq, etc.)
-    are optional — the API fills them with occupation/state medians when
+    are optional - the API fills them with occupation/state medians when
     not supplied.
     """
 
@@ -59,7 +59,7 @@ class PredictRequest(BaseModel):
         examples=[32],
     )
 
-    # Optional BLS context — filled from dataset medians if omitted
+    # Optional BLS context - filled from dataset medians if omitted
     employment: float | None = Field(
         default=None,
         ge=0,
@@ -111,7 +111,7 @@ class PredictRequest(BaseModel):
 
 
 class PredictResponse(BaseModel):
-    """Salary prediction result — quantile trio + contextual benchmarks.
+    """Salary prediction result - quantile trio + contextual benchmarks.
 
     The model is a multi-quantile XGBoost regressor. ``predicted_p50`` is
     the median prediction, ``predicted_p10``/``predicted_p90`` are the
@@ -124,7 +124,7 @@ class PredictResponse(BaseModel):
     predicted_salary: float = Field(
         ...,
         description=(
-            "Alias for ``predicted_p50`` — the median (P50) prediction. "
+            "Alias for ``predicted_p50`` - the median (P50) prediction. "
             "Kept for backward compatibility. New clients should use the "
             "explicit quantile fields."
         ),
@@ -178,7 +178,7 @@ class PredictResponse(BaseModel):
     group_mean: float = Field(
         ...,
         description=(
-            "Mean annual income of the same reference distribution as ``group_median`` — see ``percentile_scope`` ($)."
+            "Mean annual income of the same reference distribution as ``group_median`` - see ``percentile_scope`` ($)."
         ),
         examples=[160000.0],
     )
@@ -187,7 +187,7 @@ class PredictResponse(BaseModel):
         description=(
             "Number of records in the same state + education cell. ``0`` means "
             "that cell was unseen, so ``group_median``/``group_mean`` and the "
-            "percentile describe the whole dataset — see ``percentile_scope``."
+            "percentile describe the whole dataset - see ``percentile_scope``."
         ),
         examples=[214],
     )
@@ -248,7 +248,7 @@ class PredictBatchRequest(BaseModel):
         ...,
         min_length=1,
         max_length=1000,
-        description="List of 1–1000 prediction requests. Validation is all-or-nothing — if any item fails domain validation the whole batch returns 422.",
+        description="List of 1–1000 prediction requests. Validation is all-or-nothing - if any item fails domain validation the whole batch returns 422.",
     )
 
 

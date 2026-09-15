@@ -1,7 +1,7 @@
 """Choose the XGBoost quantile hyper-parameters that ``config.yaml`` ships.
 
-Scores candidates by mean pinball loss — the proper scoring rule for a
-quantile model, and the loss the shipped objective already minimises — under
+Scores candidates by mean pinball loss - the proper scoring rule for a
+quantile model, and the loss the shipped objective already minimises - under
 leakage-free K-fold CV on the **train split only**. The test split is never
 touched: selecting on it would make every downstream test metric optimistic.
 The incumbent configuration is scored under the identical protocol, so the study
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # Each range brackets the incumbent value so the study can confirm it or replace
 # it; a space that excluded the shipped value could only ever replace it.
-# ``max_depth`` stops at 8 because the cohort is 8k rows — deeper trees memorise
+# ``max_depth`` stops at 8 because the cohort is 8k rows - deeper trees memorise
 # the target encodings rather than the features.
 SEARCH_SPACE: dict[str, tuple[str, float, float]] = {
     "n_estimators": ("int", 50, 600),

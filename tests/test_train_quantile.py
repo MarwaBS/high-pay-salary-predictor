@@ -9,7 +9,7 @@ This test runs ``main()`` end-to-end against the real dataset but into a
 throwaway-isolated output tree (``ROOT`` monkeypatched to ``tmp_path``) so it
 never touches the committed ``models/`` artefacts, with the stability sweep cut
 to a single seed for speed. It then asserts the artefacts exist and the metrics
-are structurally sane — locking the trainer's contract, not just its coverage.
+are structurally sane - locking the trainer's contract, not just its coverage.
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ def test_trainer_metrics_are_sane(trained_in_tmp):
 
 
 def test_build_model_version_is_composite():
-    """Provenance string is ``{service}+{git_sha}.{data_sha}`` — the operator
+    """Provenance string is ``{service}+{git_sha}.{data_sha}`` - the operator
     recovery primitive. Lock its shape directly (fast, no training)."""
     data_path = REPO_ROOT / "Data" / "cleaned_high_pay_data.csv"
     version = tq.build_model_version(data_path)
@@ -256,10 +256,10 @@ def test_cross_val_r2_is_leakage_free():
     honest, _ = tq._cross_val_r2(df, seed=0, n_splits=5, edu_order=_EDU, region_map=_REGION, params=_TINY_PARAMS)
     leaky = _leaky_cv_reference(df)
     assert leaky - honest > 0.05, (
-        f"no leakage separation (leaky={leaky:.4f}, honest={honest:.4f}) — "
+        f"no leakage separation (leaky={leaky:.4f}, honest={honest:.4f}) - "
         "per-fold encoding may have regressed to global encoding"
     )
-    assert honest < 0.10, f"honest CV R² {honest:.4f} too high for a pure-noise frame — encoding still leaks"
+    assert honest < 0.10, f"honest CV R² {honest:.4f} too high for a pure-noise frame - encoding still leaks"
 
 
 def _config_with(tmp_path, drop=(), overrides=None):
@@ -379,8 +379,8 @@ def _test_split_slices() -> tuple[dict[str, int], dict[str, bool], dict]:
 
 def test_every_slice_big_enough_to_score_is_in_the_published_fairness_table():
     """Set equality in both directions, on BOTH published tables. Raising the
-    trainer's floor drops a real subgroup — even after a retrain, which is when
-    it would otherwise pass unnoticed — and lowering it publishes a slice whose
+    trainer's floor drops a real subgroup - even after a retrain, which is when
+    it would otherwise pass unnoticed - and lowering it publishes a slice whose
     rate is mostly its own sampling error. The AUC table carries one further
     exclusion, single-class slices, so that is computed rather than waived."""
     sizes, two_class, cfg = _test_split_slices()
@@ -394,7 +394,7 @@ def test_the_trainer_publishes_at_exactly_the_floor_the_policy_states():
     """A coverage rate near the 0.80 target carries a 95% sampling interval of
     about ±0.14 at n=30. Equality, not a minimum: a lower floor publishes a rate
     that is mostly its own sampling noise, and a higher one hides a real
-    subgroup — including the worst-covered one, which is the one that matters.
+    subgroup - including the worst-covered one, which is the one that matters.
     """
     assert tq.MIN_SUBGROUP_SIZE == _MEANINGFUL_SLICE
 
@@ -410,7 +410,7 @@ def test_the_subgroup_gates_read_the_constant_rather_than_a_literal(tmp_path, mo
     # one is published.
     raised = sorted(sizes.values())[1]
     expected = {name for name, n in sizes.items() if n >= raised}
-    assert expected < set(sizes), "floor is not high enough to exclude anything — the check would be vacuous"
+    assert expected < set(sizes), "floor is not high enough to exclude anything - the check would be vacuous"
 
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text())
     cfg["data"]["cleaned"] = str((REPO_ROOT / cfg["data"]["cleaned"]).resolve())

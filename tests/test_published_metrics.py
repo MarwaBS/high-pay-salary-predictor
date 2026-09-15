@@ -271,7 +271,7 @@ def _alarm_figures() -> dict[str, tuple[str, str]]:
     """Each figure the bullet may print, keyed by the claim it stands for.
 
     Recomputed from the detector's tuning and the baseline it monitors, and
-    paired with the wording that has to carry it — a number matching some other
+    paired with the wording that has to carry it - a number matching some other
     claim in the same sentence would otherwise satisfy a check on the set alone.
     """
     baseline = json.loads((REPO_ROOT / "models" / "baseline_stats.json").read_text(encoding="utf-8"))

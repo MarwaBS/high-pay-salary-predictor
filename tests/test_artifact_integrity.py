@@ -23,7 +23,7 @@ def test_integrity_check_can_go_red(monkeypatch):
     and confirm verify() flags a mismatch rather than passing silently."""
     monkeypatch.setattr(pipeline, "sha256_file", lambda _p: "0" * 64)
     problems = va.verify()
-    assert problems, "integrity check did not flag mismatched digests — the gate cannot fail"
+    assert problems, "integrity check did not flag mismatched digests - the gate cannot fail"
 
 
 def test_serving_mismatch_detector(tmp_path):

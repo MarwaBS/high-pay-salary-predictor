@@ -5,20 +5,20 @@
 # drifts, so deploy-space redeploys on every push to main and the weekly
 # read-only space-drift guard fails if the live Space diverges.
 #
-# Two jobs, one assembly script (deploy/huggingface/assemble.sh — shared so the
+# Two jobs, one assembly script (deploy/huggingface/assemble.sh - shared so the
 # deploy and the guard can never diverge):
 #
-#   deploy-space  — on every push to main: overlay the runtime snapshot (code +
+#   deploy-space  - on every push to main: overlay the runtime snapshot (code +
 #                   config + committed model artefacts + Space Dockerfile/
 #                   README/start.sh + dataset) onto a clone of the Space repo
 #                   and push if anything changed. Requires the HF_TOKEN
 #                   repository secret (write-scoped); fails loudly with
 #                   instructions if it is missing or not write-scoped.
 #
-#   space-drift   — weekly: the same overlay against the live Space, READ-ONLY
+#   space-drift   - weekly: the same overlay against the live Space, READ-ONLY
 #                   (anonymous clone, no token). Any diff means the Space is not
 #                   serving main's code/models and the job FAILS. A red run here
-#                   is the honest signal the demo has rotted — and the standing
+#                   is the honest signal the demo has rotted - and the standing
 #                   freshness alert the pull-only /drift endpoint can't provide
 #                   externally (the API is localhost-only inside the container).
 
@@ -52,7 +52,7 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           if [ -z "${HF_TOKEN:-}" ]; then
-            echo "::error::HF_TOKEN secret is missing — the Space CANNOT be deployed and will drift from main. Create a WRITE token at https://huggingface.co/settings/tokens and add it as a repository secret named HF_TOKEN at https://github.com/${{ github.repository }}/settings/secrets/actions"
+            echo "::error::HF_TOKEN secret is missing - the Space CANNOT be deployed and will drift from main. Create a WRITE token at https://huggingface.co/settings/tokens and add it as a repository secret named HF_TOKEN at https://github.com/${{ github.repository }}/settings/secrets/actions"
             exit 1
           fi
           # Fail fast on the two paste/permission mistakes that actually happen:
@@ -100,12 +100,12 @@ jobs:
           cd /tmp/hf-space
           git add -A
           if git diff --cached --quiet; then
-            echo "Space already matches main — nothing to deploy."
+            echo "Space already matches main - nothing to deploy."
             exit 0
           fi
           git config user.name "MarwaBS"
           git config user.email "marwabensalem30@gmail.com"
-          git commit --quiet -m "Deploy ${GITHUB_SHA} — runtime snapshot from main"
+          git commit --quiet -m "Deploy ${GITHUB_SHA} - runtime snapshot from main"
           git push --quiet origin main
           echo "Deployed ${GITHUB_SHA} to ${SPACE_URL_PUBLIC}"
 
@@ -133,7 +133,7 @@ jobs:
           cd /tmp/hf-space
           git add -A
           if ! git diff --cached --quiet; then
-            echo "::error::The live Space does NOT match main — the public demo is serving stale code OR stale model artefacts. Files that differ:"
+            echo "::error::The live Space does NOT match main - the public demo is serving stale code OR stale model artefacts. Files that differ:"
             git diff --cached --stat
             exit 1
           fi

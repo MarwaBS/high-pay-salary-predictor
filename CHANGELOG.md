@@ -27,8 +27,8 @@ project uses SemVer.
   nothing could state why it held that value. It is an operating choice, so it
   now lives beside the bound it has to clear, and `DriftMonitor` requires the
   caller to name one. API startup aborts on a window below either floor it has to
-  clear — the detector's effect-floor handover, which moves with its tuning, and
-  the minimum any verdict is issued from — since only startup holds the
+  clear - the detector's effect-floor handover, which moves with its tuning, and
+  the minimum any verdict is issued from - since only startup holds the
   configured value and the tuning together. There is no derivable upper bound,
   and the trade-off a larger window buys is written beside the key.
 
@@ -37,7 +37,7 @@ project uses SemVer.
   feature** (breaking for a caller reading `features[f].drifted` as a boolean:
   it is now `null` when the feature was too sparse to rule on, and `z_score`,
   `effect_size` and `p_value` are `null` with it). The floor gated the window
-  length, while each p-value is a normal tail over that feature's own sample —
+  length, while each p-value is a normal tail over that feature's own sample -
   so a feature seen three times in a full window was placed on that tail and
   could raise `any_drifted`. A feature left unruled can no longer make
   `any_drifted` false, only `message` names which features were skipped.
@@ -53,13 +53,13 @@ project uses SemVer.
   fetched four artefacts into an `emptyDir`; the dashboard reads a fifth to
   bound its Age input, so the predictor tab would have raised on first render.
   Both pods now stage every artefact `config.yaml` declares, rather than a list
-  per pod, and a test holds each manifest to that set — previously only the API
+  per pod, and a test holds each manifest to that set - previously only the API
   pod's list was checked at all.
 - **Prediction cache keys carry the full SHA-256 digest** rather than its first
   16 hex chars. The truncation bought nothing and left a 64-bit key space in
   which a collision serves one caller another's prediction. Cached entries
   written before the change are unreachable and expire on their existing TTL.
-- **`GET /drift` returns `any_drifted: null` in two further cases** — fewer than
+- **`GET /drift` returns `any_drifted: null` in two further cases** - fewer than
   30 observations, and no observed feature matching the baseline (a renamed
   feature is the realistic trigger). Both previously returned `false`, which
   reads as "no drift" when in fact nothing was testable. Callers treating the
@@ -76,14 +76,14 @@ project uses SemVer.
 - **Two unreachable branches in `api/main.py`.** The startup integrity check
   refuses a missing `baseline_stats.json` before either could run, so the
   "drift monitoring disabled" warning and `/drift`'s `status: "disabled"` reply
-  were dead — the latter the last withholding path with its own shape.
+  were dead - the latter the last withholding path with its own shape.
 - **`pipeline.FEATURES_DEMO`.** The demographic-only feature list had no
   consumer: the one notebook importing it defined its own, different list in a
   later cell, and its comment described a vector "with no BLS context" that
   contained four BLS columns.
 
 ### Added
-- **`BATCH_RATE_LIMIT`** — `/predict/batch`'s per-IP budget is now read from the
+- **`BATCH_RATE_LIMIT`** - `/predict/batch`'s per-IP budget is now read from the
   environment like every other route's, defaulting to the `10/minute` it was
   previously pinned to in code. No behaviour change unless the variable is set.
 - `SECURITY.md` with disclosure policy + in-scope / out-of-scope
@@ -103,12 +103,12 @@ project uses SemVer.
   audited); now consumed by the `dashboard-builder` stage and covered by
   the CI `pip-audit` gate.
 - CI `schedule:` trigger (weekly, Mondays 05:00 UTC) re-running the full
-  pipeline on `main` — including the Docker builds + Trivy scans — so
+  pipeline on `main` - including the Docker builds + Trivy scans - so
   newly published image CVEs are caught by time, not only by pushes.
 - Annotated tag `training/2.0.0` pinning training commit `d361a769`,
   the code/data state the 2.0.0 model release was trained at, so
   provenance survives feature-branch cleanup. (The shipped
-  `model_metrics.json` has since been regenerated — see Fixed below —
+  `model_metrics.json` has since been regenerated - see Fixed below -
   so its `model_version` records the regeneration commit instead.)
 - Drift monitor ramp-up regression tests: familywise false-alarm bounds
   on stationary windows at n=30/n=100 (150 i.i.d. trials each) plus a
@@ -129,7 +129,7 @@ project uses SemVer.
   tests false-alarms with probability 1 − (1 − 0.0455)^10 ≈ 37 % while
   n < (z/d)² = 100. The corrected monitor is gated at ≤7 % over 150
   stationary windows at both n=30 and n=100, against the ≈4.6 % design
-  level — a bound, not a published rate. Detection of an Age +5 yr
+  level - a bound, not a published rate. Detection of an Age +5 yr
   (0.5 σ) shift is unchanged: 25 of 25 trials at n=150, and full-window
   (n=500) behaviour is unchanged.
 
@@ -143,7 +143,7 @@ project uses SemVer.
   installing runtime deps, to refresh OS security patches even when the
   GHA layer cache reuses a stale base-image layer.
 
-## [2.0.0] — 2026-04-11
+## [2.0.0] - 2026-04-11
 
 ### Changed
 - **Quantile reframe (breaking semantic upgrade).** The API now returns
@@ -167,7 +167,7 @@ project uses SemVer.
   endpoint instead of calling the model directly, so cache hits + rate
   limiting + drift monitoring flow through a single path.
 
-## [1.0.0] — prior
+## [1.0.0] - prior
 
 Initial end-to-end pipeline: BLS OEWS + Census data integration → XGBoost
 point estimator → FastAPI + Streamlit + Docker.

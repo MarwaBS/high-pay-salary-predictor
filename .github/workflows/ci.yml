@@ -7,7 +7,7 @@ on:
     branches: [main, master]
   schedule:
     # Weekly freshness re-scan (Mondays 05:00 UTC). Trivy findings and
-    # pip-audit CVEs are a function of TIME, not of pushes — without this,
+    # pip-audit CVEs are a function of TIME, not of pushes - without this,
     # a quiet repo ships images whose last vulnerability scan silently ages.
     # The scheduled run re-executes the full existing pipeline (pip-audit,
     # tests, Docker build + Trivy scan on both images) on main.
@@ -51,18 +51,18 @@ jobs:
           pip install -e .
           pip install pip-audit
 
-      - name: Security — audit dependencies for known CVEs
+      - name: Security - audit dependencies for known CVEs
         run: |
           # Audit both the loose runtime set and the exact reproducible lock.
           pip-audit --requirement requirements.txt --skip-editable
           pip-audit --requirement requirements-lock.txt
 
-      - name: Security — audit the dashboard image universe (3.12 only)
+      - name: Security - audit the dashboard image universe (3.12 only)
         # requirements-dashboard.txt is a `pip freeze` of the dashboard Docker
         # image, whose base is python:3.12-slim. Its exact pins (scipy==1.18.0,
         # numpy==2.4.6, pandas==3.0.3, …) only exist for CPython >=3.12, so on
         # the 3.11 matrix leg pip-audit's resolver cannot even construct the
-        # set and errors before checking a single CVE — it would be auditing a
+        # set and errors before checking a single CVE - it would be auditing a
         # dependency universe that is never built or shipped (the image is
         # always 3.12). Gate the audit to the interpreter that matches the
         # artifact, mirroring the SBOM step's `== '3.12'` guard below. The
@@ -71,7 +71,7 @@ jobs:
         run: |
           pip-audit --requirement requirements-dashboard.txt
 
-      - name: Security — audit the HF Space extras (3.11 only)
+      - name: Security - audit the HF Space extras (3.11 only)
         # The Space image is python:3.11-slim; audit its floor set on the
         # matching interpreter so the resolved universe mirrors a real build.
         if: matrix.python-version == '3.11'
@@ -82,7 +82,7 @@ jobs:
         # Standard 2026 supply-chain artifact. Scans requirements-api.txt
         # (what ships in the API Docker image) and emits a CycloneDX 1.5
         # JSON, uploaded as a CI artifact for downstream SCA / SLSA tooling.
-        # The 90-day retention below is a request — effective duration is
+        # The 90-day retention below is a request - effective duration is
         # bounded by the repository's artifact-retention policy.
         run: |
           pip-audit --requirement requirements-api.txt --skip-editable \
@@ -134,7 +134,7 @@ jobs:
 
       - name: Verify committed model artefacts (integrity gate)
         run: |
-          # CI must test the committed artefacts the live demo serves — never a
+          # CI must test the committed artefacts the live demo serves - never a
           # model retrained in-job. verify_artifacts recomputes each artefact's
           # SHA-256 against model_metrics.json and fails on a missing, corrupt,
           # or desynced artefact.
@@ -168,7 +168,7 @@ jobs:
           import nbformat, glob, sys
           paths = glob.glob("notebooks/*.ipynb")
           if not paths:
-              sys.exit("No notebooks found under notebooks/ — did they move? This gate would otherwise pass by validating nothing.")
+              sys.exit("No notebooks found under notebooks/ - did they move? This gate would otherwise pass by validating nothing.")
           errors = []
           for path in paths:
               try:
@@ -285,7 +285,7 @@ jobs:
       - name: Smoke test API image (health + real /predict on the shipped stack)
         # Runs against the locally LOADED image BEFORE the push, so a functionally
         # broken shipped stack (model that won't load/predict under numpy 1.26 /
-        # pandas 2.2 / sklearn 1.5.2) blocks publication of :latest — detection
+        # pandas 2.2 / sklearn 1.5.2) blocks publication of :latest - detection
         # AND prevention, like the Trivy gate above.
         run: |
           set -euo pipefail
@@ -297,7 +297,7 @@ jobs:
           cleanup() { docker logs smoke-api || true; docker stop smoke-api || true; }
           trap cleanup EXIT
 
-          # Poll /health with a retry loop instead of a fixed sleep —
+          # Poll /health with a retry loop instead of a fixed sleep -
           # cold-start loading of the CSV + XGBoost model on a GHA runner
           # is variable and can exceed any fixed wait. 30 × 1s = 30s cap.
           healthy=""
@@ -310,12 +310,12 @@ jobs:
             sleep 1
           done
           if [ -z "$healthy" ]; then
-            echo "Smoke test failed — API never became healthy within 30s"
+            echo "Smoke test failed - API never became healthy within 30s"
             exit 1
           fi
 
           # The image installs requirements-api.txt (numpy 1.26 / pandas 2.2 /
-          # sklearn 1.5.2) — a DIFFERENT dependency universe than the dev lock the
+          # sklearn 1.5.2) - a DIFFERENT dependency universe than the dev lock the
           # unit tests run under. A /health ping never touches the model, so it
           # cannot catch a pandas-3→2 or numpy-2→1 inference break. Drive a real
           # /predict end to end against the shipped image, with values pulled from
@@ -330,13 +330,14 @@ jobs:
             -H 'Content-Type: application/json' -d "$BODY")
           echo "predict response: $RESP"
           # Assert it is a real, sane prediction (positive median, ordered quantiles)
-          # — proves the model actually runs under the shipped dependency stack.
+          # - proves the model actually runs under the shipped dependency stack.
           echo "$RESP" | jq -e \
             '.predicted_p50 > 0 and .predicted_p10 <= .predicted_p50 and .predicted_p50 <= .predicted_p90' \
-            > /dev/null || { echo "Smoke test failed — /predict did not return a valid prediction"; exit 1; }
-          echo "Smoke test passed — /health + real /predict OK on the shipped image"
+            > /dev/null || { echo "Smoke test failed - /predict did not return a valid prediction"; exit 1; }
+          echo "Smoke test passed - /health + real /predict OK on the shipped image"
 
       - name: Push API image (post-scan + post-smoke)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -370,6 +371,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Push Dashboard image (post-scan)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/build-push-action@v6
         with:
           context: .

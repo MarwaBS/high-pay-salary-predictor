@@ -3,11 +3,11 @@
 deploy/huggingface/assemble.sh overlays the runtime snapshot onto a clone of
 the Space repo; the Space then runs `docker build` on deploy/huggingface/
 Dockerfile with the Space root as context. If assemble.sh omits (or misplaces)
-any path the Dockerfile `COPY`s, the Space build fails — and nothing catches it,
+any path the Dockerfile `COPY`s, the Space build fails - and nothing catches it,
 because the weekly drift guard only diffs files, it never builds.
 
 This test runs assemble.sh into a throwaway dir and asserts every COPY *source*
-in the Space Dockerfile exists in the output — a static stand-in for the build.
+in the Space Dockerfile exists in the output - a static stand-in for the build.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def test_assembled_snapshot_satisfies_every_dockerfile_copy(tmp_path: Path) -> N
 
     missing = [src for src in _dockerfile_copy_sources() if not (space / src.rstrip("/")).exists()]
     assert not missing, (
-        f"assemble.sh did not produce Dockerfile COPY source(s) {missing} — the "
+        f"assemble.sh did not produce Dockerfile COPY source(s) {missing} - the "
         f"Space `docker build` would fail on the missing path(s). Fix assemble.sh "
         f"so every COPY source lands where the Dockerfile expects it."
     )
