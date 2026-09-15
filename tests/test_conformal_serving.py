@@ -1,7 +1,7 @@
 """Pin the served interval to the committed conformal margin.
 
 The margin is applied at the route, so /predict and /predict/batch each have a
-call site that can drop it, and dropping one serves the raw quantiles — a
+call site that can drop it, and dropping one serves the raw quantiles - a
 narrower interval whose coverage is not the calibrated figure the metrics record.
 """
 
@@ -28,7 +28,7 @@ _UPPER_BOUNDS = ("predicted_p90", "prediction_interval_high")
 _POINT_ESTIMATES = ("predicted_p50", "predicted_salary")
 # The model predicts in float32 and expm1 amplifies the log-space error, so
 # reconstructing one bound from another lands a few times float32 eps (1.19e-07)
-# away — still three orders tighter than the ~1e-2 a dropped margin produces.
+# away - still three orders tighter than the ~1e-2 a dropped margin produces.
 _REL_TOLERANCE = 1e-5
 
 

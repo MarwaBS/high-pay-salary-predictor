@@ -23,7 +23,7 @@ SPACE_DIR="${2:?usage: assemble.sh <repo_dir> <space_dir>}"
 # The Dockerfile + README live at the Space repo ROOT (HF convention: HF builds
 # the root Dockerfile and renders the root README as the card). start.sh is
 # copied to deploy/huggingface/start.sh because the Dockerfile references it by
-# THAT path (`COPY deploy/huggingface/start.sh …`) — putting it at the root
+# THAT path (`COPY deploy/huggingface/start.sh …`) - putting it at the root
 # would make the Space's `docker build` fail on a missing COPY source.
 # tests/test_space_snapshot.py enforces that assemble.sh satisfies every COPY
 # source the Dockerfile needs.

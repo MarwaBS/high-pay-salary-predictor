@@ -1,5 +1,5 @@
 """
-Integration tests — full pipeline path.
+Integration tests - full pipeline path.
 
 Each test exercises a complete data flow rather than a single unit:
   raw CSV → split → compute_group_means → engineer_features → train → predict
@@ -69,7 +69,7 @@ class TestSplitThenEngineer:
         shared = set(gm_train["occ_means"]) & set(gm_full["occ_means"])
         diffs = [abs(gm_train["occ_means"][k] - gm_full["occ_means"][k]) for k in shared]
         assert max(diffs) > 100, (
-            "Train-only group means are identical to full-dataset means — leakage may not have been eliminated."
+            "Train-only group means are identical to full-dataset means - leakage may not have been eliminated."
         )
 
     def test_features_present_after_split_engineer(self, df, edu_order, region_map, cfg):

@@ -252,19 +252,19 @@ class TestPredictionCache:
         fake_cache.get.side_effect = [None, cached_response]
         monkeypatch.setattr(api_main, "cache", fake_cache)
 
-        # Miss — model runs, cache.set called
+        # Miss - model runs, cache.set called
         r1 = client.post("/predict", json=base_payload)
         assert r1.status_code == 200, r1.text
         assert fake_cache.get.call_count == 1
         assert fake_cache.set.call_count == 1
 
-        # Hit — response echoes cached payload, cache.set NOT called again
+        # Hit - response echoes cached payload, cache.set NOT called again
         r2 = client.post("/predict", json=base_payload)
         assert r2.status_code == 200, r2.text
         assert r2.json()["predicted_salary"] == 123456.78
         assert r2.json()["group_size"] == 42
         assert fake_cache.get.call_count == 2
-        assert fake_cache.set.call_count == 1  # unchanged — no set on hit
+        assert fake_cache.set.call_count == 1  # unchanged - no set on hit
 
     def test_cache_get_called_with_validated_payload(self, client, base_payload, monkeypatch):
         """Cache key must be built from the Pydantic-normalised request, so
@@ -398,7 +398,7 @@ class TestDriftEndpoint:
         assert recorded, f"{route} scored a row without observing it"
         for observation in recorded:
             missing = set(monitor.baseline) - set(observation)
-            assert not missing, f"{route} observed without {sorted(missing)} — /drift can never rule on them"
+            assert not missing, f"{route} observed without {sorted(missing)} - /drift can never rule on them"
 
     def test_drift_is_sync_so_blocking_redis_leaves_the_loop_free(self):
         """check_drift reads the window over the blocking Redis client."""
@@ -412,7 +412,7 @@ class TestDriftEndpoint:
 class TestFallbackMeansCounter:
     def test_unseen_occupation_mean_increments_counter(self, client, base_payload, monkeypatch):
         """A valid occupation with no training-set group mean must be counted
-        on /metrics when the dataset-wide fallback mean is injected — traffic
+        on /metrics when the dataset-wide fallback mean is injected - traffic
         drifting off the training support has to be visible, not absorbed."""
         monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
         before = api_main.FALLBACK_MEANS_USED._value.get()
@@ -430,7 +430,7 @@ class TestFallbackMeansCounter:
 
     @pytest.mark.parametrize("route", ["/predict", "/predict/batch"], ids=["single", "batch"])
     def test_the_served_prediction_moves_with_the_loaded_fallback(self, client, base_payload, monkeypatch, route):
-        """Entering the fallback branch is not enough — the loaded mean has to reach the model."""
+        """Entering the fallback branch is not enough - the loaded mean has to reach the model."""
         monkeypatch.delitem(api_main.state.occ_means, base_payload["occupation"], raising=False)
 
         def served(fallback: float) -> float:

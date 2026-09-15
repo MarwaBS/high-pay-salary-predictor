@@ -33,7 +33,7 @@ us_state/
 .DS_Store
 Thumbs.db
 
-# Generated model artefacts — mounted as a volume in docker-compose
+# Generated model artefacts - mounted as a volume in docker-compose
 # (allow Docker to use the host-side models/ dir instead)
 models/
 

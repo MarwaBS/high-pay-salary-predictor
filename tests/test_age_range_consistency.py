@@ -1,8 +1,8 @@
 """The accepted age range must be the model's training support.
 
 The support is ``Age`` min/max in ``models/baseline_stats.json``. Checked where a
-caller meets the bounds — both serving routes are driven and the dashboard's age
-control is rendered — so a narrowing in a validator, a route guard or a clamp
+caller meets the bounds - both serving routes are driven and the dashboard's age
+control is rendered - so a narrowing in a validator, a route guard or a clamp
 appears, which ``Field`` metadata would not show.
 """
 
@@ -100,7 +100,7 @@ class TestTheDashboardOffersTheWholeSupport:
 
         ``picks`` chooses what the user moves the slider to. The request is
         intercepted where it leaves the process, so anything applied between the
-        widget and the wire — including inside the dashboard's own API helper —
+        widget and the wire - including inside the dashboard's own API helper -
         shows up as a difference between the two. ``advanced`` opens the
         optional-inputs branch, which is otherwise never drawn.
         """

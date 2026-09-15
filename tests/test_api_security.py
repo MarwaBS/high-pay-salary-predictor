@@ -1,5 +1,5 @@
 """
-API security tests — auth, CORS, rate limiting, and proxy-IP handling.
+API security tests - auth, CORS, rate limiting, and proxy-IP handling.
 
 These cover the controls the README advertises: ``API_KEY`` enforcement (401),
 the CORS allow-list, the per-IP rate limiter (429), and the ``X-Forwarded-For``
@@ -49,7 +49,7 @@ def reloaded_module(**env: str | None):
     A value of ``None`` deletes the variable for the duration of the block.
     Construction-time globals (``API_KEY``, ``CORS_ORIGINS``, ``RATE_LIMIT``,
     ``TRUSTED_PROXY_HOPS``, the ``Limiter`` and the CORS middleware) are
-    rebuilt by the reload. Importing does **not** load the model — that only
+    rebuilt by the reload. Importing does **not** load the model - that only
     happens inside the lifespan, when a ``TestClient`` is used as a context
     manager.
     """
@@ -112,7 +112,7 @@ class TestClientIpProxySecurity:
 
     def test_forged_xff_cannot_mint_new_bucket(self):
         """Two requests from the same real peer but different forged leading
-        entries MUST resolve to the same IP — otherwise the rate limiter is
+        entries MUST resolve to the same IP - otherwise the rate limiter is
         trivially bypassable by rotating the spoofed value."""
         with reloaded_module(TRUSTED_PROXY_HOPS="1") as m:
             a = m._client_ip(_fake_request(xff="1.1.1.1, 203.0.113.7"))
@@ -124,7 +124,7 @@ class TestClientIpProxySecurity:
 
     def test_two_trusted_proxies_peel_two_entries(self):
         with reloaded_module(TRUSTED_PROXY_HOPS="2") as m:
-            # client(spoof), real-client, proxy1 — 2 trusted hops peel the
+            # client(spoof), real-client, proxy1 - 2 trusted hops peel the
             # right two; real client is index -2.
             req = _fake_request(xff="evil, 203.0.113.7, 10.0.0.1")
             assert m._client_ip(req) == "203.0.113.7"
@@ -409,7 +409,7 @@ class TestCors:
 
 
 class TestRateLimiting:
-    """Every route carrying a budget is driven to 429 — here, or in its own class
+    """Every route carrying a budget is driven to 429 - here, or in its own class
     for ``/drift``. ``/health`` and ``/meta`` are deliberately unlimited so a
     probe cannot be locked out."""
 
@@ -474,7 +474,7 @@ class TestRateLimiting:
 class TestBodySizeLimit:
     """The middleware caps the actual streamed byte count, so a chunked upload
     (Transfer-Encoding: chunked, no Content-Length) is bounded exactly like a
-    declared-length body — no Content-Length header is required to enforce the
+    declared-length body - no Content-Length header is required to enforce the
     cap."""
 
     def test_declared_oversize_content_length_rejected_413(self):
@@ -490,7 +490,7 @@ class TestBodySizeLimit:
 
             def big_chunks():
                 # An iterable body makes httpx use Transfer-Encoding: chunked with
-                # NO Content-Length — the case a Content-Length-only size cap misses.
+                # NO Content-Length - the case a Content-Length-only size cap misses.
                 for _ in range(8):
                     yield b"x" * 512  # 4096 bytes total, over the 1024 cap
 
@@ -533,7 +533,7 @@ class TestAuthFailureThrottle:
 
     def test_successful_auth_not_throttled(self):
         # A valid key must never be throttled, even after the failure budget would
-        # have been exhausted by OTHER (failed) attempts — success bypasses it.
+        # have been exhausted by OTHER (failed) attempts - success bypasses it.
         with reloaded_module(API_KEY="s3cret", AUTH_FAILURE_LIMIT="2") as m:
             with TestClient(m.app) as client:
                 payload = {

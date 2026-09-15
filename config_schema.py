@@ -63,7 +63,7 @@ class ModelConfig(BaseModel):
     # Cross-conformal interval margin. Optional: when absent, the API serves
     # the raw (uncalibrated) interval.
     conformal_path: str | None = None
-    # Premium-tier classifier head. Required together — the trainer trains both
+    # Premium-tier classifier head. Required together - the trainer trains both
     # heads. A configured artefact that is missing on disk still degrades to
     # ``p_above_premium_threshold: None``.
     classifier_path: str = Field(min_length=1)
@@ -89,7 +89,7 @@ class VisualizationConfig(BaseModel):
 
 
 class ProjectConfig(BaseModel):
-    """Validated project configuration — single source of truth for all settings."""
+    """Validated project configuration - single source of truth for all settings."""
 
     data: DataConfig
     thresholds: ThresholdsConfig

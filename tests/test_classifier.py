@@ -2,7 +2,7 @@
 
 Covers the artefact ``scripts/train_quantile.py`` persists, the metrics it
 records, and the ``p_above_premium_threshold`` contract both serving routes
-publish — a probability or ``None``, never a wrong type.
+publish - a probability or ``None``, never a wrong type.
 """
 
 from __future__ import annotations
@@ -85,7 +85,7 @@ class TestClassifierArtefact:
 
     def test_classifier_roc_auc_above_no_skill(self, metrics: dict) -> None:
         # A classifier with ROC-AUC <= 0.55 is no better than coin-flipping
-        # on this 40/60 class balance — surfaces a broken training label.
+        # on this 40/60 class balance - surfaces a broken training label.
         # >= 0.99 is suspect (leakage / overfitting to the test split).
         auc = metrics["classifier_roc_auc"]
         assert 0.55 <= auc < 0.99, f"Unexpected classifier ROC-AUC: {auc}"
@@ -93,7 +93,7 @@ class TestClassifierArtefact:
     def test_classifier_beats_base_rate_brier(self, metrics: dict) -> None:
         # The served product is a probability, so calibration is the metric
         # that matters. A head whose Brier score does not beat predicting the
-        # base rate for everyone carries no calibrated signal — this gate goes
+        # base rate for everyone carries no calibrated signal - this gate goes
         # red if the classifier silently degrades to that no-skill floor.
         brier = metrics["classifier_brier"]
         base_rate_brier = metrics["classifier_brier_base_rate"]
@@ -102,7 +102,7 @@ class TestClassifierArtefact:
     def test_classifier_subgroup_auc_sane(self, metrics: dict) -> None:
         # Every subgroup in the fairness guardrail must be inside (0.5, 0.95).
         # A subgroup AUC of 0.50 means the classifier is no better than a
-        # coin on that slice — the kind of fairness collapse the guard exists
+        # coin on that slice - the kind of fairness collapse the guard exists
         # to catch.
         subgroup = metrics["classifier_subgroup_roc_auc"]
         assert len(subgroup) > 0, "Subgroup AUCs missing"

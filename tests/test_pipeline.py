@@ -22,7 +22,7 @@ def _require(condition: bool, reason: str) -> None:
     """Skip locally when an artefact is absent, but FAIL under CI.
 
     In CI the committed artefacts are always present, so a skip there would be
-    a silent green — the metric-band gates would certify nothing on a deleted
+    a silent green - the metric-band gates would certify nothing on a deleted
     or wrong-format metrics file. Locally, a skip keeps the suite runnable
     before the first ``python -m scripts.train_quantile``.
     """
@@ -50,15 +50,15 @@ CALIBRATION_KEYS = (
 def assert_calibration_bands(metrics: dict) -> None:
     """Hold the served quantile + conformal calibration inside its bands."""
     missing = [key for key in CALIBRATION_KEYS if key not in metrics]
-    assert not missing, f"metrics file does not report {missing} — the bands below would not be checked"
+    assert not missing, f"metrics file does not report {missing} - the bands below would not be checked"
 
     coverage = metrics["quantile_coverage_80"]
     crossings = metrics["quantile_crossings"]
     # 80% PI should empirically cover ~80% of test targets (band [0.72, 0.88]).
     assert 0.72 <= coverage <= 0.88, (
-        f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] — quantile calibration has drifted"
+        f"Quantile 80% coverage {coverage:.3f} outside [0.72, 0.88] - quantile calibration has drifted"
     )
-    assert crossings == 0, f"{crossings} quantile crossings detected — P10>P50 or P50>P90. Check model training."
+    assert crossings == 0, f"{crossings} quantile crossings detected - P10>P50 or P50>P90. Check model training."
 
     # Cross-conformal calibration: the served (conformalized) interval must land
     # near its nominal target and beat the raw interval's coverage.
@@ -270,13 +270,13 @@ class TestModelPrediction:
     """Tests against the production model loaded from disk.
 
     The model is trained by scripts/train_quantile.py (run via 'make model').
-    The artefacts are committed, so a fresh checkout — and CI — always has them.
+    The artefacts are committed, so a fresh checkout - and CI - always has them.
     Testing the production model (rather than re-training a toy one) catches
     hyperparameter regressions and artefact-format changes.
     """
 
     def test_model_outputs_quantile_triple(self, production_model, df_engineered):
-        """Multi-quantile XGBoost emits (n, 3) — P10, P50, P90 per row."""
+        """Multi-quantile XGBoost emits (n, 3) - P10, P50, P90 per row."""
         from pipeline import is_quantile_model, predict_quantiles
 
         assert is_quantile_model(production_model), (
@@ -386,13 +386,13 @@ class TestModelPrediction:
         point metrics AND the quantile-specific metrics (coverage,
         crossings). Point-estimate bands are intentionally wide because
         P50 under a quantile objective is the median-minimiser, not the
-        mean-minimiser, so R² is a weak fit-statistic for this model —
+        mean-minimiser, so R² is a weak fit-statistic for this model -
         the real SLO is the quantile coverage and crossings band below.
         """
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found - run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
@@ -401,7 +401,7 @@ class TestModelPrediction:
         mae = metrics["mae"]
         rmse = metrics["rmse"]
 
-        # Point-estimate bands: wide — see docstring.
+        # Point-estimate bands: wide - see docstring.
         assert 0.00 <= r2 <= 0.40, f"P50 R² {r2:.4f} outside expected band [0.00, 0.40]"
         assert 30_000 <= mae <= 90_000, f"P50 MAE ${mae:,.0f} outside expected band"
         assert 60_000 <= rmse <= 160_000, f"P50 RMSE ${rmse:,.0f} outside expected band"
@@ -422,7 +422,7 @@ class TestModelPrediction:
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found - run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
@@ -444,13 +444,13 @@ class TestModelPrediction:
         SUBGROUP_COVERAGE_BAND.
 
         The floor is generous by design: it catches a catastrophic subgroup
-        collapse — the female cohort dropping from ~0.77 to 0.50 — and does not
+        collapse - the female cohort dropping from ~0.77 to 0.50 - and does not
         certify equal coverage. MODEL_CARD states the same band.
         """
         from pathlib import Path
 
         metrics_path = Path(__file__).parent.parent / cfg["model"]["metrics_path"]
-        _require(metrics_path.exists(), "model_metrics.json not found — run scripts/train_quantile.py first")
+        _require(metrics_path.exists(), "model_metrics.json not found - run scripts/train_quantile.py first")
 
         with open(metrics_path) as f:
             metrics = json.load(f)
@@ -485,7 +485,7 @@ class TestModelPrediction:
 
     def test_metric_gates_fail_not_skip_under_ci(self, monkeypatch):
         """A missing/wrong-format metrics file must FAIL under CI, not
-        skip — a skip there would let the metric-band gates certify nothing."""
+        skip - a skip there would let the metric-band gates certify nothing."""
         monkeypatch.setenv("CI", "1")
         with pytest.raises(pytest.fail.Exception):
             _require(False, "missing metrics")
@@ -502,7 +502,7 @@ class TestModelPrediction:
 class TestEngineerFeaturesGuards:
     """engineer_features must fail loud on unmapped categoricals rather than
     encode them as a silent NaN (education/gender) or a Region_Code-0 collision
-    (state) — a config typo must surface, not ship a quietly-degraded model."""
+    (state) - a config typo must surface, not ship a quietly-degraded model."""
 
     EDU = {"Bachelor's degree": 1, "Master's degree": 2}
     REGION = {"CA": "West", "NY": "Northeast"}
@@ -570,7 +570,7 @@ class TestArtefactWritersRequestLf:
 
     Asserting on the output bytes would only catch this on Windows: with
     ``newline=None`` Python translates to ``os.linesep``, which on the Linux CI
-    runner already is ``\\n``. So the check is on the call itself — every
+    runner already is ``\\n``. So the check is on the call itself - every
     artefact writer must open its file with an explicit ``newline="\\n"``,
     which fails identically on every platform.
     """

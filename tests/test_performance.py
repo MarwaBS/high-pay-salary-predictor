@@ -122,7 +122,7 @@ def _paragraphs_citing_this_module() -> list[str]:
     """Every README paragraph that names this file as the thing enforcing a budget."""
     text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
     citing = [" ".join(p.split()) for p in re.split(r"\r?\n\s*\r?\n", text) if "tests/test_performance.py" in p]
-    assert len(citing) >= 2, f"only {len(citing)} README paragraphs cite this module — the scan has gone stale"
+    assert len(citing) >= 2, f"only {len(citing)} README paragraphs cite this module - the scan has gone stale"
     return citing
 
 

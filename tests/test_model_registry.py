@@ -31,7 +31,7 @@ def _config_serving_artifacts() -> set[str]:
     cfg = yaml.safe_load((REPO_ROOT / "config.yaml").read_text(encoding="utf-8"))
     model = cfg["model"]
     arts = {Path(v).name for k, v in model.items() if isinstance(v, str) and v.endswith((".ubj", ".json"))}
-    assert arts, "no model artefact paths found in config.yaml — parser drift"
+    assert arts, "no model artefact paths found in config.yaml - parser drift"
     return arts
 
 
@@ -49,6 +49,19 @@ def _release_artifacts() -> set[str]:
                 files = step["with"]["files"]
                 return {Path(line.strip()).name for line in files.splitlines() if line.strip()}
     raise AssertionError("no action-gh-release step found in train.yml")
+
+
+def test_scheduled_image_scan_cannot_publish() -> None:
+    """A scheduled freshness check reads the registry but must not mutate it."""
+    workflow = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    publish_steps = [
+        step
+        for step in workflow["jobs"]["deploy"]["steps"]
+        if step.get("uses", "").startswith("docker/build-push-action@") and step.get("with", {}).get("push") is True
+    ]
+    assert {step["with"]["target"] for step in publish_steps} == {"api", "dashboard"}
+    condition = "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    assert all(step.get("if") == condition for step in publish_steps)
 
 
 def _app_model_dir() -> PurePosixPath:
@@ -70,7 +83,7 @@ def _staged_for_the_app(manifest: str) -> set[str]:
     """
     spec = yaml.safe_load((REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8"))["spec"]["template"]["spec"]
     (init,) = spec["initContainers"]
-    assert init["command"] == ["sh", "-c"], f"k8s/{manifest} stages artefacts some other way — this check is stale"
+    assert init["command"] == ["sh", "-c"], f"k8s/{manifest} stages artefacts some other way - this check is stale"
 
     staging = {PurePosixPath(m["mountPath"]): m["name"] for m in init["volumeMounts"]}
     app_dir = _app_model_dir()
@@ -96,7 +109,7 @@ def test_release_publishes_every_serving_artifact() -> None:
     published = _release_artifacts()
     missing = required - published
     assert not missing, (
-        f"train.yml release omits serving artefact(s) {sorted(missing)} — a "
+        f"train.yml release omits serving artefact(s) {sorted(missing)} - a "
         f"registry rollback would ship without them and the API would degrade. "
         f"Add them to the `files:` list."
     )
@@ -113,7 +126,7 @@ def test_every_pod_stages_every_declared_serving_artifact(manifest: str) -> None
     """
     missing = _required_serving_artifacts() - _staged_for_the_app(manifest)
     assert not missing, (
-        f"k8s {manifest} does not leave {sorted(missing)} in {_app_model_dir()} — the pod "
+        f"k8s {manifest} does not leave {sorted(missing)} in {_app_model_dir()} - the pod "
         f"mounts an emptyDir, so anything the initContainer does not write there is absent "
         f"at runtime. Add a curl for each, and check both mountPaths still agree."
     )
@@ -128,7 +141,7 @@ def _stage_workdirs() -> dict[str, str]:
             stage = named.group(1)
         elif (workdir := re.match(r"^WORKDIR\s+(\S+)", line)) and stage:
             workdirs[stage] = workdir.group(1)
-    assert workdirs, "no named build stages found in the Dockerfile — this parser is stale"
+    assert workdirs, "no named build stages found in the Dockerfile - this parser is stale"
     return workdirs
 
 
@@ -150,7 +163,7 @@ def test_the_image_each_pod_runs_works_from_where_its_mountpaths_assume(manifest
     workdirs = _stage_workdirs()
     assert stage in workdirs, f"k8s/{manifest} runs an image with no matching Dockerfile stage: {stage!r}"
     assert workdirs[stage] == str(IMAGE_WORKDIR), (
-        f"Dockerfile stage {stage!r} now works from {workdirs[stage]}, not {IMAGE_WORKDIR} — "
+        f"Dockerfile stage {stage!r} now works from {workdirs[stage]}, not {IMAGE_WORKDIR} - "
         f"k8s/{manifest} mounts the artefacts at the old directory and the app will not find them."
     )
 
@@ -164,7 +177,7 @@ def _configmap_urls() -> dict[str, str]:
 def test_configmap_points_at_the_gated_release_not_a_placeholder() -> None:
     """The initContainer must pull from the gated GitHub Release (the model
     registry train.yml publishes AFTER its test + integrity gate), not the dead
-    ``artifacts.example.com/v1.0.0`` placeholder host — a placeholder URL means
+    ``artifacts.example.com/v1.0.0`` placeholder host - a placeholder URL means
     every pod start ImagePull/curl-fails or, worse, serves
     whatever an attacker parks at the example host."""
     urls = _configmap_urls()
@@ -178,19 +191,19 @@ def test_configmap_points_at_the_gated_release_not_a_placeholder() -> None:
 
 def test_dataset_is_published_in_the_release() -> None:
     """The configmap's data-url resolves to a release asset, so the dataset it
-    names must actually be in the release ``files:`` list — otherwise the pod's
+    names must actually be in the release ``files:`` list - otherwise the pod's
     data fetch 404s on every start."""
     data_asset = Path(_configmap_urls()["data-url"]).name
     published = _release_artifacts()
     assert data_asset in published, (
-        f"data-url names {data_asset!r} but train.yml does not publish it — add it to the release `files:` list."
+        f"data-url names {data_asset!r} but train.yml does not publish it - add it to the release `files:` list."
     )
 
 
 def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
     """The k8s manifests must reference the GHCR path CI actually pushes to
     (``ghcr.io/<repo>`` = ``high-pay-salary-predictor``), not the stale
-    ``high_pay_analysis_us`` path — a mismatch ImagePullBackOffs on a bare
+    ``high_pay_analysis_us`` path - a mismatch ImagePullBackOffs on a bare
     apply. Pin the live path and forbid the dead one."""
     for manifest in ("api-deployment.yaml", "dashboard-deployment.yaml"):
         text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
@@ -203,7 +216,7 @@ def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
 
 
 def _shipped_modules() -> list[str]:
-    """Every shipped module, from what git tracks — a directory list misses
+    """Every shipped module, from what git tracks - a directory list misses
     nested packages that packaging still ships."""
     listed = subprocess.run(
         ["git", "ls-files", "-z", "*.py"],
@@ -214,7 +227,7 @@ def _shipped_modules() -> list[str]:
         timeout=SUBPROCESS_TIMEOUT_S,
     ).stdout.split("\0")
     found = sorted(name for name in filter(None, listed) if not name.startswith("tests/"))
-    assert found, "no shipped modules discovered — the enumeration rotted"
+    assert found, "no shipped modules discovered - the enumeration rotted"
     return found
 
 

@@ -14,7 +14,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# Tools that only ever exist on a maintainer's machine — never a runtime, test,
+# Tools that only ever exist on a maintainer's machine - never a runtime, test,
 # or CI dependency of this project. Their presence in a `pip freeze` means the
 # freeze captured an environment polluted with dev CLIs.
 _STRAY_TOOLS = {"git-filter-repo"}
@@ -51,7 +51,7 @@ def test_lock_covers_the_api_runtime_it_claims_to_lock() -> None:
     missing = api - lock
     assert not missing, (
         f"requirements-lock.txt is missing API-runtime package(s) {sorted(missing)} "
-        f"— it claims to pin the audited runtime, so every requirements-api.txt "
+        f"- it claims to pin the audited runtime, so every requirements-api.txt "
         f"package must appear in it."
     )
 
@@ -61,7 +61,7 @@ def test_lock_has_no_maintainer_only_tools() -> None:
     leaked = lock & _STRAY_TOOLS
     assert not leaked, (
         f"requirements-lock.txt contains maintainer-only tool(s) {sorted(leaked)} "
-        f"that leaked from a dev machine's pip freeze — remove them so the lock "
+        f"that leaked from a dev machine's pip freeze - remove them so the lock "
         f"reflects only what the project runs."
     )
 

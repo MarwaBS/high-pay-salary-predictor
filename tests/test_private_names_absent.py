@@ -2,7 +2,7 @@
 
 Compares SHA-256 digests from ``.private-name-hashes`` rather than plaintext
 patterns, so the guard cannot become the leak it exists to prevent. Matching is
-on a normalised form — lowercase, alphanumerics only — over whole tokens and
+on a normalised form - lowercase, alphanumerics only - over whole tokens and
 runs of two or three adjacent ones, so a name split by any punctuation reduces
 to the same digest as the plain form. A name concatenated into a longer token
 with no separator does not; see ``_candidates``.
@@ -44,7 +44,7 @@ def _candidates(text: str) -> set[str]:
 
     A separator between a name's parts is not protection, so any punctuation
     split reduces to the bare name. A name welded into a longer token with no
-    separator at all is NOT reached — the tokeniser never splits inside a word.
+    separator at all is NOT reached - the tokeniser never splits inside a word.
     """
     tokens = TOKEN.findall(text)
     forms = set(tokens)
@@ -79,7 +79,7 @@ def _tracked_text_files() -> list[Path]:
 
 def test_the_guard_file_carries_hashes_and_no_plaintext():
     digests = _banned_digests()
-    assert digests, "no digests recorded — this gate would pass on anything"
+    assert digests, "no digests recorded - this gate would pass on anything"
     assert all(re.fullmatch(r"[0-9a-f]{64}", d) for d in digests), "a non-digest line would never match"
 
 
@@ -139,7 +139,7 @@ def test_no_commit_message_names_a_private_repository():
     """`git ls-files` never reaches history, so published messages need their own sweep."""
     banned = _banned_digests()
     messages = _commit_messages()
-    assert messages, "no commits scanned — this would pass on an empty history"
+    assert messages, "no commits scanned - this would pass on an empty history"
     offenders = {sha for sha, body in messages if _offending(body, banned)}
     assert not offenders, f"commit messages name a private repository: {offenders}"
 

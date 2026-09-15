@@ -19,11 +19,11 @@ the next visit (~30 s cold start).
    you don't have one.
 2. Git installed locally.
 3. A local clone of this project (referred to below as
-   `<PROJECT_DIR>` — substitute your own clone path).
+   `<PROJECT_DIR>` - substitute your own clone path).
 
 ---
 
-## Step 1 — Create a Hugging Face access token
+## Step 1 - Create a Hugging Face access token
 
 You need a **write-scope** token to push to the Space repo.
 
@@ -33,13 +33,13 @@ You need a **write-scope** token to push to the Space repo.
    - **Name**: `high-pay-deploy` (or anything memorable)
    - **Token type**: **Write**
 4. Click **"Generate a token"**.
-5. **Copy the token immediately** — you will not see it again. Paste it
-   somewhere temporary (a scratch file, a password manager — not the repo).
+5. **Copy the token immediately** - you will not see it again. Paste it
+   somewhere temporary (a scratch file, a password manager - not the repo).
    It looks like `hf_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx`.
 
 ---
 
-## Step 2 — Create the Space
+## Step 2 - Create the Space
 
 1. Go to <https://huggingface.co/new-space>.
 2. Fill in:
@@ -50,13 +50,13 @@ You need a **write-scope** token to push to the Space repo.
      this example assumes that name below)
    - **License**: `mit`
    - **Select the Space SDK**: click **Docker** → **Blank** (NOT "From
-     template" — we're providing our own Dockerfile).
+     template" - we're providing our own Dockerfile).
    - **Space hardware**: `CPU basic · 2 vCPU · 16 GB · FREE`
    - **Visibility**: **Public** (required for the free tier and for
      reviewers to see it without an HF account)
 3. Click **"Create Space"**.
 4. You land on the new Space page. It's empty except for a placeholder
-   `README.md` and a default `Dockerfile`. Leave both — you'll overwrite
+   `README.md` and a default `Dockerfile`. Leave both - you'll overwrite
    them in the next step.
 
 **Note the two URLs you now have**:
@@ -68,9 +68,9 @@ You need a **write-scope** token to push to the Space repo.
 
 ---
 
-## Step 3 — Clone the Space repo locally
+## Step 3 - Clone the Space repo locally
 
-Open a terminal (PowerShell or Git Bash — either works on Windows):
+Open a terminal (PowerShell or Git Bash - either works on Windows):
 
 ```bash
 cd /path/to/your/workspace   # any folder where you keep clones
@@ -87,11 +87,11 @@ default Dockerfile.
 
 ---
 
-## Step 4 — Assemble the deployment files into the Space
+## Step 4 - Assemble the deployment files into the Space
 
 `deploy/huggingface/assemble.sh` is the authoritative definition of what the
 Space contains: every path the HF Dockerfile `COPY`s, plus the `Dockerfile` and
-`README.md` the Space itself is built and rendered from — and nothing else.
+`README.md` the Space itself is built and rendered from - and nothing else.
 From `hf-space-high-pay`:
 
 ```bash
@@ -105,25 +105,25 @@ bash "$PROJECT/deploy/huggingface/assemble.sh" "$PROJECT" .
 the Dockerfile needs, so a Space assembled this way has everything the build
 reads.
 
-> **Windows note**: run this from Git Bash — `assemble.sh` needs `bash`.
+> **Windows note**: run this from Git Bash - `assemble.sh` needs `bash`.
 
 ### What NOT to copy
 
 assemble.sh copies only what the image needs, so these reach the Space only if
-you add them by hand. Keep them **out** — they're either private, irrelevant
+you add them by hand. Keep them **out** - they're either private, irrelevant
 to the demo, or too large:
 
-- `private/` — **never** push this directory.
-- `tests/` — not used at runtime.
-- `Resources/` (~7 MB raw data), `Images/` (~11 MB), `*.ipynb` — not needed.
-- `.git/`, `.github/`, `.vscode/`, `.venv/`, `__pycache__/` — clutter.
+- `private/` - **never** push this directory.
+- `tests/` - not used at runtime.
+- `Resources/` (~7 MB raw data), `Images/` (~11 MB), `*.ipynb` - not needed.
+- `.git/`, `.github/`, `.vscode/`, `.venv/`, `__pycache__/` - clutter.
 - `Dockerfile` (the original one from the project root, for docker-compose)
-  — the Space uses the HF-specific Dockerfile instead.
-- `docker-compose.yml`, `Makefile`, `k8s/` — wrong deployment target.
+  - the Space uses the HF-specific Dockerfile instead.
+- `docker-compose.yml`, `Makefile`, `k8s/` - wrong deployment target.
 
 ---
 
-## Step 5 — Verify the layout
+## Step 5 - Verify the layout
 
 Your `hf-space-high-pay` directory should look roughly like this:
 
@@ -172,7 +172,7 @@ ls -la | grep private
 
 ---
 
-## Step 6 — Push to Hugging Face
+## Step 6 - Push to Hugging Face
 
 ```bash
 git add .
@@ -199,7 +199,7 @@ not needed.
 
 ---
 
-## Step 7 — Watch the build
+## Step 7 - Watch the build
 
 Go to your Space page at
 `https://huggingface.co/spaces/<owner>/high-pay-salary-predictor`.
@@ -209,13 +209,13 @@ Logs to see the Docker build output live.
 
 **What to expect in the logs**:
 
-1. `Step 1/19 : FROM python:3.11-slim` — base image pull (~30 s)
+1. `Step 1/19 : FROM python:3.11-slim` - base image pull (~30 s)
 2. System apt-get install (~10 s)
 3. `pip install -r requirements-api.txt` (~2–3 min)
 4. `pip install streamlit plotly matplotlib ...` (~1–2 min)
 5. `COPY` of source files (~5 s)
 6. `pip install --user -e .` (~10 s)
-7. **"Container is running"** — success
+7. **"Container is running"** - success
 
 **Total first-build time: ~5–8 minutes.** Subsequent pushes that only
 change source code will rebuild in ~30 s thanks to Docker layer caching.
@@ -223,16 +223,16 @@ change source code will rebuild in ~30 s thanks to Docker layer caching.
 **If the build fails**, scroll up in the logs to find the first red line.
 The most likely failure modes:
 
-- **Out of memory during `pip install`** — rare on CPU-basic but possible.
+- **Out of memory during `pip install`** - rare on CPU-basic but possible.
   Fix: go to Space **Settings → Hardware** → upgrade temporarily to
   "CPU upgrade" for the first build, then switch back.
-- **`models/xgb_salary_model.ubj` not found** — assemble.sh didn't run to
+- **`models/xgb_salary_model.ubj` not found** - assemble.sh didn't run to
   completion in Step 4. Re-run it and push again.
-- **`Data/cleaned_high_pay_data.csv` not found** — same fix.
+- **`Data/cleaned_high_pay_data.csv` not found** - same fix.
 
 ---
 
-## Step 8 — Open the live demo
+## Step 8 - Open the live demo
 
 Once the status badge flips to **"Running"**:
 
@@ -254,7 +254,7 @@ means the API hasn't finished booting yet. Refresh after ~10 seconds.
 
 ---
 
-## Step 9 — Add the live demo badge to the main README
+## Step 9 - Add the live demo badge to the main README
 
 Once the Space is running, add this to the top of the **project
 `README.md`** (the one on GitHub, not the Space one):
@@ -274,7 +274,7 @@ Once the Space exists, updates are automatic. `.github/workflows/deploy.yml`
 runs on every push to `main`: it clones the Space, overlays the snapshot with
 `deploy/huggingface/assemble.sh`, and pushes if anything changed. HF then
 rebuilds (~30 s for code-only changes, ~3 min if deps changed). Model updates
-ship the same way — commit the retrained `models/` artefacts to `main`.
+ship the same way - commit the retrained `models/` artefacts to `main`.
 
 This requires a **write-scoped** HF token stored as the `HF_TOKEN` repository
 secret (GitHub → Settings → Secrets and variables → Actions). The workflow
@@ -296,7 +296,7 @@ the live Space read-only; any diff means the Space is no longer serving
 | Dashboard loads but Predictor tab errors | API didn't finish booting | Wait 10 s, refresh |
 | Dashboard error: "Could not reach the API" | `API_BASE_URL` mis-set | Verify `ENV API_BASE_URL=http://localhost:8000` in the Dockerfile |
 | 404 on the Space URL | Build not finished | Check Space page for "Building" status |
-| "This Space is sleeping" notice | Long inactivity | Click "Restart this Space" — it wakes in ~10 s |
+| "This Space is sleeping" notice | Long inactivity | Click "Restart this Space" - it wakes in ~10 s |
 
 ---
 

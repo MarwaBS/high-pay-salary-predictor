@@ -10,7 +10,7 @@ kind: ConfigMap
 metadata:
   name: salary-api-config
 data:
-  # URL must point to xgb_salary_model.ubj — the initContainer strips the
+  # URL must point to xgb_salary_model.ubj - the initContainer strips the
   # filename to derive sibling URLs for feature_names/group_means/metrics/etc.
   model-url: "https://github.com/MarwaBS/high-pay-salary-predictor/releases/latest/download/xgb_salary_model.ubj"
   data-url: "https://github.com/MarwaBS/high-pay-salary-predictor/releases/latest/download/cleaned_high_pay_data.csv"

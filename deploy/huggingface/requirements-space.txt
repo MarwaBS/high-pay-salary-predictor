@@ -1,4 +1,4 @@
-# ── HF Space dashboard extras — layered over requirements-api.txt ───────────
+# ── HF Space dashboard extras - layered over requirements-api.txt ───────────
 #
 # Floors, not pins: the Space image resolves these at build time on its
 # python:3.11-slim base. The exact pins in requirements-dashboard.txt are a

@@ -45,12 +45,12 @@ def _eligible_tracked_count() -> int:
     ).stdout
     names = [Path(n) for n in out.splitlines() if n.strip()]
     eligible = [rel for rel in names if rel.suffix in _SCAN_SUFFIXES and rel not in _EXCLUDED_FILES]
-    assert eligible, "no eligible tracked files found — this counter is stale"
+    assert eligible, "no eligible tracked files found - this counter is stale"
     return len(eligible)
 
 
 def _iter_tracked_files():
-    """Yield every tracked file eligible for the scan — only tracked files ship."""
+    """Yield every tracked file eligible for the scan - only tracked files ship."""
     listed = subprocess.run(
         ["git", "ls-files", "-z"],
         cwd=REPO_ROOT,
@@ -71,7 +71,7 @@ def _iter_tracked_files():
 
 
 def test_no_dangling_train_model_references():
-    """Every mention of ``train_model.py`` is dead code — fail if one reappears."""
+    """Every mention of ``train_model.py`` is dead code - fail if one reappears."""
     offenders: list[str] = []
     scanned = 0
     for path, rel in _iter_tracked_files():
@@ -87,7 +87,7 @@ def test_no_dangling_train_model_references():
                     offenders.append(f"{rel}:{lineno}: {line.strip()}")
 
     assert scanned >= _eligible_tracked_count(), (
-        f"only {scanned} of {_eligible_tracked_count()} eligible tracked files were read — "
+        f"only {scanned} of {_eligible_tracked_count()} eligible tracked files were read - "
         f"a narrowed sweep passes while a dangling reference survives outside it"
     )
     assert not offenders, (
