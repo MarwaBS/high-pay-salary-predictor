@@ -158,9 +158,7 @@ def _served_stage(manifest: str) -> str:
     for stage in stages:
         if tag.startswith(f"{stage}-"):
             return stage
-    raise AssertionError(
-        f"k8s/{manifest} image tag {tag!r} does not start with a Dockerfile stage"
-    )
+    raise AssertionError(f"k8s/{manifest} image tag {tag!r} does not start with a Dockerfile stage")
 
 
 @pytest.mark.parametrize("manifest", ["api-deployment.yaml", "dashboard-deployment.yaml"])
@@ -244,9 +242,7 @@ def test_ghcr_publish_uses_the_repo_named_package() -> None:
         ("dashboard-deployment.yaml", ":dashboard-"),
     ):
         text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
-        assert "ghcr.io/marwabs/high-pay-salary-predictor/" not in text, (
-            f"{manifest} still names a nested GHCR package"
-        )
+        assert "ghcr.io/marwabs/high-pay-salary-predictor/" not in text, f"{manifest} still names a nested GHCR package"
         assert f"ghcr.io/marwabs/high-pay-salary-predictor{prefix}" in text, (
             f"{manifest} must use the repo-named package with {prefix} tags"
         )
