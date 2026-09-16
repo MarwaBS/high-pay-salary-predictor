@@ -244,6 +244,9 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Set lowercase image name
+        # Repo-named package (ghcr.io/owner/repo:api-*). Nested names
+        # (repo/api) are a separate GHCR package; GITHUB_TOKEN cannot
+        # write them unless Actions access is granted by hand.
         run: echo "IMAGE_BASE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
@@ -263,7 +266,7 @@ jobs:
           target: api
           push: false
           load: true
-          tags: ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+          tags: ${{ env.IMAGE_BASE }}:api-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -274,7 +277,7 @@ jobs:
         # reaches GHCR.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_BASE }}:api-${{ github.sha }}
           format: table
           exit-code: "1"
           severity: "HIGH,CRITICAL"
@@ -292,7 +295,7 @@ jobs:
           docker run -d --name smoke-api -p 8000:8000 \
             -v ${{ github.workspace }}/models:/app/models:ro \
             -v ${{ github.workspace }}/Data:/app/Data:ro \
-            ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+            ${{ env.IMAGE_BASE }}:api-${{ github.sha }}
 
           cleanup() { docker logs smoke-api || true; docker stop smoke-api || true; }
           trap cleanup EXIT
@@ -344,8 +347,8 @@ jobs:
           target: api
           push: true
           tags: |
-            ${{ env.IMAGE_BASE }}/api:latest
-            ${{ env.IMAGE_BASE }}/api:${{ github.sha }}
+            ${{ env.IMAGE_BASE }}:api-latest
+            ${{ env.IMAGE_BASE }}:api-${{ github.sha }}
           cache-from: type=gha
 
       - name: Build Dashboard image (load for Trivy scan)
@@ -355,14 +358,14 @@ jobs:
           target: dashboard
           push: false
           load: true
-          tags: ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
+          tags: ${{ env.IMAGE_BASE }}:dashboard-${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Trivy scan Dashboard image
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
-          image-ref: ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
+          image-ref: ${{ env.IMAGE_BASE }}:dashboard-${{ github.sha }}
           format: table
           exit-code: "1"
           severity: "HIGH,CRITICAL"
@@ -378,6 +381,6 @@ jobs:
           target: dashboard
           push: true
           tags: |
-            ${{ env.IMAGE_BASE }}/dashboard:latest
-            ${{ env.IMAGE_BASE }}/dashboard:${{ github.sha }}
+            ${{ env.IMAGE_BASE }}:dashboard-latest
+            ${{ env.IMAGE_BASE }}:dashboard-${{ github.sha }}
           cache-from: type=gha

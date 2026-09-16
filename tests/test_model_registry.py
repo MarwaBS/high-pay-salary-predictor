@@ -146,10 +146,19 @@ def _stage_workdirs() -> dict[str, str]:
 
 
 def _served_stage(manifest: str) -> str:
-    """The Dockerfile stage a deployment's app container runs."""
+    """The Dockerfile stage a deployment's app container runs.
+
+    Stage is the tag prefix (``api-`` / ``dashboard-``) on the repo-named
+    GHCR package, not a nested path. Nested names are a separate package
+    GITHUB_TOKEN cannot write."""
     spec = yaml.safe_load((REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8"))["spec"]["template"]["spec"]
     (image,) = {c["image"] for c in spec["containers"]}
-    return PurePosixPath(image.rsplit(":", 1)[0]).name
+    tag = image.rsplit(":", 1)[-1]
+    stages = _stage_workdirs()
+    for stage in stages:
+        if tag.startswith(f"{stage}-"):
+            return stage
+    raise AssertionError(f"k8s/{manifest} image tag {tag!r} does not start with a Dockerfile stage")
 
 
 @pytest.mark.parametrize("manifest", ["api-deployment.yaml", "dashboard-deployment.yaml"])
@@ -210,8 +219,32 @@ def test_k8s_images_use_the_ghcr_path_ci_actually_pushes() -> None:
         assert "high_pay_analysis_us" not in text, (
             f"{manifest} still references the dead GHCR path 'high_pay_analysis_us'"
         )
-        assert "ghcr.io/marwabs/high-pay-salary-predictor/" in text, (
-            f"{manifest} must use the GHCR path CI publishes to (ghcr.io/marwabs/high-pay-salary-predictor/*)"
+        assert "ghcr.io/marwabs/high-pay-salary-predictor:" in text, (
+            f"{manifest} must use the repo-named GHCR package CI publishes"
+        )
+
+
+def test_ghcr_publish_uses_the_repo_named_package() -> None:
+    """Nested GHCR names (repo/api) are a separate package. GITHUB_TOKEN
+    cannot write them unless the owner links Actions access by hand. A
+    repo-named package is auto-linked. Tags distinguish the two images."""
+    workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    assert "${{ env.IMAGE_BASE }}/api:" not in workflow, (
+        "CI still publishes a nested GHCR package; GITHUB_TOKEN is denied write"
+    )
+    assert "${{ env.IMAGE_BASE }}/dashboard:" not in workflow, (
+        "CI still publishes a nested GHCR package; GITHUB_TOKEN is denied write"
+    )
+    assert "${{ env.IMAGE_BASE }}:api-" in workflow
+    assert "${{ env.IMAGE_BASE }}:dashboard-" in workflow
+    for manifest, prefix in (
+        ("api-deployment.yaml", ":api-"),
+        ("dashboard-deployment.yaml", ":dashboard-"),
+    ):
+        text = (REPO_ROOT / "k8s" / manifest).read_text(encoding="utf-8")
+        assert "ghcr.io/marwabs/high-pay-salary-predictor/" not in text, f"{manifest} still names a nested GHCR package"
+        assert f"ghcr.io/marwabs/high-pay-salary-predictor{prefix}" in text, (
+            f"{manifest} must use the repo-named package with {prefix} tags"
         )
 
 

@@ -99,7 +99,7 @@ spec:
               mountPath: /shared-data
       containers:
         - name: api
-          image: ghcr.io/marwabs/high-pay-salary-predictor/api:IMAGE_TAG_PLACEHOLDER
+          image: ghcr.io/marwabs/high-pay-salary-predictor:api-IMAGE_TAG_PLACEHOLDER
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
