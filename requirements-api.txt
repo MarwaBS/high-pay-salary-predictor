@@ -36,7 +36,7 @@ xgboost==3.2.0
 scikit-learn==1.5.2
 
 # ── Configuration ────────────────────────────────────────────────────────────
-pyyaml==6.0.1
+pyyaml==6.0.3
 
 # ── Observability: Prometheus /metrics endpoint ──────────────────────────────
 # 8.0.0 lifts the starlette<1.0.0 cap → starlette resolves to >=1.0.1,
