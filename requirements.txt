@@ -34,7 +34,7 @@ prometheus-fastapi-instrumentator>=7.0.0  # /metrics endpoint + auto HTTP metric
 redis>=5.0.0
 
 # ── Configuration & Utilities ─────────────────────────────────────────────────
-pyyaml>=6.0              # config.yaml loading
+pyyaml>=6.0.3              # config.yaml loading
 
 # ── Development & Testing ─────────────────────────────────────────────────────
 jupyter>=1.1.1
