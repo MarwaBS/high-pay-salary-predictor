@@ -1,4 +1,4 @@
-# Hugging Face Spaces .dockerignore — keeps the build context small.
+# Hugging Face Spaces .dockerignore - keeps the build context small.
 # This file applies when the Space builder treats the Space repo root
 # as the Docker build context. Listed paths are never COPY'd even if
 # the Dockerfile references them, so they also shouldn't be pushed to
@@ -13,7 +13,7 @@
 # Private notes (MUST NEVER ship to the Space)
 private/
 
-# Tests, notebooks, and raw data — none of which the runtime needs
+# Tests, notebooks, and raw data - none of which the runtime needs
 tests/
 *.ipynb
 Resources/
@@ -46,5 +46,5 @@ CONTRIBUTING.md
 LICENSE
 docker-compose.yml
 Makefile
-# NOTE: MODEL_CARD.md stays — the container can reference it via the
+# NOTE: MODEL_CARD.md stays - the container can reference it via the
 #       GitHub link in the Space README, and it's cheap to include.

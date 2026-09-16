@@ -1,4 +1,4 @@
-# Model Card — US High-Pay Salary Quantile Model
+# Model Card - US High-Pay Salary Quantile Model
 
 ## Model Details
 
@@ -7,7 +7,7 @@
 | **Name** | XGBoost multi-quantile salary predictor |
 | **Version** | 2.0.0 |
 | **Type** | Gradient-boosted quantile regression (XGBoost `reg:quantileerror`, alphas = [0.10, 0.50, 0.90]) |
-| **Output** | P10 / P50 / P90 dollar predictions per request — not a point estimate |
+| **Output** | P10 / P50 / P90 dollar predictions per request - not a point estimate |
 | **Artefact** | `models/xgb_salary_model.ubj` (XGBoost native binary, no pickle) |
 | **Training script** | `scripts/train_quantile.py` |
 | **Config** | `config.yaml` |
@@ -24,7 +24,7 @@
 Given a demographic and occupational profile within the **$100K+ US
 cohort**, return a calibrated income range (P10, P50, P90) the worker
 can use as a directional benchmark. Intended for exploratory analysis
-and portfolio demonstration — **not** for employment decisions,
+and portfolio demonstration - **not** for employment decisions,
 compensation benchmarking, or any consequential use.
 
 ## Training Data
@@ -51,14 +51,14 @@ attributable to the truncation has not been measured, and no ceiling is claimed.
 The quantile model still produces useful output because the P10/P50/P90
 spread itself is informative.
 
-**Gap 1 remediation — phases.**
+**Gap 1 remediation - phases.**
 
 - **Phase 1 (shipped)**: a premium-tier binary classifier head is trained
   alongside the quantile regressor by `scripts/train_quantile.py` on the
   same engineered feature matrix. The label is
   `Annual Income ≥ config.model.premium_threshold` (default `$150,000`),
   chosen because it gives a roughly 40/60 positive rate on the existing
-  cohort — a well-defined, supportable binary task on the data that is
+  cohort - a well-defined, supportable binary task on the data that is
   already in the repo. The classifier is served on every `/predict`
   response as `p_above_premium_threshold`, letting callers answer "is
   this profile likely to clear the premium bar at all?" in addition to
@@ -73,7 +73,7 @@ spread itself is informative.
 
 ## Features
 
-Feature set is unchanged from v1.0.0 — only the training objective changed.
+Feature set is unchanged from v1.0.0 - only the training objective changed.
 
 | Feature | Type | Source | Notes |
 |---|---|---|---|
@@ -131,9 +131,9 @@ shown in `models/model_metrics.json::train_date`.
 
 | Metric | Value | What it means |
 |---|---|---|
-| 80% coverage — raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
-| 80% coverage — **served (cross-conformal)** | **~0.79** | The API widens the interval by a conformal margin (below), closing most of the shortfall against the 0.80 target. |
-| Median PI width — served | ~$115K | ~3% wider than the raw interval; the cost of closing the coverage gap. |
+| 80% coverage - raw quantiles | ~0.77 | Fraction of test targets inside the raw `[P10, P90]`. Under-covers the 0.80 target by ~3 pts. |
+| 80% coverage - **served (cross-conformal)** | **~0.79** | The API widens the interval by a conformal margin (below), closing most of the shortfall against the 0.80 target. |
+| Median PI width - served | ~$115K | ~3% wider than the raw interval; the cost of closing the coverage gap. |
 | Conformal margin (log space) | ~0.010 | Symmetric widening added to P10/P90; estimated by 5-fold cross-conformal on train (§ below). |
 | Quantile crossings | **0** | Number of test rows where P10 > P50 or P50 > P90. Must be zero. |
 | P10 pinball loss | ~$6.6K | Quantile loss at α=0.10. |
@@ -146,7 +146,7 @@ Each artefact carries a `model_version` of the form
 `{service_version}+{git_sha}.{data_sha256_prefix}`, read from
 `models/model_metrics.json` rather than quoted here: the weekly retrain changes
 the git SHA, so any value written into this page is stale by the next Monday.
-The **git SHA is the exact commit the metrics file was generated at** — either
+The **git SHA is the exact commit the metrics file was generated at** - either
 a scheduled `train.yml` run on `main`, or a working-branch commit whose
 regenerated metrics land via PR. Because PRs land via **squash-merge** (which
 creates a new commit with a different SHA), the recorded commit is a real,
@@ -155,7 +155,7 @@ still-fetchable object that is generally **not an ancestor of `main`**. Do not e
 does **not** depend on checking out that commit: it rests on the committed
 artefacts, the exact-version `requirements-lock.txt`, the fixed training seed
 (`config.yaml::model.random_state`), and the `data_sha256` prefix that pins the
-input CSV — same code + same data + same seed reproduce the same artefact bytes.
+input CSV - same code + same data + same seed reproduce the same artefact bytes.
 They do not reproduce the same `model_version`, because it carries the git SHA of
 the commit that trained: the `data_sha256` binds a metric set to its input, the
 git SHA identifies the source revision. `tests/test_model_version.py` enforces
@@ -168,12 +168,12 @@ the version *shape*.
 | Test R² (P50) | ~0.026 | P50 under a quantile objective is the median-minimiser, not the mean-minimiser, so R² (which scores means) is a weak fit-statistic for this model. The real SLO is quantile coverage above. |
 | Test MAE | ~$50K | |
 | Test RMSE | ~$108K | |
-| CV R² (5-fold, train only, dollar space) | ~0.022 ± 0.017 | Leakage-free per-fold target encoding; close to test R² — no overfitting, no space mismatch. |
+| CV R² (5-fold, train only, dollar space) | ~0.022 ± 0.017 | Leakage-free per-fold target encoding; close to test R² - no overfitting, no space mismatch. |
 
 ### CV alignment
 
 CV is computed **only on the training set**, in **dollar space**, using
-a fresh fold model — exactly the same space as the test metric above.
+a fresh fold model - exactly the same space as the test metric above.
 This is enforced by `tests/test_pipeline.py::TestModelPrediction::test_saved_cv_matches_test`.
 
 ### Stability across seeds
@@ -190,7 +190,7 @@ across 5 seeds and records mean ± std in `model_metrics.json`:
 | Classifier Brier | ~0.213 ± 0.001 |
 
 The tight std bands confirm the metrics are stable across splits, not
-single-split artefacts — including the honest one: the near-zero R² is a
+single-split artefacts - including the honest one: the near-zero R² is a
 **consistent** feature-ceiling result, not noise.
 
 ### Serving latency
@@ -204,7 +204,7 @@ repo regenerates it.
 The hot path stays off the DataFrame by moving every per-request lookup to
 an O(1) dict get / O(log n) binary search precomputed at startup
 (`build_benchmark_lookup`, `build_bls_defaults_lookup`, and the fallback
-means) — the hot path performs no DataFrame scans.
+means) - the hot path performs no DataFrame scans.
 
 ### Premium-tier classifier head (Gap 1 Phase 1)
 
@@ -220,7 +220,7 @@ mild, and the API serves this output to callers as a probability
 unweighted. This is a design choice, not a measured one: the weighted
 variant was never run, so the trade-off is asserted from the class balance
 alone. The Brier score below beats the constant-base-rate predictor, which
-is skill — the repo computes no reliability curve, so it is not a
+is skill - the repo computes no reliability curve, so it is not a
 calibration measurement.
 
 At HEAD, on the held-out test split:
@@ -229,12 +229,12 @@ At HEAD, on the held-out test split:
 |---|---|---|
 | Positive rate (test) | ~0.39 | Fraction of the test cohort earning ≥ `$150,000`. |
 | ROC-AUC | ~0.67 | Discrimination across the full threshold sweep. |
-| PR-AUC | ~0.55 | Precision-recall AUC — more informative than ROC on the ~40% positive rate. |
+| PR-AUC | ~0.55 | Precision-recall AUC - more informative than ROC on the ~40% positive rate. |
 | F1 @ 0.5 | ~0.50 | Balanced F1 at the default decision threshold. |
-| **Brier score** | **~0.218** vs **0.237** no-skill | Proper score on the served probability — lower is better; beats the constant-base-rate predictor. |
+| **Brier score** | **~0.218** vs **0.237** no-skill | Proper score on the served probability - lower is better; beats the constant-base-rate predictor. |
 | Subgroup ROC-AUC | 0.64–0.70 across Gender / Region (min 0.64, max 0.70) | No tracked slice fell to chance. Above 0.5 is a collapse check, not evidence of parity. |
 
-**Baselines — does the GBM earn its place?** Recorded in
+**Baselines - does the GBM earn its place?** Recorded in
 `model_metrics.json`, same split:
 
 | Baseline | Value | Verdict |
@@ -243,7 +243,7 @@ At HEAD, on the held-out test split:
 | Logistic-regression ROC-AUC | ~0.68 | **On the shipped split the head trails (0.674 vs ~0.68). Refit across the same five splits the two are ~0.696 and ~0.690, a gap smaller than either spread, so neither ranks better.** |
 
 The honest conclusion: on this feature set the gradient-booster buys
-nothing over linear logistic regression — the signal ceiling is the
+nothing over linear logistic regression - the signal ceiling is the
 **features**, not the model. XGBoost is kept for serving consistency
 (same `.ubj` format as the regressor, no pickle), not for an accuracy
 lift, and that trade-off is stated rather than hidden. A heroic 0.9
@@ -258,7 +258,7 @@ Per-group empirical 80% coverage is tracked in
 `tests/test_pipeline.py::TestModelPrediction::test_subgroup_coverage_within_band` holds every slice
 inside **[0.60, 0.95]**. That band is a collapse guard, not a guarantee of equal
 coverage: a slice could fall from 0.77 to 0.61 and still pass. At HEAD the spread
-is 0.73–0.80 across `Gender` and `Region` — narrower than the v1
+is 0.73–0.80 across `Gender` and `Region` - narrower than the v1
 point-estimator R² gap.
 
 The quantile reframe does not directly close the subgroup gap in this
@@ -280,10 +280,10 @@ The API endpoint `POST /predict` and the Streamlit dashboard now return:
 **Cross-conformal calibration.** The raw quantile interval under-covers its
 nominal 80% by ~3 points, so the served `p10`/`p90` are widened symmetrically
 in log space by a conformal margin. The margin is estimated by 5-fold
-cross-conformal (CQR) on the training set — each fold scores the held-out rows
+cross-conformal (CQR) on the training set - each fold scores the held-out rows
 with `max(q_lo − y, y − q_hi)` and the margin is the 0.80 quantile of the
 pooled scores (with the standard `(n+1)` small-sample lift). Because the fold
-models differ from the served full-data model, coverage is approximate —
+models differ from the served full-data model, coverage is approximate -
 validated empirically at ≈0.80 on the held-out test set. The shipped model
 still trains on all of train and its bytes are unchanged. The margin is persisted to
 `models/conformal_delta.json` (content-addressed alongside the other
@@ -294,7 +294,7 @@ Quantile crossings (P10 > P90) are clamped defensively inside
 `api/inference.build_response`, so clients never see an inverted range
 even if XGBoost emits one at a decision boundary. The raw crossing rate
 is also exported on `/metrics` as `salary_quantile_crossings_total`, so a
-rising rate — a model-health signal — is observable rather than silently
+rising rate - a model-health signal - is observable rather than silently
 corrected.
 
 ## Limitations and Biases
@@ -307,7 +307,7 @@ corrected.
 2. **Truncated cohort**: as noted in the data-prep caveat, the model is
    trained on a double-filtered slice of the population. It is
    well-defined *within* the $100K+ cohort but cannot answer "will
-   this person earn more than $100K" — use a different model for that.
+   this person earn more than $100K" - use a different model for that.
 
 3. **Geographic coverage**: US data only.
 
@@ -332,12 +332,12 @@ corrected.
 ## How to Retrain
 
 ```bash
-# The only trainer — multi-quantile XGBoost, no MLflow / Optuna.
+# The only trainer - multi-quantile XGBoost, no MLflow / Optuna.
 python -m scripts.train_quantile
 ```
 
 Writes artefacts to `models/` and metrics to `models/model_metrics.json`.
-The test suite picks up changes automatically — if the quantile coverage
+The test suite picks up changes automatically - if the quantile coverage
 drifts outside `[0.72, 0.88]` or any crossings appear,
 `tests/test_pipeline.py::TestModelPrediction::test_saved_metrics_within_expected_range` will
 fail loudly.

@@ -28,7 +28,7 @@ def verify(config_path: str | Path | None = None) -> list[str]:
 
     recorded = metrics.get("artifact_sha256")
     if not recorded:
-        return [f"{metrics_path.name} has no artifact_sha256 block — retrain to record it"]
+        return [f"{metrics_path.name} has no artifact_sha256 block - retrain to record it"]
 
     paths = {
         "model": ROOT / model_cfg["model_path"],

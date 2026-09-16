@@ -1,7 +1,7 @@
 """
 Static sanity checks on the root Dockerfile's API stage.
 
-These tests don't build or run Docker — they parse the Dockerfile text
+These tests don't build or run Docker - they parse the Dockerfile text
 and the source of api/main.py to catch a class of bug that only surfaces
 at container start: api/main.py imports a top-level module (e.g.
 config_schema) that is never COPY'd into the API image, so the CI smoke
@@ -42,7 +42,7 @@ def _top_level_bare_imports(source_path: Path) -> set[str]:
             if root in sys.stdlib_module_names:
                 continue
             if "." in node.module:
-                # dotted — handled by a directory COPY elsewhere
+                # dotted - handled by a directory COPY elsewhere
                 continue
             if (REPO_ROOT / f"{root}.py").is_file():
                 bare.add(root)
@@ -65,7 +65,7 @@ def _api_stage_copy_targets() -> set[str]:
     """
     text = DOCKERFILE.read_text(encoding="utf-8")
     # Slice from `FROM ... AS api` onward. The `(?![\w-])` tail stops
-    # the match from also hitting `AS api-builder` — `\b` would be wrong
+    # the match from also hitting `AS api-builder` - `\b` would be wrong
     # because `-` is a non-word character and still counts as a boundary.
     match = re.search(r"^FROM\s+\S+\s+AS\s+api(?![\w-])", text, flags=re.MULTILINE)
     assert match is not None, "Dockerfile must declare a `FROM ... AS api` stage"
@@ -82,7 +82,7 @@ def _api_stage_copy_targets() -> set[str]:
         if not line.startswith("COPY"):
             continue
         if "--from=" in line:
-            # multi-stage copy of built wheels — not a repo source file
+            # multi-stage copy of built wheels - not a repo source file
             continue
         # Strip the leading `COPY` and tokenize. Last token is the dest.
         tokens = line.split()
@@ -129,7 +129,7 @@ def test_api_requirements_pins_sklearn_for_xgboost_wrapper():
     module`` if scikit-learn is not present. The dev environment picks up
     sklearn transitively through ``requirements.txt``, so the gap surfaces
     only inside the minimal ``requirements-api.txt`` image at container
-    start-up — hence the explicit pin here.
+    start-up - hence the explicit pin here.
     """
     api_reqs = _parse_requirements(REPO_ROOT / "requirements-api.txt")
     assert "scikit-learn" in api_reqs, (
@@ -154,7 +154,7 @@ def test_api_main_bare_imports_all_copied_into_api_stage():
 
     # A `<name>.py` is satisfied if any COPY source equals `<name>.py`
     # exactly. Directory copies like `api/` don't satisfy bare top-level
-    # module imports — those are for the `api/` package itself.
+    # module imports - those are for the `api/` package itself.
     missing = {name for name in required if f"{name}.py" not in copied}
 
     assert not missing, (

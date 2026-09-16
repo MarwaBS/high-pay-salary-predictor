@@ -1,5 +1,5 @@
 """
-PredictionCache behaviour — version namespacing and graceful degradation.
+PredictionCache behaviour - version namespacing and graceful degradation.
 
 The cache key is namespaced by the loaded model version so a retrain never
 serves a previous model's cached predictions from a shared Redis. These tests
@@ -72,7 +72,7 @@ def test_disabled_cache_is_noop():
 
 
 class _DeadRedis(_FakeRedis):
-    """Every operation raises — Redis died after the cache was constructed."""
+    """Every operation raises - Redis died after the cache was constructed."""
 
     def get(self, _key: str):
         raise ConnectionError("simulated redis outage")

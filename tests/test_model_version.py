@@ -20,7 +20,7 @@ from api.main import app, state
 REPO_ROOT = Path(__file__).parent.parent
 METRICS_PATH = REPO_ROOT / "models" / "model_metrics.json"
 
-# ``2.0.0+a1b2c3d4e5f6.9e8d7c6b5a40`` — allow either 12 hex chars or the
+# ``2.0.0+a1b2c3d4e5f6.9e8d7c6b5a40`` - allow either 12 hex chars or the
 # literal ``unknown`` fragment for the git SHA (bare-tarball builds) but
 # require the service version to be semver and the data SHA to be hex.
 MODEL_VERSION_RE = re.compile(
@@ -33,7 +33,7 @@ MODEL_VERSION_RE = re.compile(
 def _load_metrics() -> dict:
     assert METRICS_PATH.exists(), (
         f"{METRICS_PATH} is missing. Run `python -m scripts.train_quantile` "
-        f"first — the provenance tests need a trained artefact on disk."
+        f"first - the provenance tests need a trained artefact on disk."
     )
     with open(METRICS_PATH) as f:
         return json.load(f)
@@ -50,7 +50,7 @@ def test_metrics_json_contains_model_version():
     assert "model_version" in metrics, (
         "models/model_metrics.json has no 'model_version' field. "
         "scripts/train_quantile.py must call build_model_version() and "
-        "emit the result into the metrics dict — this is how the "
+        "emit the result into the metrics dict - this is how the "
         "scheduled train.yml workflow names GitHub Releases."
     )
     assert isinstance(metrics["model_version"], str)
@@ -70,7 +70,7 @@ def test_model_version_matches_expected_shape():
     assert match is not None, (
         f"model_version={version!r} does not match the expected shape "
         f"'{{semver}}+{{git_sha|unknown}}.{{data_sha}}'. This is the "
-        f"tag name format the scheduled train.yml workflow uses — "
+        f"tag name format the scheduled train.yml workflow uses - "
         f"breaking it silently breaks model releases."
     )
     assert match["service"] == SERVICE_VERSION, (
@@ -89,7 +89,7 @@ def test_metrics_json_contains_service_version():
 def test_health_endpoint_surfaces_model_version():
     """``GET /health`` must surface the ``model_version`` the trainer wrote.
 
-    Both sides read the same metrics file, so this pins the wiring — the field
+    Both sides read the same metrics file, so this pins the wiring - the field
     is exposed and carries the recorded value rather than a hardcoded one. It
     cannot detect a stale in-process load, which an in-process client never has.
     """
@@ -107,7 +107,7 @@ def test_health_endpoint_surfaces_model_version():
     assert body["model_version"] == metrics["model_version"], (
         f"GET /health returned model_version={body['model_version']!r} "
         f"but models/model_metrics.json has {metrics['model_version']!r}. "
-        f"This is the 'live artefact drift' scenario — the API and the "
+        f"This is the 'live artefact drift' scenario - the API and the "
         f"on-disk metrics have fallen out of sync."
     )
     # Sanity: the AppState singleton should also reflect it.

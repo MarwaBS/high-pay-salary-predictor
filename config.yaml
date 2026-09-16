@@ -1,6 +1,6 @@
 ---
 # ============================================================
-# Project Configuration — High-Paying Jobs in the US
+# Project Configuration - High-Paying Jobs in the US
 # ============================================================
 # Every key here is read by shipped code; nothing is kept for documentation.
 
@@ -14,7 +14,7 @@ drift:
   # DriftMonitor.effect_floor_handover(), below which a shift only just over
   # min_effect_size goes unreported, and MIN_WINDOW_FOR_VERDICT, below which no
   # verdict is issued at all; the API refuses to start otherwise. Anything above
-  # is an operational choice — a longer window is steadier and slower to react.
+  # is an operational choice - a longer window is steadier and slower to react.
   window: 500
 
 # ── Cleaning Thresholds ────────────────────────────────────
@@ -29,9 +29,9 @@ thresholds:
 model:
   test_size: 0.20
   random_state: 42
-  # Reproducibility input, not a speed knob — see config_schema.ModelConfig.
+  # Reproducibility input, not a speed knob - see config_schema.ModelConfig.
   n_jobs: 1
-  # XGBoost hyper-parameters — multi-quantile XGBoost via
+  # XGBoost hyper-parameters - multi-quantile XGBoost via
   # ``reg:quantileerror`` with ``quantile_alpha=[0.10, 0.50, 0.90]``.
   # Trained on log1p(Annual Income); callers must expm1() the prediction.
   n_estimators: 169
@@ -46,16 +46,16 @@ model:
   cv_folds: 5
   # Seeds the trainer refits under to report metric spread across resplits.
   stability_seeds: [11, 22, 33, 44, 55]
-  # Saved artefacts — XGBoost native format (.ubj) and JSON (no pickle)
+  # Saved artefacts - XGBoost native format (.ubj) and JSON (no pickle)
   model_path: "models/xgb_salary_model.ubj"
   features_path: "models/feature_names.json"
   metrics_path: "models/model_metrics.json"
   group_means_path: "models/group_means.json"
   # Per-feature training distribution the drift monitor compares live traffic against.
   baseline_stats_path: "models/baseline_stats.json"
-  # Cross-conformal interval margin (log space) — widens P10/P90 to nominal coverage.
+  # Cross-conformal interval margin (log space) - widens P10/P90 to nominal coverage.
   conformal_path: "models/conformal_delta.json"
-  # Premium-tier classifier head — trained alongside the quantile
+  # Premium-tier classifier head - trained alongside the quantile
   # regressor on the same feature set. Predicts P(Annual Income >=
   # premium_threshold) *within the existing high-pay cohort*. It is the
   # next-best-layered task the filtered dataset supports; a broader unfiltered
@@ -63,7 +63,7 @@ model:
   # that is not in the repo.
   classifier_path: "models/xgb_premium_classifier.ubj"
   premium_threshold: 150000
-  # Classifier head hyper-parameters — lighter than the regressor on purpose
+  # Classifier head hyper-parameters - lighter than the regressor on purpose
   # (binary task with a larger margin; a deep booster overfits this 10K-row set).
   classifier_n_estimators: 200
   classifier_max_depth: 4

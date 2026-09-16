@@ -7,14 +7,14 @@
 # the container terminates cleanly.
 #
 # Both processes run under the same user ("user") inside the HF Spaces
-# sandbox — there's no network isolation between them, so the dashboard
+# sandbox - there's no network isolation between them, so the dashboard
 # reaches the API via http://localhost:8000.
 
 set -euo pipefail
 
 cd /home/user/app
 
-# Reap the backgrounded API on shutdown. Only the API is a child here — the
+# Reap the backgrounded API on shutdown. Only the API is a child here - the
 # Streamlit process is exec'd last (below), so it replaces this shell and
 # receives SIGTERM/SIGINT directly; this trap is gone after that exec.
 cleanup() {
@@ -44,7 +44,7 @@ for i in $(seq 1 60); do
         READY=1
         break
     fi
-    # If the API has already exited, abort — Streamlit would fail anyway.
+    # If the API has already exited, abort - Streamlit would fail anyway.
     if ! kill -0 "$API_PID" 2>/dev/null; then
         echo "[start.sh] API process died before becoming healthy"
         exit 1
@@ -53,7 +53,7 @@ for i in $(seq 1 60); do
 done
 
 if [[ "$READY" -ne 1 ]]; then
-    echo "[start.sh] API did not become healthy within 60s — aborting"
+    echo "[start.sh] API did not become healthy within 60s - aborting"
     kill "$API_PID" 2>/dev/null || true
     exit 1
 fi

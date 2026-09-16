@@ -30,7 +30,7 @@ WORKDIR /home/user/app
 # ── Python deps ──────────────────────────────────────────────────────────────
 # Install the API runtime from the pinned set first (smallest surface), then
 # layer the dashboard + viz extras from requirements-space.txt (covered by the
-# CI pip-audit gate). Order matters for Docker layer caching — heavy wheels
+# CI pip-audit gate). Order matters for Docker layer caching - heavy wheels
 # land before the source copy.
 COPY --chown=user:user requirements-api.txt deploy/huggingface/requirements-space.txt ./
 RUN pip install --no-cache-dir --upgrade pip \
@@ -66,15 +66,15 @@ ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    # The dashboard calls the colocated API via localhost — single process
+    # The dashboard calls the colocated API via localhost - single process
     # namespace inside the container means no network latency.
     API_BASE_URL=http://localhost:8000 \
-    # Permissive CORS for the demo — tighten if fronting with a real origin.
+    # Permissive CORS for the demo - tighten if fronting with a real origin.
     CORS_ORIGINS="*" \
     # HF Spaces fronts the container with its own proxy. Rate limit keys
     # on the direct client since TRUSTED_PROXY_HOPS=0.
     TRUSTED_PROXY_HOPS=0 \
-    # No Redis on the free tier — the cache gracefully no-ops.
+    # No Redis on the free tier - the cache gracefully no-ops.
     REDIS_URL="" \
     # HF Spaces injects $PORT at runtime; default matches the frontmatter
     # app_port so local `docker run` also works.

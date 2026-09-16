@@ -1,21 +1,21 @@
 # ============================================================
-# High-Paying Jobs in the US — Reproducibility Makefile
+# High-Paying Jobs in the US - Reproducibility Makefile
 # ============================================================
 # Usage:
-#   make              — show this help
-#   make install      — create .venv and install all dependencies
-#   make data         — regenerate cleaned dataset from raw sources
-#   make model        — train quantile XGBoost model (scripts/train_quantile.py)
-#   make test         — run full pytest suite
-#   make coverage     — run tests with coverage report
-#   make lint         — ruff check (fast linter)
-#   make format       — ruff format (opinionated auto-formatter)
-#   make type-check   — mypy static type checker
-#   make dashboard    — launch Streamlit on http://localhost:8501
-#   make api          — launch FastAPI on http://localhost:8000
-#   make docker       — build and start both services with Docker Compose
-#   make clean        — remove generated artefacts (models, cache, .pyc)
-#   make clean-all    — clean + remove the virtual environment
+#   make              - show this help
+#   make install      - create .venv and install all dependencies
+#   make data         - regenerate cleaned dataset from raw sources
+#   make model        - train quantile XGBoost model (scripts/train_quantile.py)
+#   make test         - run full pytest suite
+#   make coverage     - run tests with coverage report
+#   make lint         - ruff check (fast linter)
+#   make format       - ruff format (opinionated auto-formatter)
+#   make type-check   - mypy static type checker
+#   make dashboard    - launch Streamlit on http://localhost:8501
+#   make api          - launch FastAPI on http://localhost:8000
+#   make docker       - build and start both services with Docker Compose
+#   make clean        - remove generated artefacts (models, cache, .pyc)
+#   make clean-all    - clean + remove the virtual environment
 # ============================================================
 
 PYTHON    := python3
@@ -42,7 +42,7 @@ endif
 .PHONY: help
 help:
 	@echo ""
-	@echo "  High-Paying Jobs in the US — available targets"
+	@echo "  High-Paying Jobs in the US - available targets"
 	@echo "  ------------------------------------------------"
 	@echo "  install     Create .venv and install all dependencies"
 	@echo "  data        Regenerate cleaned dataset from raw sources"
@@ -78,7 +78,7 @@ data: install
 	@test -f Resources/bls_state_data.xlsx || \
 	  (echo "ERROR: Resources/bls_state_data.xlsx not found." && exit 1)
 	@test -f Resources/census_data.csv || \
-	  (echo "ERROR: Resources/census_data.csv not found — this is the notebook's INPUT," && \
+	  (echo "ERROR: Resources/census_data.csv not found - this is the notebook's INPUT," && \
 	   echo "       a US Census CPS extract (variable INCTOT) that is not committed to the" && \
 	   echo "       repo (it exceeds the 5 MB pre-commit limit; see CONTRIBUTING.md § Data)." && \
 	   echo "       Download it into Resources/ before running 'make data'. The cleaned" && \

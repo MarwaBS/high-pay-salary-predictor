@@ -38,7 +38,7 @@ class TestDriftDetection:
         """Observations centred on the baseline mean should not trigger drift.
 
         Uses a deterministic spread symmetric about each baseline mean so the
-        sample mean equals the baseline mean exactly — the z-score is then 0
+        sample mean equals the baseline mean exactly - the z-score is then 0
         regardless of the (now standard-error-based) sensitivity. Random draws
         from the baseline distribution would, correctly, trip the 2-SE bound
         ~5% of the time, which is expected statistics, not a bug."""
@@ -62,10 +62,10 @@ class TestDriftDetection:
 
     def test_small_consistent_mean_shift_alerts_once_window_filled(self, baseline_stats):
         """A consistent sub-σ shift in the mean must alert once enough data has
-        accumulated. Age→43 is only 0.3σ of the raw feature — a σ-scaled z-score
+        accumulated. Age→43 is only 0.3σ of the raw feature - a σ-scaled z-score
         (0.3) never crosses threshold, but the standard-error z-score flags it
         (≈4.7 SE at n=250). During ramp-up the detector is deliberately
-        conservative (ramp-scaled effect floor + Šidák correction — an
+        conservative (ramp-scaled effect floor + Šidák correction - an
         uncorrected z>2 cut leaves the ~10-feature union at ≈37%),
         so a 0.3σ shift is below the n=50 floor (2·√(2/50) ≈ 0.4σ) but well
         above the settled floor (0.2σ) once n ≥ 2·(z/d)² = 200."""
@@ -82,7 +82,7 @@ class TestDriftDetection:
         assert report["features"]["Education_Ord"]["drifted"] is False
 
     def test_absent_feature_does_not_manufacture_drift(self, monitor):
-        """A feature missing from observations must not be imputed as 0.0 —
+        """A feature missing from observations must not be imputed as 0.0 -
         imputing 0.0 drags its mean far from baseline and manufactures drift."""
         for _ in range(40):
             monitor.observe({"Age": 40.0})  # Education_Ord never observed
@@ -128,7 +128,7 @@ class TestDriftEdgeCases:
         assert mon.check_drift()["any_drifted"] is None
 
     def test_exactly_at_the_floor_reports(self, monitor):
-        """At the floor a verdict is issued — the gate is ``<``, not ``<=``."""
+        """At the floor a verdict is issued - the gate is ``<``, not ``<=``."""
         for _ in range(MIN_WINDOW_FOR_VERDICT):
             monitor.observe({"Age": 40.0, "Education_Ord": 2.0})
         report = monitor.check_drift()
@@ -209,7 +209,7 @@ class TestDriftSensitivityAtTheConfiguredWindow:
     """The effect-size floor must suppress benign wobble at the real window.
 
     With the SE z-score alone, the alarm fires whenever the window mean shifts by
-    more than ``alert_threshold/sqrt(window)`` std — ~0.09 std at the configured
+    more than ``alert_threshold/sqrt(window)`` std - ~0.09 std at the configured
     500. Production traffic is never i.i.d. from the training baseline, so
     significance alone alarms on benign sampling wobble; ``min_effect_size`` gates
     it with a practical effect-size floor on TOP of significance.
@@ -223,8 +223,8 @@ class TestDriftSensitivityAtTheConfiguredWindow:
     }
 
     def test_iid_from_baseline_at_the_configured_window_does_not_alarm(self):
-        """Drawing a full window straight from the baseline distribution — i.e.
-        NO real drift — must not alarm. Without the effect-size floor these four
+        """Drawing a full window straight from the baseline distribution - i.e.
+        NO real drift - must not alarm. Without the effect-size floor these four
         tests alarm on ≈4.5% of windows even with the Šidák correction in place,
         and on 1 - (1 - 0.0455)^4 ≈ 17% if the correction goes too."""
         import numpy as np
@@ -243,7 +243,7 @@ class TestDriftSensitivityAtTheConfiguredWindow:
 
     def test_genuine_consistent_shift_still_alarms_at_the_configured_window(self):
         """A consistent >= min_effect_size shift in a feature mean must still be
-        caught at the real window — the fix must not make the monitor deaf."""
+        caught at the real window - the fix must not make the monitor deaf."""
         import numpy as np
 
         rng = np.random.default_rng(7)
@@ -263,7 +263,7 @@ class TestDriftSensitivityAtTheConfiguredWindow:
         mon = DriftMonitor(self.BASELINE, window=CONFIGURED_WINDOW, alert_threshold=2.0)
         # Halfway between what significance alone detects and the effect floor,
         # so the shift is significant and trivial at whatever window is configured
-        # — a fixed 0.1 would stop being significant below n=401 and fail there
+        # - a fixed 0.1 would stop being significant below n=401 and fail there
         # for a reason that has nothing to do with what this test checks.
         significant_from = mon.alert_threshold / math.sqrt(CONFIGURED_WINDOW)
         effect = (significant_from + mon.min_effect_size) / 2
@@ -286,15 +286,15 @@ class TestDriftRampUpFalseAlarms:
     ``any_drifted`` is the union of ~10 per-feature tests. An UNcorrected
     per-feature cut at z > 2 (per-test α ≈ 4.55%) leaves the union ungated, and
     below n = (z/d)² = 100 a fixed 0.2σ effect floor is implied by significance
-    alone — so up to that fill a perfectly stationary window false-alarms with
+    alone - so up to that fill a perfectly stationary window false-alarms with
     probability 1 - (1 - 0.0455)^10 ≈ 37%, and less once the floor starts to bind.
     The monitor therefore Šidák-corrects the per-feature α across the k tested
     features AND ramp-scales the effect floor (max(0.2, z·√(2/n))), bounding the
-    familywise false-alarm rate at ≈ erfc(2/√2) ≈ 4.6% at ANY window fill —
+    familywise false-alarm rate at ≈ erfc(2/√2) ≈ 4.6% at ANY window fill -
     without touching the configured operating point (see TestDriftSensitivityAtTheConfiguredWindow).
     """
 
-    # Ten features, mirroring the width of the production baseline — the
+    # Ten features, mirroring the width of the production baseline - the
     # familywise failure mode only shows at realistic k.
     BASELINE = {
         "Age": {"mean": 40.0, "std": 10.0, "min": 18.0, "max": 80.0},
@@ -329,7 +329,7 @@ class TestDriftRampUpFalseAlarms:
 
     def _bound(self, trials: int) -> float:
         """Two binomial standard deviations above the level the shipped tuning
-        designs for — a bound on the measurement, not a second design choice."""
+        designs for - a bound on the measurement, not a second design choice."""
         designed = math.erfc(DriftMonitor(self.BASELINE, window=1).alert_threshold / math.sqrt(2.0))
         assert designed <= self.DESIGN_CEILING, f"the shipped alert_threshold designs for {designed:.1%}"
         return designed + 2 * math.sqrt(designed * (1 - designed) / trials)
@@ -341,7 +341,7 @@ class TestDriftRampUpFalseAlarms:
         assert rate <= self._bound(150), f"familywise FA rate {rate:.1%} at the floor exceeds {self._bound(150):.1%}"
 
     def test_stationary_n100_familywise_false_alarm_rate_bounded(self):
-        """Same bound at n=100 — the stress point where the fixed 0.2σ floor
+        """Same bound at n=100 - the stress point where the fixed 0.2σ floor
         exactly coincides with the uncorrected z>2 bound, so the effect floor
         adds no protection and only the Šidák α-correction bounds the union."""
         rate = self._familywise_false_alarm_rate(n_obs=100, trials=150, seed=20260705)
@@ -349,8 +349,8 @@ class TestDriftRampUpFalseAlarms:
 
     def test_mid_window_real_drift_still_fires(self):
         """Deaf-check: the ramp-up conservatism must NOT silence real drift
-        mid-fill. Age +5 years (0.5σ) at n=150 — floor(150) ≈ 0.23σ, expected
-        per-trial power ≈ 99.9% — must fire on every one of 25 trials."""
+        mid-fill. Age +5 years (0.5σ) at n=150 - floor(150) ≈ 0.23σ, expected
+        per-trial power ≈ 99.9% - must fire on every one of 25 trials."""
         import numpy as np
 
         rng = np.random.default_rng(20260706)
@@ -374,12 +374,12 @@ class TestDriftMechanismIsolation:
     The Šidák per-feature correction and the ramp-scaled effect floor are
     REDUNDANT at the production width (k≈10): there, clearing the ramp floor
     already implies z > 2√2 ≈ 2.83, which is ~the Šidák per-feature cut, so a
-    stationary-traffic false-alarm test cannot tell them apart — deleting either
+    stationary-traffic false-alarm test cannot tell them apart - deleting either
     one alone leaves the familywise rate at ≈5% and every ramp-up test still
     green. That is a maintenance trap: someone could silently drop the Šidák
     correction (which the docstrings call load-bearing) and CI would stay green.
 
-    These two tests break the k=10 coincidence so each mechanism is isolated —
+    These two tests break the k=10 coincidence so each mechanism is isolated -
     removing just that one mechanism flips the single assertion to red. They are
     fully deterministic (constant observations, zero sample variance), so the
     boundary values are exact, not statistical.
@@ -387,15 +387,15 @@ class TestDriftMechanismIsolation:
 
     def test_sidak_correction_is_applied_not_just_familywise_alpha(self):
         """With many features, a per-feature shift that is significant at the
-        UNcorrected familywise α but NOT at the Šidák-corrected per-feature α —
-        while clearing the effect floor — must NOT alarm.
+        UNcorrected familywise α but NOT at the Šidák-corrected per-feature α -
+        while clearing the effect floor - must NOT alarm.
 
         k=100 features, n=200 (effect floor at its fixed 0.2σ handover). One
         feature is shifted to z=3.3 (p≈9.7e-4): that is far below α_family
         (0.0455) so an uncorrected detector fires, but ABOVE the Šidák per-feature
         cut α_k≈4.7e-4, so the corrected detector stays silent. Its effect size
         (0.233σ) clears the 0.2σ floor, so ONLY the Šidák correction is what
-        holds the alarm — delete it and this feature drifts. All other features
+        holds the alarm - delete it and this feature drifts. All other features
         sit exactly on the baseline mean (z=0)."""
         k, n, z_target = 100, 200, 3.3
         value = z_target / (n**0.5)  # std=1 → this constant gives mean-shift z=z_target
@@ -422,7 +422,7 @@ class TestDriftMechanismIsolation:
         gates), n=50: ramp floor = max(0.2, 2·√(2/50)) = 0.4σ. A constant +0.3σ
         shift is significant (z=0.3·√50≈2.12 > 2) and clears the fixed 0.2σ floor,
         but 0.3 < 0.4, so the ramp-scaled floor is the ONLY thing holding the
-        alarm — drop the ramp scaling (fixed 0.2σ only) and this drifts."""
+        alarm - drop the ramp scaling (fixed 0.2σ only) and this drifts."""
         baseline = {"f": {"mean": 0.0, "std": 1.0, "min": -9.0, "max": 9.0}}
         mon = DriftMonitor(baseline, window=500, alert_threshold=2.0, min_effect_size=0.2)
         for _ in range(50):
@@ -544,7 +544,7 @@ class TestDriftMonitorRedisBackend:
 
 
 class _ReadFailingRedis(_FakeRedis):
-    """Writes succeed (shared list populates) but reads raise — models a Redis
+    """Writes succeed (shared list populates) but reads raise - models a Redis
     partition where the authoritative window cannot be loaded."""
 
     def lrange(self, _key, _start, _end):
@@ -562,7 +562,7 @@ class _WriteFailingRedis(_FakeRedis):
 
 
 class _WriteFailingReadsWorkingRedis(_FakeRedis):
-    """Rejects writes while still serving reads — a Redis at ``maxmemory`` or a
+    """Rejects writes while still serving reads - a Redis at ``maxmemory`` or a
     replica promoted read-only. The stored window keeps loading cleanly while
     live observations are discarded."""
 
@@ -609,14 +609,14 @@ class TestDriftBackendFailureIsLoud:
         mon = DriftMonitor(baseline_stats=baseline_stats, window=100, redis_client=fake)
         for _ in range(50):
             mon.observe({"Age": 40.0, "Education_Ord": 2.0})  # every write fails
-        # Dropped, not mixed into the local plane — deque stays empty.
+        # Dropped, not mixed into the local plane - deque stays empty.
         assert len(mon.buffer) == 0
 
     def test_dropped_writes_withhold_the_verdict(self, baseline_stats):
         """Observations lost to failed writes make the window unrepresentative.
 
         Reads still succeed here, so the stored window looks healthy while live
-        traffic is being discarded — the verdict must be withheld rather than
+        traffic is being discarded - the verdict must be withheld rather than
         reported clean from a window the dropped traffic never reached.
         """
         fake = _WriteFailingReadsWorkingRedis()
@@ -667,7 +667,7 @@ class TestDriftBackendFailureIsLoud:
         """A zero window would cap the backlog at zero and never withhold.
 
         The dropped-write guard is bounded by the window size, so a window of 0
-        turns it into a permanent all-clear — the exact failure it exists to
+        turns it into a permanent all-clear - the exact failure it exists to
         prevent.
         """
         with pytest.raises(ValueError, match="window must be >= 1"):
@@ -786,7 +786,7 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
     """``config.yaml::drift.window`` must put normal operation past the ramp.
 
     Below the handover the ramp term rules and the advertised
-    ``min_effect_size`` sensitivity is unreachable — a shift just over the
+    ``min_effect_size`` sensitivity is unreachable - a shift just over the
     advertised floor goes unreported. The probe is exactly that limiting shift,
     so the window at which it stops being masked IS the handover; a bigger probe
     would clear the ramp early and pass at windows the bound forbids.
@@ -807,10 +807,10 @@ class TestConfiguredWindowClearsTheEffectFloorHandover:
         handover = mon.effect_floor_handover()
         assert handover > MIN_WINDOW_FOR_VERDICT, (
             f"at this tuning the handover ({handover}) is under the verdict floor, so a withheld "
-            f"verdict — not the ramp — would decide the result"
+            f"verdict - not the ramp - would decide the result"
         )
         # Halfway between the advertised floor and the ramp one observation short
-        # of the handover — the only band that is masked below the handover and
+        # of the handover - the only band that is masked below the handover and
         # reported at it, whatever the tuning makes those two values.
         ramp_below = mon.alert_threshold * math.sqrt(2.0 / (handover - 1))
         probe = (mon.min_effect_size + ramp_below) / 2

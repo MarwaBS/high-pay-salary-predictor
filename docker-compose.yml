@@ -16,7 +16,7 @@ services:
     volumes:
       # Persist trained model so it survives container restarts
       - ./models:/app/models
-      # Dataset mounted read-only — not baked into the image
+      # Dataset mounted read-only - not baked into the image
       - ./Data:/app/Data:ro
     restart: unless-stopped
     environment:
@@ -61,7 +61,7 @@ services:
     volumes:
       # Share the same model artefact with the dashboard service
       - ./models:/app/models
-      # Dataset mounted read-only — not baked into the image
+      # Dataset mounted read-only - not baked into the image
       - ./Data:/app/Data:ro
     restart: unless-stopped
     deploy:
@@ -76,7 +76,7 @@ services:
       start_period: 60s
       retries: 3
 
-  # ── Redis — prediction cache backend ───────────────────────────────────────
+  # ── Redis - prediction cache backend ───────────────────────────────────────
   # Deterministic-prediction cache used by /predict. The API degrades to a
   # no-op cache if this service is removed or REDIS_URL is unset.
   redis:

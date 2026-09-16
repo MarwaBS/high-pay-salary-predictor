@@ -180,11 +180,11 @@ def encode_feature_values(
     precomputed once at startup and passed in, so no per-request reduction
     over the group-mean dicts happens here. Keys are the model's feature
     names, so a caller can both build a frame *and* feed the drift monitor
-    from this dict — no DataFrame round-trip needed.
+    from this dict - no DataFrame round-trip needed.
     """
     bls = _lookup_bls(bls_defaults_lookup, req.state, req.occupation)
     # req.state / education / gender are validated to the known domain upstream,
-    # so index directly — a KeyError here means the request bypassed validation,
+    # so index directly - a KeyError here means the request bypassed validation,
     # which should fail loud, not silently encode to a wrong region (the
     # divergence the training-side engineer_features also rejects).
     region = region_map[req.state]
@@ -225,7 +225,7 @@ def quantiles_crossed(p10: float, p50: float, p90: float) -> bool:
 def run_model(model: Any, row: pd.DataFrame, *, conformal_delta: float = 0.0) -> tuple[float, float, float]:
     """Invoke the multi-quantile model and return (p10, p50, p90) dollars.
 
-    See ``pipeline.predict_quantiles`` — a non-quantile model is refused at
+    See ``pipeline.predict_quantiles`` - a non-quantile model is refused at
     startup, so this always returns a real interval. ``conformal_delta`` widens
     P10/P90 to the calibrated coverage; P50 is unchanged.
     """
@@ -248,13 +248,13 @@ def build_response(
     search on the precomputed sorted array. ``percentile_scope`` says which
     reference was used: ``"group"`` when the (state, education) cell had rows,
     ``"dataset"`` when the cell was unseen and the whole-dataset distribution
-    was used instead — never a fabricated 50th percentile.
+    was used instead - never a fabricated 50th percentile.
 
     ``p_above_premium_threshold`` and ``premium_threshold`` come from the
     binary classifier head. Both default to ``None`` so deployments without
     the classifier keep a stable response shape.
     """
-    # Defensive quantile ordering — XGBoost occasionally emits tiny
+    # Defensive quantile ordering - XGBoost occasionally emits tiny
     # crossings near decision boundaries. Force non-decreasing.
     p10_ord = min(p10, p50, p90)
     p90_ord = max(p10, p50, p90)

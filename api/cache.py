@@ -1,7 +1,7 @@
 """
 Optional Redis caching for deterministic salary predictions.
 
-Salary predictions are pure functions of their inputs — same features
+Salary predictions are pure functions of their inputs - same features
 always produce the same output. A cache keyed on the input hash avoids
 redundant XGBoost inference for repeated queries.
 
@@ -36,7 +36,7 @@ def _feature_hash(payload: dict[str, Any]) -> str:
 class PredictionCache:
     """Redis-backed cache for deterministic salary predictions.
 
-    Falls back to no-op if Redis is unavailable — zero impact on API
+    Falls back to no-op if Redis is unavailable - zero impact on API
     correctness, only on latency under repeated queries.
     """
 
@@ -53,7 +53,7 @@ class PredictionCache:
                 self._client.ping()
                 logger.info("Redis prediction cache enabled at %s", REDIS_URL)
             except Exception:
-                logger.warning("Redis at %s unreachable — caching disabled", REDIS_URL)
+                logger.warning("Redis at %s unreachable - caching disabled", REDIS_URL)
                 self._client = None
 
     @property
@@ -75,7 +75,7 @@ class PredictionCache:
             cached = self._client.get(key)
             return json.loads(cached) if cached else None
         except Exception:
-            logger.warning("Redis GET failed — serving without cache", exc_info=True)
+            logger.warning("Redis GET failed - serving without cache", exc_info=True)
             return None
 
     def set(self, payload: dict[str, Any], result: dict[str, Any], ttl: int | None = None) -> None:
@@ -89,4 +89,4 @@ class PredictionCache:
             # Cache write failure is non-critical, but log it: a silently
             # broken cache (e.g. Redis OOM) otherwise looks like a healthy
             # no-op forever.
-            logger.warning("Redis SET failed — prediction not cached", exc_info=True)
+            logger.warning("Redis SET failed - prediction not cached", exc_info=True)

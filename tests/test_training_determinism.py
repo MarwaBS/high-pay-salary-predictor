@@ -37,7 +37,7 @@ def test_trainer_source_carries_no_all_cores_literal():
 
 
 def _production_params(cfg: dict, n_jobs: int) -> dict:
-    """The shipped hyperparameters — thread sensitivity depends on tree shape,
+    """The shipped hyperparameters - thread sensitivity depends on tree shape,
     so a reduced stand-in would not exercise the real training path."""
     model_cfg = cfg["model"]
     return {

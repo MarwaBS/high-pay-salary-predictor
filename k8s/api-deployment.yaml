@@ -1,16 +1,16 @@
 # ── FastAPI salary predictor Deployment ──────────────────────────────────────
 #
 # Design points:
-#   1. Image tag is an explicit placeholder — the CD pipeline substitutes
+#   1. Image tag is an explicit placeholder - the CD pipeline substitutes
 #      IMAGE_TAG_PLACEHOLDER with the git SHA before applying. Never
-#      deploy `:latest` — it breaks rollback and auditability.
+#      deploy `:latest` - it breaks rollback and auditability.
 #   2. Model + data volumes are `emptyDir` populated by an initContainer
 #      that downloads from the GitHub release assets. This avoids RWX PVCs
 #      (EBS / GCE PD / Azure Disk only support RWO, so a shared PVC across
 #      multiple replicas would not schedule).
 #   3. Pod-level securityContext enforces non-root execution and drops all
 #      Linux capabilities.
-#   4. ``imagePullPolicy: IfNotPresent`` — deterministic with SHA-pinned tags.
+#   4. ``imagePullPolicy: IfNotPresent`` - deterministic with SHA-pinned tags.
 #
 # How the CD pipeline substitutes the tag (GitHub Actions example):
 #   sed -i "s|IMAGE_TAG_PLACEHOLDER|${GITHUB_SHA}|g" k8s/api-deployment.yaml
@@ -42,10 +42,10 @@ spec:
         prometheus.io/path: "/metrics"
         # /metrics requires X-API-Key whenever API_KEY is set. These annotations
         # carry no headers, so the scrape job needs the key in its scrape_config
-        # or it will receive 401s — stated rather than reopening the endpoint.
+        # or it will receive 401s - stated rather than reopening the endpoint.
     spec:
       # Pod-level security: enforce non-root execution regardless of what
-      # the image says. Defence in depth — the Dockerfile already runs as
+      # the image says. Defence in depth - the Dockerfile already runs as
       # `appuser` (uid 1000), but k8s should not rely on that.
       securityContext:
         runAsNonRoot: true
@@ -165,7 +165,7 @@ spec:
               readOnly: true
       terminationGracePeriodSeconds: 30
       volumes:
-        # emptyDir is per-pod — no RWX dependency, no PVC. Populated by the
+        # emptyDir is per-pod - no RWX dependency, no PVC. Populated by the
         # initContainer on every pod start. Small footprint (<10 MB total).
         - name: model-volume
           emptyDir:

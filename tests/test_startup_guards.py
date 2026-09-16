@@ -2,7 +2,7 @@
 
 Each guard below crashes the liveness probe rather than serving a model that
 would be silently wrong. Testing the helpers in isolation leaves the *wiring*
-unproven — a guard whose result is computed and then ignored looks identical to
+unproven - a guard whose result is computed and then ignored looks identical to
 one that is enforced. These drive the real lifespan so deleting any guard turns
 a test red.
 """
@@ -248,7 +248,7 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
     """``config.yaml::drift.window`` has to be what the served monitor runs on.
 
     Startup is the only place the two meet, so a monitor built with anything
-    else — a literal, or a default re-added to ``DriftMonitor`` — leaves the
+    else - a literal, or a default re-added to ``DriftMonitor`` - leaves the
     config key decorative while every other drift test still passes.
     """
 
@@ -291,7 +291,7 @@ class TestTheConfiguredDriftWindowReachesTheMonitor:
         keep demanding the window the shipped tuning happened to need.
 
         Each tuning is derived from the configured window so that it is one the
-        window cannot satisfy — a fixed pair would also fail whenever someone
+        window cannot satisfy - a fixed pair would also fail whenever someone
         raised the window past it, which the config says they may.
         """
         configured = m.VALIDATED_CFG.drift.window

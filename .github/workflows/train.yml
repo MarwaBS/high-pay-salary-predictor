@@ -8,7 +8,7 @@ name: Train & Release Model
 # on-demand via ``workflow_dispatch``) it trains the multi-quantile
 # XGBoost model, archives the exact artefacts, and publishes them as a
 # GitHub Release named ``model-{MODEL_VERSION}`` where MODEL_VERSION is
-# ``{service_version}+{git_sha}.{data_sha256}`` — the composite
+# ``{service_version}+{git_sha}.{data_sha256}`` - the composite
 # provenance string produced by ``scripts/train_quantile.py``.
 #
 # This is the pragmatic "model registry" for a portfolio project:
@@ -17,7 +17,7 @@ name: Train & Release Model
 # contract the initContainer depends on; tests/test_model_registry.py checks it
 # against config.yaml so an artefact the API loads cannot go unpublished.
 #
-# The release is idempotent — if a release with the same
+# The release is idempotent - if a release with the same
 # ``MODEL_VERSION`` tag already exists the workflow uploads the new
 # artefacts to the existing release rather than failing, so retries
 # are safe.
@@ -25,7 +25,7 @@ name: Train & Release Model
 on:
   schedule:
     # Mondays at 03:00 UTC. The cron is the "refresh data source of
-    # truth" cadence — if the CSV upstream is updated, the model
+    # truth" cadence - if the CSV upstream is updated, the model
     # follows within a week without human intervention.
     - cron: "0 3 * * 1"
   workflow_dispatch:
@@ -81,7 +81,7 @@ jobs:
               env.write(f"MODEL_VERSION={version}\n")
           EOF
 
-      - name: Gate — verify artefacts and run the model test suite
+      - name: Gate - verify artefacts and run the model test suite
         env:
           CI: "true"
         run: |
@@ -133,7 +133,7 @@ jobs:
           the `data_sha256` fragment of `model_version`. Installing that lock and
           re-running the trainer refits byte-identically on the same machine. Across
           builds XGBoost's float reductions differ and the drift on these metrics is
-          unmeasured — the reproduction
+          unmeasured - the reproduction
           path is the pinned environment, not a bare `git checkout` (post-squash
           the training SHA is not a `main` ancestor; see MODEL_CARD).
 
@@ -159,9 +159,9 @@ jobs:
           draft: false
           prerelease: false
           # Fail quietly and update the existing release if the tag
-          # already exists — makes retry-on-flake safe.
+          # already exists - makes retry-on-flake safe.
           fail_on_unmatched_files: true
-          # Every artefact the API loads at startup MUST be published here — the
+          # Every artefact the API loads at startup MUST be published here - the
           # release IS the model registry a rollback/redeploy pulls from.
           # tests/test_model_registry.py checks this list against config.yaml's
           # loaded paths so they can't drift. The dataset ships too, so the k8s

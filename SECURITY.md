@@ -48,10 +48,10 @@ None. The `security` CI step runs `pip-audit` clean against the five
 requirement files that reach a build: `requirements.txt`,
 `requirements-lock.txt`, `requirements-api.txt`, `requirements-dashboard.txt`
 and the Space's. `requirements-notebooks.txt` is deliberately outside the gate
-— it is never installed in an image and its packages have no importer in the
-serving path. There is no ignore-file mechanism to inspect — `pip-audit`
+- it is never installed in an image and its packages have no importer in the
+serving path. There is no ignore-file mechanism to inspect - `pip-audit`
 reads none, so a suppression can only be a flag. The CI gate carries no
-`--ignore-vuln` flags, so there is no active suppression path — a new CVE fails
+`--ignore-vuln` flags, so there is no active suppression path - a new CVE fails
 the build until it is fixed, or until an explicit, rationale-carrying
 `--ignore-vuln` is added to `ci.yml`.
 

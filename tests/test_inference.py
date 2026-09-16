@@ -1,4 +1,4 @@
-"""Unit tests for api/inference.py — the helpers extracted from /predict.
+"""Unit tests for api/inference.py - the helpers extracted from /predict.
 
 These tests exercise the helpers in isolation without spinning up FastAPI
 or loading the full app. They guarantee that ``build_benchmark_lookup``
@@ -175,7 +175,7 @@ class TestBuildResponsePercentile:
 
     def test_fallback_group_ranks_against_dataset_not_fabricated_50(self, sample_df):
         """An unseen cell must rank against the whole-dataset income
-        distribution and label the scope — never return a fabricated 50.0."""
+        distribution and label the scope - never return a fabricated 50.0."""
         lookup = build_benchmark_lookup(sample_df)
         fallback = lookup_benchmarks(lookup, "ZZ", "Unknown")
         resp = build_response(
@@ -275,7 +275,7 @@ class TestEncodeFeatureValues:
         assert list(frame.columns) == FEATURES_FULL
         assert len(frame) == 1
         # Unseen occupation and a state absent from the group means must fall
-        # back to the precomputed mean fallbacks (state stays in region_map — it
+        # back to the precomputed mean fallbacks (state stays in region_map - it
         # is domain-validated upstream, so only the target-encoding means fall back).
         miss = encode_feature_values(
             req.model_copy(update={"occupation": "Unknown Job", "state": "NY"}),
@@ -294,7 +294,7 @@ class TestEncodeFeatureValues:
 
     def test_unmapped_state_fails_loud(self, sample_bls_df: pd.DataFrame) -> None:
         """An out-of-domain state must raise, not silently encode to
-        Region_Code 0 — the same fail-loud posture as engineer_features. This
+        Region_Code 0 - the same fail-loud posture as engineer_features. This
         path is unreachable via the API (state is domain-validated), so a
         KeyError here means validation was bypassed."""
         req = PredictRequest(

@@ -5,7 +5,7 @@ Single source of truth for:
   - Feature constants (FEATURES_FULL, REGION_CODES)
   - Feature-engineering function (engineer_features)
   - Group-means helpers (compute_group_means, save/load_group_means)
-  - Model save / load helpers (no pickle — XGBoost native + JSON)
+  - Model save / load helpers (no pickle - XGBoost native + JSON)
   - Quantile prediction helpers (predict_quantiles, predict_quantiles_batch)
 
 Design notes
@@ -107,7 +107,7 @@ _REQUIRED_COLUMNS: list[str] = [
     "Annual Income",
 ]
 
-#: Gender_Bin is a binary Male/Female encoding — the only two values in the
+#: Gender_Bin is a binary Male/Female encoding - the only two values in the
 #: training distribution. Anything else is rejected rather than silently folded
 #: into the Female bucket by the ``== "Male"`` comparison.
 _KNOWN_GENDERS: frozenset[str] = frozenset({"Male", "Female"})
@@ -146,7 +146,7 @@ def engineer_features(
     ------
     ValueError  if any required column is missing, if any Education Level,
                 Gender, or State Abbreviation value has no mapping, or if
-                *region_map* names a region absent from REGION_CODES — encoding
+                *region_map* names a region absent from REGION_CODES - encoding
                 an unknown category silently (NaN, or a Region_Code 0 collision)
                 would ship a quietly-degraded model on a config typo.
     """
@@ -218,7 +218,7 @@ def train_test_positions(n_rows: int, *, test_size: float, random_state: int) ->
 
     The trainer and the Streamlit dashboard both derive *which rows are test*
     from this one function, so a change to the split (adding stratification, a
-    different seed) moves them together — the dashboard can never silently
+    different seed) moves them together - the dashboard can never silently
     report residuals on a train-contaminated "test" set because it re-derived
     the split a second, diverging way. sklearn is imported lazily so importing
     ``pipeline`` on the serving hot path does not pull it in.
@@ -249,7 +249,7 @@ def compute_group_means(df_train: pd.DataFrame) -> dict[str, dict[str, float]]:
 
 
 # ---------------------------------------------------------------------------
-# Shared fallback helpers — eliminates duplication between API and dashboard
+# Shared fallback helpers - eliminates duplication between API and dashboard
 # ---------------------------------------------------------------------------
 
 
@@ -263,7 +263,7 @@ def compute_fallback_means(
 
     Raises
     ------
-    ValueError  if either group-mean dict is empty — averaging an empty set
+    ValueError  if either group-mean dict is empty - averaging an empty set
                 yields NaN, which the API would then inject as the fallback
                 feature value for every unseen occupation/state. Fail at
                 startup instead of serving silent NaNs.
@@ -273,13 +273,13 @@ def compute_fallback_means(
     if not occ or not state:
         raise ValueError(
             "compute_fallback_means: group_means artefact has empty occ_means or state_means "
-            "— retrain (`python -m scripts.train_quantile`) to produce non-empty means."
+            "- retrain (`python -m scripts.train_quantile`) to produce non-empty means."
         )
     return float(np.mean(occ)), float(np.mean(state))
 
 
 # ---------------------------------------------------------------------------
-# Model persistence — no pickle
+# Model persistence - no pickle
 # ---------------------------------------------------------------------------
 # Pickle is Python-version-sensitive and can execute arbitrary code on load.
 # We use XGBoost's native binary format (.ubj) for models and plain JSON
@@ -313,7 +313,7 @@ def save_classifier(model: XGBClassifier, path: str) -> None:
     """Save an XGBoost binary classifier using its native ``.ubj`` format.
 
     Separate helper from ``save_model`` so the type annotation on the
-    caller side makes the intent clear — regressor artefacts and
+    caller side makes the intent clear - regressor artefacts and
     classifier artefacts live at different paths and must not collide.
     """
     Path(path).parent.mkdir(parents=True, exist_ok=True)
@@ -325,7 +325,7 @@ def load_classifier(path: str) -> XGBClassifier:
 
     Raises
     ------
-    FileNotFoundError  if *path* does not exist — meaning no classifier
+    FileNotFoundError  if *path* does not exist - meaning no classifier
         head is present. Callers that want to run without a classifier
         should catch this exception and degrade gracefully (the API does
         exactly that: the ``p_above_premium_threshold`` field becomes
@@ -437,7 +437,7 @@ def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame, *, conforma
     """Return an (n, 3) array of (p10, p50, p90) dollar predictions for a frame.
 
     Single source of truth for parsing the multi-quantile output: expm1's the
-    (n, 3) log-space prediction back to dollars. Raises on any other shape — a
+    (n, 3) log-space prediction back to dollars. Raises on any other shape - a
     legacy point model is refused at startup, so a non-(n, 3) output here is a
     real fault, not a fallback.
 
