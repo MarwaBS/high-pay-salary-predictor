@@ -444,7 +444,7 @@ def predict_quantiles_batch(model: XGBRegressor, rows: pd.DataFrame, *, conforma
     ``conformal_delta`` widens the P10/P90 bounds symmetrically in log space by
     the cross-conformal margin (see ``scripts.train_quantile`` cross-conformal
     calibration) so the served interval reaches its nominal coverage; the raw
-    quantiles under-cover by a couple of points. P50 is never shifted. The
+    quantiles under-cover their nominal 80%. P50 is never shifted. The
     default 0.0 leaves the raw interval unchanged.
     """
     raw = np.asarray(model.predict(rows))

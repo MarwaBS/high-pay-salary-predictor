@@ -676,8 +676,7 @@ async def request_id_middleware(request: Request, call_next):
 # Keyed on the same terms as /predict and /drift. The series here include a
 # per-route request counter that equals the observation count /drift reports, so
 # leaving it open would re-expose through telemetry what those routes authenticate.
-# Scrapers must send X-API-Key; k8s does this via the prometheus.io/... annotations
-# on the Deployment.
+# Scrapers must send X-API-Key.
 
 Instrumentator().instrument(app).expose(
     app,

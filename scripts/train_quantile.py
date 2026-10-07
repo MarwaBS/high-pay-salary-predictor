@@ -254,8 +254,8 @@ def _cross_conformal_delta(
     the fold models differ from the served full-data model the coverage is
     approximate, validated at ~0.80 on the held-out test set. The shipped model still trains on
     ALL of train, so its bytes are unchanged; this only estimates how far to
-    widen its raw P10/P90 interval - which under-covers by a couple of points -
-    to reach the nominal coverage. Returns (delta, n_scores).
+    widen its raw P10/P90 interval, which under-covers, to reach the nominal
+    coverage. Returns (delta, n_scores).
     """
     kf = KFold(n_splits=n_splits, shuffle=True, random_state=seed)
     raw = df_train_raw.reset_index(drop=True)
@@ -483,7 +483,7 @@ def main() -> None:
     logger.info("CV R² (P50, dollar, train-only, per-fold means) = %.4f ± %.4f", cv_r2_mean, cv_r2_std)
 
     # ── Cross-conformal interval calibration (CQR) ──────────────────────────
-    # The raw P10/P90 interval under-covers its nominal 80% by ~2 points. A
+    # The raw P10/P90 interval under-covers its nominal 80%. A
     # cross-conformal margin, estimated from train-only folds so the shipped
     # model's bytes are untouched, widens the served interval to target.
     target_coverage = float(QUANTILE_ALPHAS[2] - QUANTILE_ALPHAS[0])
