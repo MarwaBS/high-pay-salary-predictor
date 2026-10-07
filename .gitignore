@@ -208,3 +208,4 @@ mlruns.db
 
 # IPUMS extract is redistribution-restricted; fetch via API at build time
 Resources/census_data.csv
+Data/census_data.csv
