@@ -19,7 +19,7 @@ drift:
 
 # ── Cleaning Thresholds ────────────────────────────────────
 thresholds:
-  # Minimum annual income (Census CPS variable: INCTOT) to be
+  # Minimum annual income (IPUMS USA variable: INCTOT) to be
   # classified as "high-pay". Equivalent to ~$48.08/hr at 40h/52w.
   min_annual_income: 100000
   # Corresponding BLS hourly mean floor (100000 / 2080 hours).

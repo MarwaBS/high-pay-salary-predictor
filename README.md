@@ -296,14 +296,14 @@ Grouped by the engineering discipline they demonstrate.
 
 **Sources:**
 - U.S. Bureau of Labor Statistics (BLS): state-level Occupational Employment and Wage Statistics (OEWS)
-- U.S. Census Bureau: microdata - demographics, education, occupation
+- American Community Survey microdata - demographics, education, occupation - extracted from IPUMS USA. Cite as: IPUMS USA, University of Minnesota, www.ipums.org. The underlying data are from the U.S. Census Bureau.
 
 **Cleaned dataset:** `Data/cleaned_high_pay_data.csv` - 10,255 rows × 15 columns
 
 **Key fields:** Occupation, Annual Income, Education Level, Gender, State Abbreviation, Hourly Mean, Location Quotient, Employment, Jobs per 1000.
 (`Annual Mean Wage` is in the raw dataset but was dropped from model features - VIF ≈ 2.3×10⁷ collinearity with `Hourly Mean`.)
 
-Data are used for educational and analytical purposes only. Consult each provider's terms for reuse.
+Data are used for educational and analytical purposes only. The files in `Data/` are third-party data, not covered by this repository's MIT licence; consult each provider's terms for reuse.
 
 ---
 

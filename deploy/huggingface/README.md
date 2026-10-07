@@ -35,6 +35,11 @@ income predictions for a given demographic and occupational profile.
 > `MODEL_CARD.md` in the GitHub repo for the full framing, limitations,
 > and fairness discussion.
 
+**Data.** American Community Survey microdata from IPUMS USA (IPUMS USA,
+University of Minnesota, www.ipums.org; underlying data from the U.S. Census
+Bureau) and BLS Occupational Employment and Wage Statistics. The code is MIT
+licensed; the data files are third-party and not covered by that licence.
+
 ## Tabs
 
 | Tab | What it shows |
