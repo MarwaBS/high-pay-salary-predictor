@@ -108,6 +108,7 @@ CLAIMS = [
     ),
     Claim("README.md", "> Brier ≈ ", rf"Brier ≈ {N}", "stability_clf_brier_mean"),
     Claim("README.md", "raw quantiles | ~", rf"\| ~{N} \|", "quantile_coverage_80"),
+    Claim("README.md", "raw quantile interval covers", rf"covers ≈ {N};", "quantile_coverage_80"),
     Claim("README.md", "served (conformal)", rf"\*\*~{N}\*\*", "conformal_coverage_80"),
     Claim("README.md", "| Median PI width (served)", rf"~\${N}K", "conformal_width_median", 1000),
     Claim("README.md", "| P50 R² (backward-compat", rf"\| ~{N} \|", "r2"),
@@ -134,6 +135,7 @@ CLAIMS = [
         "DESIGN_DECISIONS.md", "against a majority-class", rf"majority-class {N}", "classifier_baseline_majority_acc"
     ),
     Claim("DESIGN_DECISIONS.md", "not out-rank a linear model", rf"ROC-AUC is {N}", "classifier_roc_auc"),
+    Claim("DESIGN_DECISIONS.md", "logistic baseline of", rf"baseline of {N}\.", "classifier_baseline_logreg_roc_auc"),
     Claim("DESIGN_DECISIONS.md", "and the reference", rf"^{N} ±", "stability_clf_roc_auc_mean"),
     Claim("DESIGN_DECISIONS.md", "and the reference", rf"± {N} and", "stability_clf_roc_auc_std"),
     Claim(
@@ -149,6 +151,12 @@ CLAIMS = [
         "stability_clf_baseline_logreg_roc_auc_std",
     ),
     Claim("DESIGN_DECISIONS.md", "the head averages ROC-AUC", rf"ROC-AUC {N} and", "stability_clf_roc_auc_mean"),
+    Claim(
+        "DESIGN_DECISIONS.md",
+        "a gap smaller than either spread",
+        rf"reference {N},",
+        "stability_clf_baseline_logreg_roc_auc_mean",
+    ),
 ]
 
 
@@ -187,11 +195,18 @@ def test_every_claim_names_a_recorded_metric():
     assert not missing, f"pinned keys absent from model_metrics.json: {missing}"
 
 
-def test_subgroup_roc_auc_range_matches_the_artefact():
+@pytest.mark.parametrize(
+    ("anchor", "pattern", "key"),
+    [
+        ("| Subgroup ROC-AUC |", r"min ([0-9.]+), max ([0-9.]+)", "classifier_subgroup_roc_auc"),
+        ("across `Gender` and `Region`", r"is ([0-9.]+)\u2013([0-9.]+) across", "subgroup_coverage_80"),
+    ],
+)
+def test_subgroup_range_matches_the_artefact(anchor, pattern, key):
     """The published range is a min and a max over the recorded subgroup map."""
-    recorded = METRICS["classifier_subgroup_roc_auc"].values()
-    line = _claiming_line(Claim("MODEL_CARD.md", "| Subgroup ROC-AUC |", "", "classifier_roc_auc"))
-    low, high = (float(x) for x in re.findall(r"min ([0-9.]+), max ([0-9.]+)", line)[0])
+    recorded = METRICS[key].values()
+    line = _claiming_line(Claim("MODEL_CARD.md", anchor, "", key))
+    low, high = (float(x) for x in re.findall(pattern, line)[0])
     assert _rounded(min(recorded), 2) == Decimal(str(low))
     assert _rounded(max(recorded), 2) == Decimal(str(high))
 

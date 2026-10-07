@@ -116,8 +116,9 @@ file in `Data/` - so it is a follow-up, not an omission.
 
 **No MLflow / Optuna.** The trainer stays lean enough to run on a CI worker
 without an experiment-tracking stack. Hyper-parameters are pinned in
-`config.yaml` and chosen by `scripts/tune.py`; `models/tuning_study.json` is the
-record. See D-001.
+`config.yaml`; the regressor's are chosen by `scripts/tune.py`, with
+`models/tuning_study.json` as the record, and the classifier head's have no
+producer (Known gaps). See D-001.
 
 **Measured:** the narrow label is a usable task on the shipped data, not a
 degenerate one: positive rate 0.3974 train / 0.3852 test, Brier 0.2177 against a

@@ -3,8 +3,6 @@
 # published by .github/workflows/train.yml, which runs the metric-band tests +
 # artefact-integrity gate BEFORE publishing. `releases/latest/download/` tracks
 # the newest gated release, so a redeploy needs no manual version bump.
-# conformal_delta.json and the CSV joined the published asset set partway
-# through, so pinning this back past the 2026-07-27 release 404s on both.
 apiVersion: v1
 kind: ConfigMap
 metadata:
