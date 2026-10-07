@@ -79,7 +79,7 @@ data: install
 	  (echo "ERROR: Resources/bls_state_data.xlsx not found." && exit 1)
 	@test -f Resources/census_data.csv || \
 	  (echo "ERROR: Resources/census_data.csv not found - this is the notebook's INPUT," && \
-	   echo "       a US Census CPS extract (variable INCTOT) that is not committed to the" && \
+	   echo "       an IPUMS USA (ACS) extract (variable INCTOT) that is not committed to the" && \
 	   echo "       repo (it exceeds the 5 MB pre-commit limit; see CONTRIBUTING.md § Data)." && \
 	   echo "       Download it into Resources/ before running 'make data'. The cleaned" && \
 	   echo "       OUTPUT (Data/cleaned_high_pay_data.csv) IS committed, so model training" && \

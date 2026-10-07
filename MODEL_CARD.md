@@ -31,7 +31,7 @@ compensation benchmarking, or any consequential use.
 
 | Source | Description |
 |---|---|
-| US Census ACS/CPS microdata | Individual income, demographics, education, occupation |
+| American Community Survey microdata, via IPUMS USA (IPUMS USA, University of Minnesota, www.ipums.org; underlying data from the U.S. Census Bureau) | Individual income, demographics, education, occupation |
 | BLS OEWS | State × occupation employment, location quotient, hourly/annual mean wage |
 
 - **Population**: workers with reported annual income ≥ $100 K
@@ -280,7 +280,7 @@ The API endpoint `POST /predict` and the Streamlit dashboard now return:
 **Cross-conformal calibration.** The raw quantile interval under-covers its
 nominal 80% by ~3 points, so the served `p10`/`p90` are widened symmetrically
 in log space by a conformal margin. The margin is estimated by 5-fold
-cross-conformal (CQR) on the training set - each fold scores the held-out rows
+cross-conformal (CQR; Romano, Patterson & Candès, arXiv:1905.03222; Vovk, doi:10.1007/s10472-013-9368-4) on the training set - each fold scores the held-out rows
 with `max(q_lo − y, y − q_hi)` and the margin is the 0.80 quantile of the
 pooled scores (with the standard `(n+1)` small-sample lift). Because the fold
 models differ from the served full-data model, coverage is approximate -
@@ -300,7 +300,7 @@ corrected.
 ## Limitations and Biases
 
 1. **Binary gender**: the training data contains only "Male" / "Female"
-   labels from Census CPS coding. Non-binary identities are not
+   labels from the ACS sex coding in the IPUMS USA extract. Non-binary identities are not
    represented. The model cannot make predictions for genders outside
    this binary.
 

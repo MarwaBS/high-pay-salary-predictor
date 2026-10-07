@@ -41,7 +41,7 @@ class PredictRequest(BaseModel):
         ...,
         description=(
             "Gender ('Male' or 'Female'). "
-            "**Limitation**: the training data (US Census CPS) uses a binary "
+            "**Limitation**: the training data (ACS microdata via IPUMS USA) uses a binary "
             "gender coding; non-binary identities are not represented. "
             "The model encodes this as a binary feature and cannot produce "
             "meaningful predictions outside this binary."
