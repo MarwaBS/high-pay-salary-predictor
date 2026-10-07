@@ -75,7 +75,7 @@ threadpoolctl==3.6.0
 toml==0.10.2
 typing_extensions==4.16.0
 tzdata==2026.2
-urllib3==2.7.0
+urllib3==2.8.0
 uvicorn==0.50.0
 watchdog==6.0.0
 websockets==16.0
