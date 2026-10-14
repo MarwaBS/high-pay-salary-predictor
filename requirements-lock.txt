@@ -37,7 +37,7 @@ packaging==26.3
 pandas-stubs==3.0.5.260914
 pandas==3.0.3
 pathspec==1.1.1
-pip-api==0.0.34
+pip-api==0.0.35
 pip-requirements-parser==32.0.1
 pip_audit==2.10.1
 platformdirs==4.10.0
